@@ -1,0 +1,14 @@
+[Unit]
+Description=Scaffold Signal CLI Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/Builds/scaffold/daemon/.env
+ExecStart=/usr/bin/signal-cli -a ${AGENT_NUMBER} daemon --http 127.0.0.1:46871 --no-receive-stdout --receive-mode on-start
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

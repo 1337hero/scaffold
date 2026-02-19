@@ -1,0 +1,2 @@
+- systemctl --user restart scaffold-signal-cli.service
+- systemctl --user restart scaffold-daemon.service

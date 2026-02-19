@@ -1,0 +1,80 @@
+#1337Hero's Overkill Git Ignore!
+
+# dependencies
+node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# App
+app/dist/
+app/.vite/
+
+# Daemon
+daemon/bin/
+
+# SQLite
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Deployment (instance-specific)
+deploy.sh
+/deploy/
+
+# IDE
+.idea/
+.vscode/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# Build
+/tmp/
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+#misc
+/_backup
+/.idea
+/docs/plans/
+
+# Editor directories and files
+._*
+.DS_Store
+.Spotlight-V100
+.Trashes
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Runtime/Generated
+uploads/
+**/logs/
+logs/
+*.log
+specs/
+docs/
+archive/
+
+# Custom extensions (private per-deployment features)
+custom/
+
+#AI Agents
+.claude
+CLAUDE.md
