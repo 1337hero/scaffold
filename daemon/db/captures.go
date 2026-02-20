@@ -112,6 +112,35 @@ func (db *DB) UpdateCaptureSource(id, source string) error {
 	return requireRowsAffected(result)
 }
 
+// InsertProcessedCaptureWithMemory atomically inserts a memory, enqueues its embedding job,
+// and inserts a processed capture linked to that memory.
+func (db *DB) InsertProcessedCaptureWithMemory(raw, source, action string, mem Memory, embeddingReason string) (string, error) {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return "", fmt.Errorf("begin capture+memory tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	mem, ts, err := db.prepareAndInsertMemoryTx(tx, mem, embeddingReason)
+	if err != nil {
+		return "", err
+	}
+
+	captureID := newID()
+	if _, err := tx.Exec(
+		`INSERT INTO captures (id, raw, source, processed, triage_action, memory_id, created_at)
+		 VALUES (?, ?, ?, 1, ?, ?, ?)`,
+		captureID, raw, source, action, mem.ID, ts,
+	); err != nil {
+		return "", fmt.Errorf("insert processed capture in tx: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit capture+memory tx: %w", err)
+	}
+	return captureID, nil
+}
+
 // PersistTriageResult atomically inserts the memory and links capture triage fields.
 func (db *DB) PersistTriageResult(captureID string, mem Memory, action string) error {
 	tx, err := db.conn.Begin()
@@ -120,32 +149,9 @@ func (db *DB) PersistTriageResult(captureID string, mem Memory, action string) e
 	}
 	defer tx.Rollback()
 
-	if mem.ID == "" {
-		mem.ID = newID()
-	}
-	ts := now()
-	if mem.CreatedAt == "" {
-		mem.CreatedAt = ts
-	}
-	if mem.UpdatedAt == "" {
-		mem.UpdatedAt = ts
-	}
-
-	if _, err := tx.Exec(
-		`INSERT INTO memories (id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		mem.ID, mem.Type, mem.Content, mem.Title, mem.Importance, mem.Source, mem.Tags,
-		mem.CreatedAt, mem.UpdatedAt, mem.AccessedAt, mem.AccessCount, mem.Archived, mem.SuppressedAt,
-	); err != nil {
-		return fmt.Errorf("insert memory in triage tx: %w", err)
-	}
-	if _, err := tx.Exec(
-		`INSERT INTO embedding_jobs (memory_id, reason, enqueued_at, attempts)
-		 VALUES (?, ?, ?, 0)
-		 ON CONFLICT(memory_id) DO UPDATE SET reason = excluded.reason, enqueued_at = excluded.enqueued_at`,
-		mem.ID, "triage", ts,
-	); err != nil {
-		return fmt.Errorf("enqueue embedding job in triage tx: %w", err)
+	mem, _, err = db.prepareAndInsertMemoryTx(tx, mem, "triage")
+	if err != nil {
+		return err
 	}
 
 	result, err := tx.Exec(
@@ -163,4 +169,39 @@ func (db *DB) PersistTriageResult(captureID string, mem Memory, action string) e
 		return fmt.Errorf("commit triage tx: %w", err)
 	}
 	return nil
+}
+
+func (db *DB) prepareAndInsertMemoryTx(tx *sql.Tx, mem Memory, embeddingReason string) (Memory, string, error) {
+	if mem.ID == "" {
+		mem.ID = newID()
+	}
+	ts := now()
+	if mem.CreatedAt == "" {
+		mem.CreatedAt = ts
+	}
+	if mem.UpdatedAt == "" {
+		mem.UpdatedAt = ts
+	}
+	if embeddingReason == "" {
+		embeddingReason = "insert"
+	}
+
+	if _, err := tx.Exec(
+		`INSERT INTO memories (id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		mem.ID, mem.Type, mem.Content, mem.Title, mem.Importance, mem.Source, mem.Tags,
+		mem.CreatedAt, mem.UpdatedAt, mem.AccessedAt, mem.AccessCount, mem.Archived, mem.SuppressedAt,
+	); err != nil {
+		return Memory{}, "", fmt.Errorf("insert memory in tx: %w", err)
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO embedding_jobs (memory_id, reason, enqueued_at, attempts)
+		 VALUES (?, ?, ?, 0)
+		 ON CONFLICT(memory_id) DO UPDATE SET reason = excluded.reason, enqueued_at = excluded.enqueued_at`,
+		mem.ID, embeddingReason, ts,
+	); err != nil {
+		return Memory{}, "", fmt.Errorf("enqueue embedding job in tx: %w", err)
+	}
+
+	return mem, ts, nil
 }

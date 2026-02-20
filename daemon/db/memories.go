@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 )
 
 type Memory struct {
@@ -206,6 +207,37 @@ func (db *DB) GetMemory(id string) (*Memory, error) {
 		return nil, err
 	}
 	return &m, nil
+}
+
+// MarkMemoriesAccessed updates access metadata for the provided memory IDs.
+// Unknown IDs are ignored.
+func (db *DB) MarkMemoriesAccessed(ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	deduped := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		deduped[id] = struct{}{}
+	}
+	if len(deduped) == 0 {
+		return nil
+	}
+
+	ts := now()
+	for id := range deduped {
+		if _, err := db.conn.Exec(
+			`UPDATE memories SET accessed_at = ?, access_count = access_count + 1 WHERE id = ?`,
+			ts, id,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (db *DB) EnqueueEmbeddingJob(memoryID, reason string) error {

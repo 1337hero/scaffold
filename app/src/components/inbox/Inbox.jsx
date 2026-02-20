@@ -53,7 +53,7 @@ export function Inbox() {
 
   const handleOverride = (item) => {
     const typeInput = window.prompt(
-      'Override type (Identity, Goal, Decision, Todo, Preference, Fact, Event, Observation)',
+      'Override type (Identity, Goal, Decision, Todo, Idea, Preference, Fact, Event, Observation)',
       'Todo',
     )
     if (!typeInput) return

@@ -54,11 +54,6 @@ func handleSaveToInbox(ctx context.Context, database *db.DB, b *Brain, params js
 		return "", fmt.Errorf("save_to_inbox: database is required")
 	}
 
-	captureID, err := database.InsertCapture(p.Content, "agent")
-	if err != nil {
-		return "", fmt.Errorf("save_to_inbox: capture insert failed: %w", err)
-	}
-
 	var triage *TriageResult
 	if b != nil {
 		var triageErr error
@@ -99,16 +94,15 @@ func handleSaveToInbox(ctx context.Context, database *db.DB, b *Brain, params js
 		Source:     "agent",
 		Tags:       tags,
 	}
-	if err := database.InsertMemory(mem); err != nil {
-		log.Printf("save_to_inbox memory insert error: %v", err)
-	}
 
 	action := "reference"
 	if triage != nil && triage.Action != "" {
 		action = triage.Action
 	}
-	if err := database.UpdateTriage(captureID, action, memoryID); err != nil {
-		log.Printf("save_to_inbox triage update error: %v", err)
+
+	captureID, err := database.InsertProcessedCaptureWithMemory(p.Content, "agent", action, mem, "agent_tool")
+	if err != nil {
+		return "", fmt.Errorf("save_to_inbox: persist failed: %w", err)
 	}
 
 	return fmt.Sprintf("Saved to inbox: %q (type=%s, capture=%s, memory=%s)", p.Title, typ, captureID, memoryID), nil
@@ -167,6 +161,7 @@ func handleSearchMemories(ctx context.Context, database *db.DB, b *Brain, params
 				if err == nil && len(results) > 0 {
 					filtered := filterScoredMemoriesByType(results, requestedType, topK)
 					if len(filtered) > 0 {
+						markSearchAccess(database, filtered)
 						return formatSearchResults(p.Query, filtered), nil
 					}
 				}
@@ -178,6 +173,7 @@ func handleSearchMemories(ctx context.Context, database *db.DB, b *Brain, params
 	if err == nil && len(ftsResults) > 0 {
 		filtered := filterScoredMemoriesByType(ftsResults, requestedType, topK)
 		if len(filtered) > 0 {
+			markSearchAccess(database, filtered)
 			return formatSearchResults(p.Query, filtered), nil
 		}
 	}
@@ -206,6 +202,7 @@ func handleSearchMemories(ctx context.Context, database *db.DB, b *Brain, params
 	if len(results) == 0 {
 		return fmt.Sprintf("No memories found matching %q.", p.Query), nil
 	}
+	markSearchAccess(database, results)
 	return formatSearchResults(p.Query, results), nil
 }
 
@@ -293,13 +290,22 @@ func handleGetInbox(ctx context.Context, database *db.DB, b *Brain, params json.
 	if err != nil {
 		return "", fmt.Errorf("get_inbox: %w", err)
 	}
-	if len(captures) == 0 {
+
+	filtered := make([]db.Capture, 0, len(captures))
+	for _, capture := range captures {
+		if strings.EqualFold(strings.TrimSpace(capture.Source), "user:archive") {
+			continue
+		}
+		filtered = append(filtered, capture)
+	}
+
+	if len(filtered) == 0 {
 		return "Inbox is empty.", nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Inbox (%d items):\n", len(captures)))
-	for i, c := range captures {
+	sb.WriteString(fmt.Sprintf("Inbox (%d items):\n", len(filtered)))
+	for i, c := range filtered {
 		processed := "pending"
 		if c.Processed == 1 {
 			processed = "processed"
@@ -315,6 +321,26 @@ func handleGetInbox(ctx context.Context, database *db.DB, b *Brain, params json.
 		sb.WriteString(fmt.Sprintf("%d. [%s%s] %s\n", i+1, processed, action, raw))
 	}
 	return sb.String(), nil
+}
+
+func markSearchAccess(database *db.DB, results []db.ScoredMemory) {
+	if database == nil || len(results) == 0 {
+		return
+	}
+
+	ids := make([]string, 0, len(results))
+	for _, result := range results {
+		if id := strings.TrimSpace(result.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	if err := database.MarkMemoriesAccessed(ids); err != nil {
+		log.Printf("search_memories: mark accessed failed: %v", err)
+	}
 }
 
 func handleAddToNotebook(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {

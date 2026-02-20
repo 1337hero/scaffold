@@ -145,8 +145,8 @@ func buildTriagePrompt(cfg Config) string {
 	return fmt.Sprintf(`You are the triage brain for %s's executive function system.
 Your job: classify this capture and decide what to do with it.
 
-Memory types: Identity, Goal, Decision, Todo, Preference, Fact, Event, Observation
-Importance defaults: Identity=1.0, Goal=0.9, Decision=0.8, Todo=0.8, Preference=0.7, Fact=0.6, Event=0.4, Observation=0.3
+Memory types: Identity, Goal, Decision, Todo, Idea, Preference, Fact, Event, Observation
+Importance defaults: Identity=1.0, Goal=0.9, Decision=0.8, Todo=0.8, Idea=0.7, Preference=0.7, Fact=0.6, Event=0.4, Observation=0.3
 
 Actions:
 - "do" = this needs action, becomes a task

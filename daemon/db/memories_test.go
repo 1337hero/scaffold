@@ -338,6 +338,124 @@ func TestPersistTriageResultRollsBackWhenCaptureMissing(t *testing.T) {
 	}
 }
 
+func TestInsertProcessedCaptureWithMemory(t *testing.T) {
+	database := newTestDB(t)
+
+	mem := Memory{
+		ID:         "mem-tool-persist",
+		Type:       "Idea",
+		Content:    "Atomic save from tool",
+		Title:      "Tool save",
+		Importance: 0.7,
+		Source:     "agent",
+		Tags:       "tool,atomic",
+	}
+
+	captureID, err := database.InsertProcessedCaptureWithMemory("Atomic save from tool", "agent", "reference", mem, "agent_tool")
+	if err != nil {
+		t.Fatalf("insert processed capture with memory: %v", err)
+	}
+
+	capture, err := database.GetCapture(captureID)
+	if err != nil {
+		t.Fatalf("get capture: %v", err)
+	}
+	if capture == nil {
+		t.Fatal("expected capture")
+	}
+	if capture.Processed != 1 {
+		t.Fatalf("expected processed=1, got %d", capture.Processed)
+	}
+	if !capture.MemoryID.Valid || capture.MemoryID.String != "mem-tool-persist" {
+		t.Fatalf("expected memory_id mem-tool-persist, got %+v", capture.MemoryID)
+	}
+	if !capture.TriageAction.Valid || capture.TriageAction.String != "reference" {
+		t.Fatalf("expected triage_action reference, got %+v", capture.TriageAction)
+	}
+
+	stored, err := database.GetMemory("mem-tool-persist")
+	if err != nil {
+		t.Fatalf("get memory: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected persisted memory")
+	}
+
+	jobs, err := database.DequeueEmbeddingJobs(10)
+	if err != nil {
+		t.Fatalf("dequeue embedding jobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 embedding job, got %d", len(jobs))
+	}
+	if jobs[0].MemoryID != "mem-tool-persist" {
+		t.Fatalf("expected embedding job for mem-tool-persist, got %q", jobs[0].MemoryID)
+	}
+	if jobs[0].Reason != "agent_tool" {
+		t.Fatalf("expected embedding job reason agent_tool, got %q", jobs[0].Reason)
+	}
+}
+
+func TestInsertProcessedCaptureWithMemoryRollsBackOnMemoryConflict(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "mem-conflict")
+
+	mem := Memory{
+		ID:         "mem-conflict",
+		Type:       "Fact",
+		Content:    "conflict",
+		Title:      "conflict",
+		Importance: 0.5,
+		Source:     "agent",
+	}
+	_, err := database.InsertProcessedCaptureWithMemory("conflict raw", "agent", "reference", mem, "agent_tool")
+	if err == nil {
+		t.Fatal("expected insert processed capture with memory to fail on duplicate memory id")
+	}
+
+	captures, err := database.ListRecent(10)
+	if err != nil {
+		t.Fatalf("list recent captures: %v", err)
+	}
+	if len(captures) != 0 {
+		t.Fatalf("expected no captures after rollback, got %d", len(captures))
+	}
+}
+
+func TestMarkMemoriesAccessed(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "mem-access")
+
+	if err := database.MarkMemoriesAccessed([]string{"mem-access", "mem-access", " ", "missing"}); err != nil {
+		t.Fatalf("mark memories accessed: %v", err)
+	}
+
+	mem, err := database.GetMemory("mem-access")
+	if err != nil {
+		t.Fatalf("get memory: %v", err)
+	}
+	if mem == nil {
+		t.Fatal("expected memory")
+	}
+	if mem.AccessCount != 1 {
+		t.Fatalf("expected access_count 1, got %d", mem.AccessCount)
+	}
+	if mem.AccessedAt == "" {
+		t.Fatal("expected accessed_at to be set")
+	}
+
+	if err := database.MarkMemoriesAccessed([]string{"mem-access"}); err != nil {
+		t.Fatalf("mark memories accessed second time: %v", err)
+	}
+	mem, err = database.GetMemory("mem-access")
+	if err != nil {
+		t.Fatalf("get memory after second access: %v", err)
+	}
+	if mem.AccessCount != 2 {
+		t.Fatalf("expected access_count 2, got %d", mem.AccessCount)
+	}
+}
+
 func TestListRecentMemoriesFiltersSuppressedAndOrdersNewestFirst(t *testing.T) {
 	database := newTestDB(t)
 

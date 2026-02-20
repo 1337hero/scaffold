@@ -274,6 +274,31 @@ func TestGetInboxWithItems(t *testing.T) {
 	}
 }
 
+func TestGetInboxExcludesArchivedSource(t *testing.T) {
+	database := openTestDB(t)
+
+	if _, err := database.InsertCapture("Keep this", "signal"); err != nil {
+		t.Fatalf("insert keep capture: %v", err)
+	}
+	if _, err := database.InsertCapture("Hide this", "user:archive"); err != nil {
+		t.Fatalf("insert archived capture: %v", err)
+	}
+
+	result, err := handleGetInbox(context.Background(), database, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "Inbox (1 items)") {
+		t.Fatalf("expected archived item filtered out, got %q", result)
+	}
+	if !strings.Contains(result, "Keep this") {
+		t.Fatalf("expected visible capture, got %q", result)
+	}
+	if strings.Contains(result, "Hide this") {
+		t.Fatalf("expected archived capture excluded, got %q", result)
+	}
+}
+
 func TestUpdateDeskItemInvalidStatus(t *testing.T) {
 	database := openTestDB(t)
 	params, _ := json.Marshal(map[string]string{"id": "x", "status": "bogus"})
@@ -346,6 +371,50 @@ func TestSaveToInboxNilBrain(t *testing.T) {
 	}
 	if !strings.Contains(result, "type=Idea") {
 		t.Fatalf("expected type=Idea in result, got %q", result)
+	}
+
+	captures, err := database.ListRecent(10)
+	if err != nil {
+		t.Fatalf("list captures: %v", err)
+	}
+	if len(captures) != 1 {
+		t.Fatalf("expected 1 capture, got %d", len(captures))
+	}
+	if captures[0].Processed != 1 {
+		t.Fatalf("expected processed=1, got %d", captures[0].Processed)
+	}
+	if !captures[0].MemoryID.Valid {
+		t.Fatalf("expected linked memory_id, got %+v", captures[0].MemoryID)
+	}
+
+	mem, err := database.GetMemory(captures[0].MemoryID.String)
+	if err != nil {
+		t.Fatalf("get linked memory: %v", err)
+	}
+	if mem == nil {
+		t.Fatal("expected linked memory")
+	}
+	if mem.Type != "Idea" {
+		t.Fatalf("expected memory type Idea, got %q", mem.Type)
+	}
+}
+
+func TestSaveToInboxFailsFastOnDBError(t *testing.T) {
+	database := openTestDB(t)
+	if err := database.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	params, _ := json.Marshal(map[string]interface{}{
+		"title":   "Should fail",
+		"content": "Database is closed",
+	})
+	_, err := handleSaveToInbox(context.Background(), database, nil, params)
+	if err == nil {
+		t.Fatal("expected save_to_inbox to fail on closed db")
+	}
+	if !strings.Contains(err.Error(), "persist failed") {
+		t.Fatalf("expected persist failed error, got %v", err)
 	}
 }
 
@@ -465,6 +534,40 @@ func TestSearchMemoriesFTSPath(t *testing.T) {
 	}
 	if !strings.Contains(result, "Deploy app") || !strings.Contains(result, "Server port") {
 		t.Fatalf("expected both memories in FTS results, got %q", result)
+	}
+}
+
+func TestSearchMemoriesMarksAccessMetadata(t *testing.T) {
+	database := openTestDB(t)
+
+	if err := database.InsertMemory(db.Memory{
+		ID:         "mem-access-search",
+		Type:       "Fact",
+		Content:    "Golang vectors and hybrid retrieval",
+		Title:      "Hybrid retrieval note",
+		Importance: 0.8,
+		Source:     "test",
+	}); err != nil {
+		t.Fatalf("insert memory: %v", err)
+	}
+
+	params, _ := json.Marshal(map[string]string{"query": "hybrid retrieval"})
+	if _, err := handleSearchMemories(context.Background(), database, nil, params); err != nil {
+		t.Fatalf("search memories: %v", err)
+	}
+
+	mem, err := database.GetMemory("mem-access-search")
+	if err != nil {
+		t.Fatalf("get memory: %v", err)
+	}
+	if mem == nil {
+		t.Fatal("expected memory")
+	}
+	if mem.AccessCount != 1 {
+		t.Fatalf("expected access_count=1, got %d", mem.AccessCount)
+	}
+	if strings.TrimSpace(mem.AccessedAt) == "" {
+		t.Fatalf("expected accessed_at to be set, got %q", mem.AccessedAt)
 	}
 }
 

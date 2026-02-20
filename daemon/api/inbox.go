@@ -210,6 +210,7 @@ var memoryTypeMap = map[string]string{
 	"goal":        "Goal",
 	"decision":    "Decision",
 	"todo":        "Todo",
+	"idea":        "Idea",
 	"preference":  "Preference",
 	"fact":        "Fact",
 	"event":       "Event",
