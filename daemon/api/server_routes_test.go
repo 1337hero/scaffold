@@ -32,19 +32,24 @@ func TestAPIPrefixRoutesRemainAvailable(t *testing.T) {
 	srv, _ := newTestServer(t)
 
 	cases := []struct {
-		method string
-		path   string
+		method       string
+		path         string
+		body         string
+		expectedCode int
 	}{
-		{method: http.MethodGet, path: "/api/inbox"},
-		{method: http.MethodGet, path: "/api/memories"},
+		{method: http.MethodGet, path: "/api/inbox", expectedCode: http.StatusOK},
+		{method: http.MethodGet, path: "/api/memories", expectedCode: http.StatusOK},
+		{method: http.MethodPost, path: "/api/inbox/missing/confirm", expectedCode: http.StatusNotFound},
+		{method: http.MethodPost, path: "/api/inbox/missing/archive", expectedCode: http.StatusNotFound},
+		{method: http.MethodPost, path: "/api/inbox/missing/override", body: `{}`, expectedCode: http.StatusBadRequest},
 	}
 
 	for _, tc := range cases {
 		rec := httptest.NewRecorder()
-		srv.mux.ServeHTTP(rec, authedRequest(tc.method, tc.path, ""))
+		srv.mux.ServeHTTP(rec, authedRequest(tc.method, tc.path, tc.body))
 
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s %s: expected 200, got %d", tc.method, tc.path, rec.Code)
+		if rec.Code != tc.expectedCode {
+			t.Fatalf("%s %s: expected %d, got %d", tc.method, tc.path, tc.expectedCode, rec.Code)
 		}
 	}
 }

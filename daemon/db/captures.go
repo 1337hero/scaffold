@@ -1,6 +1,9 @@
 package db
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+)
 
 type Capture struct {
 	ID           string
@@ -11,6 +14,23 @@ type Capture struct {
 	MemoryID     sql.NullString
 	CreatedAt    string
 	Confirmed    int
+}
+
+func (db *DB) GetCapture(id string) (*Capture, error) {
+	row := db.conn.QueryRow(
+		`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed
+		 FROM captures WHERE id = ?`, id,
+	)
+
+	var c Capture
+	err := row.Scan(&c.ID, &c.Raw, &c.Source, &c.Processed, &c.TriageAction, &c.MemoryID, &c.CreatedAt, &c.Confirmed)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
 }
 
 func (db *DB) InsertCapture(raw, source string) (string, error) {
@@ -82,4 +102,57 @@ func (db *DB) ConfirmCapture(id string) error {
 		return err
 	}
 	return requireRowsAffected(result)
+}
+
+func (db *DB) UpdateCaptureSource(id, source string) error {
+	result, err := db.conn.Exec(`UPDATE captures SET source = ? WHERE id = ?`, source, id)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(result)
+}
+
+// PersistTriageResult atomically inserts the memory and links capture triage fields.
+func (db *DB) PersistTriageResult(captureID string, mem Memory, action string) error {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin triage tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if mem.ID == "" {
+		mem.ID = newID()
+	}
+	ts := now()
+	if mem.CreatedAt == "" {
+		mem.CreatedAt = ts
+	}
+	if mem.UpdatedAt == "" {
+		mem.UpdatedAt = ts
+	}
+
+	if _, err := tx.Exec(
+		`INSERT INTO memories (id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		mem.ID, mem.Type, mem.Content, mem.Title, mem.Importance, mem.Source, mem.Tags,
+		mem.CreatedAt, mem.UpdatedAt, mem.AccessedAt, mem.AccessCount, mem.Archived, mem.SuppressedAt,
+	); err != nil {
+		return fmt.Errorf("insert memory in triage tx: %w", err)
+	}
+
+	result, err := tx.Exec(
+		`UPDATE captures SET processed = 1, triage_action = ?, memory_id = ? WHERE id = ?`,
+		action, mem.ID, captureID,
+	)
+	if err != nil {
+		return fmt.Errorf("update capture in triage tx: %w", err)
+	}
+	if err := requireRowsAffected(result); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit triage tx: %w", err)
+	}
+	return nil
 }

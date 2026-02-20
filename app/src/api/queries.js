@@ -57,15 +57,12 @@ const TRIAGE_GROUPS = [
 const ACTION_UI = {
   do: {
     type: "task",
-    actions: ["Add to desk", "Snooze", "Archive"],
   },
   explore: {
     type: "idea",
-    actions: ["Open notebook", "Extract tasks", "Archive"],
   },
   reference: {
     type: "note",
-    actions: ["Open notebook", "Archive"],
   },
 };
 
@@ -135,11 +132,13 @@ function adaptCapture(capture, action) {
   const ui = ACTION_UI[action] ?? ACTION_UI.do;
   return {
     id: capture.ID,
+    triageAction: action,
+    confirmed: capture.Confirmed === 1,
     type: inferCaptureType(raw, capture.Source ?? "", action),
     title,
     summary,
     time: formatCaptureTime(capture.CreatedAt),
-    actions: ui.actions,
+    cardType: ui.type,
   };
 }
 
@@ -166,6 +165,34 @@ export const inboxQuery = {
     return adaptInboxCaptures(captures);
   },
 };
+
+async function postJSON(path, body) {
+  return apiFetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function confirmInboxCapture(captureID) {
+  return apiFetch(`/api/inbox/${encodeURIComponent(captureID)}/confirm`, {
+    method: "POST",
+  });
+}
+
+export async function archiveInboxCapture(captureID) {
+  return apiFetch(`/api/inbox/${encodeURIComponent(captureID)}/archive`, {
+    method: "POST",
+  });
+}
+
+export async function overrideInboxCapture(captureID, payload) {
+  return postJSON(`/api/inbox/${encodeURIComponent(captureID)}/override`, payload);
+}
+
+export async function createCapture(text) {
+  return postJSON("/api/capture", { text });
+}
 
 // NOTEBOOKS — backend not yet implemented
 

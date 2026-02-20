@@ -70,6 +70,9 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	// Authenticated routes
 	s.mux.HandleFunc("POST /api/logout", s.protected(s.handleLogout))
 	s.mux.HandleFunc("GET /api/inbox", s.protected(s.handleInbox))
+	s.mux.HandleFunc("POST /api/inbox/{id}/confirm", s.protected(s.handleInboxConfirm))
+	s.mux.HandleFunc("POST /api/inbox/{id}/override", s.protected(s.handleInboxOverride))
+	s.mux.HandleFunc("POST /api/inbox/{id}/archive", s.protected(s.handleInboxArchive))
 	s.mux.HandleFunc("GET /api/memories", s.protected(s.handleMemories))
 	s.mux.HandleFunc("GET /api/desk", s.protected(s.handleDesk))
 	s.mux.HandleFunc("PATCH /api/desk/{id}", s.protected(s.handleDeskPatch))

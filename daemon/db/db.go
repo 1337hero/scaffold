@@ -19,6 +19,10 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 	conn.SetMaxOpenConns(1)
+	if _, err := conn.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("enable sqlite foreign keys: %w", err)
+	}
 
 	db := &DB{conn: conn}
 	if err := db.migrate(); err != nil {

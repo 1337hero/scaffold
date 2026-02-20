@@ -153,3 +153,34 @@ func TestGenerateBulletinStoresSynthesis(t *testing.T) {
 		t.Fatalf("unexpected bulletin content: %q", content)
 	}
 }
+
+func TestBuildTasksIncludesRuntimeHandlers(t *testing.T) {
+	database := openTestDB(t)
+	c := New(database, nil, "test-key", appconfig.CortexConfig{
+		Bulletin: appconfig.BulletinConfig{
+			IntervalMinutes:    60,
+			MaxWords:           500,
+			MaxStaleMultiplier: 3,
+			Model:              "claude-haiku-4-5",
+		},
+		Tasks: map[string]appconfig.TaskConfig{
+			"prioritize": {
+				IntervalHours:  24,
+				TimeoutSeconds: 120,
+			},
+			"session_cleanup": {
+				IntervalHours:  24,
+				TimeoutSeconds: 15,
+			},
+		},
+	})
+
+	prioritize := c.taskByName("prioritize")
+	if prioritize == nil || prioritize.Fn == nil {
+		t.Fatal("expected prioritize task handler")
+	}
+	cleanup := c.taskByName("session_cleanup")
+	if cleanup == nil || cleanup.Fn == nil {
+		t.Fatal("expected session_cleanup task handler")
+	}
+}

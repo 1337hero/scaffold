@@ -19,18 +19,9 @@ import (
 	"scaffold/brain"
 	appconfig "scaffold/config"
 	"scaffold/cortex"
-	"scaffold/cron"
 	"scaffold/db"
 	signalcli "scaffold/signal"
 )
-
-func parseInt(s string) int {
-	n, err := strconv.Atoi(s)
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
-}
 
 const maxInFlightMessages = 4
 const conversationHistoryLimit = 12
@@ -89,7 +80,7 @@ func main() {
 		Tools:            toolDefs,
 	})
 
-	cortexRuntime := cortex.New(database, cfg.anthropicKey, appCfg.Cortex)
+	cortexRuntime := cortex.New(database, b, cfg.anthropicKey, appCfg.Cortex)
 	b.SetBulletinProvider(cortexRuntime.CurrentBulletin)
 
 	client := signalcli.NewClient(cfg.signalURL, cfg.agentNumber)
@@ -116,7 +107,6 @@ func main() {
 	defer cancel()
 
 	cortexRuntime.Start(ctx)
-	cron.Start(ctx, database, b)
 
 	if err := waitForSignal(client); err != nil {
 		log.Fatalf("signal-cli not ready: %v", err)
@@ -227,23 +217,53 @@ type config struct {
 }
 
 func loadConfig() config {
+	sanitizeEnvValue := func(v string) string {
+		v = strings.TrimSpace(v)
+		if i := strings.Index(v, " #"); i >= 0 {
+			v = strings.TrimSpace(v[:i])
+		}
+		return v
+	}
 	required := func(key string) string {
-		v := os.Getenv(key)
+		v := sanitizeEnvValue(os.Getenv(key))
 		if v == "" {
 			log.Fatalf("%s is required", key)
 		}
 		return v
 	}
 	withDefault := func(key, def string) string {
-		if v := os.Getenv(key); v != "" {
+		if v := sanitizeEnvValue(os.Getenv(key)); v != "" {
 			return v
 		}
 		return def
 	}
+	parsePositiveInt := func(key, raw string, min int) int {
+		n, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || n < min {
+			log.Fatalf("%s must be an integer >= %d, got %q", key, min, raw)
+		}
+		return n
+	}
+	parseBool := func(key, raw string) bool {
+		switch strings.ToLower(strings.TrimSpace(raw)) {
+		case "true", "1", "yes", "on":
+			return true
+		case "false", "0", "no", "off":
+			return false
+		default:
+			log.Fatalf("%s must be a boolean (true/false), got %q", key, raw)
+			return false
+		}
+	}
+
 	apiPort := required("API_PORT")
 	if p, err := strconv.Atoi(apiPort); err != nil || p < 1 || p > 65535 {
 		log.Fatalf("API_PORT must be a valid port number, got %q", apiPort)
 	}
+	sessionTTLHours := parsePositiveInt("SESSION_TTL_HOURS", withDefault("SESSION_TTL_HOURS", "168"), 1)
+	loginRateLimitWindowSecs := parsePositiveInt("LOGIN_RATE_LIMIT_WINDOW_SECS", withDefault("LOGIN_RATE_LIMIT_WINDOW_SECS", "300"), 1)
+	loginRateLimitMax := parsePositiveInt("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", withDefault("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", "5"), 1)
+	cookieSecure := parseBool("COOKIE_SECURE", withDefault("COOKIE_SECURE", "true"))
 
 	return config{
 		configDir:                withDefault("CONFIG_DIR", "./config"),
@@ -259,11 +279,11 @@ func loadConfig() config {
 		apiToken:                 required("API_TOKEN"),
 		appUsername:              required("APP_USERNAME"),
 		appPasswordHash:          required("APP_PASSWORD_HASH"),
-		sessionTTLHours:          parseInt(withDefault("SESSION_TTL_HOURS", "168")),
-		cookieSecure:             withDefault("COOKIE_SECURE", "true") == "true",
+		sessionTTLHours:          sessionTTLHours,
+		cookieSecure:             cookieSecure,
 		cookieDomain:             withDefault("COOKIE_DOMAIN", ""),
-		loginRateLimitWindowSecs: parseInt(withDefault("LOGIN_RATE_LIMIT_WINDOW_SECS", "300")),
-		loginRateLimitMax:        parseInt(withDefault("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", "5")),
+		loginRateLimitWindowSecs: loginRateLimitWindowSecs,
+		loginRateLimitMax:        loginRateLimitMax,
 	}
 }
 

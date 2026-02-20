@@ -79,6 +79,9 @@ func Load(configDir string, userName string) (*Config, error) {
 
 	applyDefaults(cfg)
 	substituteVars(cfg, userName)
+	if err := validate(cfg); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
@@ -119,6 +122,21 @@ func applyDefaults(cfg *Config) {
 	if cfg.Cortex.Bulletin.Model == "" {
 		cfg.Cortex.Bulletin.Model = "claude-haiku-4-5"
 	}
+	if cfg.Cortex.Tasks == nil {
+		cfg.Cortex.Tasks = make(map[string]TaskConfig)
+	}
+	if _, ok := cfg.Cortex.Tasks["prioritize"]; !ok {
+		cfg.Cortex.Tasks["prioritize"] = TaskConfig{
+			IntervalHours:  24,
+			TimeoutSeconds: 120,
+		}
+	}
+	if _, ok := cfg.Cortex.Tasks["session_cleanup"]; !ok {
+		cfg.Cortex.Tasks["session_cleanup"] = TaskConfig{
+			IntervalHours:  24,
+			TimeoutSeconds: 15,
+		}
+	}
 }
 
 func substituteVars(cfg *Config, userName string) {
@@ -128,4 +146,72 @@ func substituteVars(cfg *Config, userName string) {
 	)
 	cfg.Agent.Personality = r.Replace(cfg.Agent.Personality)
 	cfg.Triage.Prompt = r.Replace(cfg.Triage.Prompt)
+}
+
+func validate(cfg *Config) error {
+	if strings.TrimSpace(cfg.Agent.Name) == "" {
+		return fmt.Errorf("agent.name must not be empty")
+	}
+	if cfg.Agent.MaxResponseTokens <= 0 {
+		return fmt.Errorf("agent.max_response_tokens must be > 0")
+	}
+	if strings.TrimSpace(cfg.Agent.Model) == "" {
+		return fmt.Errorf("agent.model must not be empty")
+	}
+	if strings.TrimSpace(cfg.Triage.Prompt) == "" {
+		return fmt.Errorf("triage.prompt must not be empty")
+	}
+	if strings.TrimSpace(cfg.Triage.Model) == "" {
+		return fmt.Errorf("triage.model must not be empty")
+	}
+	if cfg.Triage.MaxTokens <= 0 {
+		return fmt.Errorf("triage.max_tokens must be > 0")
+	}
+	if cfg.Cortex.Bulletin.IntervalMinutes <= 0 {
+		return fmt.Errorf("cortex.bulletin.interval_minutes must be > 0")
+	}
+	if cfg.Cortex.Bulletin.MaxWords <= 0 {
+		return fmt.Errorf("cortex.bulletin.max_words must be > 0")
+	}
+	if cfg.Cortex.Bulletin.MaxStaleMultiplier <= 0 {
+		return fmt.Errorf("cortex.bulletin.max_stale_multiplier must be > 0")
+	}
+	if strings.TrimSpace(cfg.Cortex.Bulletin.Model) == "" {
+		return fmt.Errorf("cortex.bulletin.model must not be empty")
+	}
+
+	seenTools := make(map[string]struct{}, len(cfg.Tools.Tools))
+	for i, tool := range cfg.Tools.Tools {
+		name := strings.TrimSpace(tool.Name)
+		if name == "" {
+			return fmt.Errorf("tools[%d].name must not be empty", i)
+		}
+		if _, exists := seenTools[name]; exists {
+			return fmt.Errorf("duplicate tool name %q", name)
+		}
+		seenTools[name] = struct{}{}
+	}
+
+	for name, task := range cfg.Cortex.Tasks {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("cortex task name must not be empty")
+		}
+		if task.IntervalHours <= 0 {
+			return fmt.Errorf("cortex task %q interval_hours must be > 0", name)
+		}
+		if task.TimeoutSeconds <= 0 {
+			return fmt.Errorf("cortex task %q timeout_seconds must be > 0", name)
+		}
+		if task.Factor != 0 && (task.Factor <= 0 || task.Factor >= 1) {
+			return fmt.Errorf("cortex task %q factor must be between 0 and 1 (exclusive)", name)
+		}
+		if task.ImportanceFloor != 0 && (task.ImportanceFloor < 0 || task.ImportanceFloor > 1) {
+			return fmt.Errorf("cortex task %q importance_floor must be between 0 and 1", name)
+		}
+		if task.SuppressedDays < 0 {
+			return fmt.Errorf("cortex task %q suppressed_days must be >= 0", name)
+		}
+	}
+
+	return nil
 }

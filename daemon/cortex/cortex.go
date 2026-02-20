@@ -2,6 +2,7 @@ package cortex
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
+	"scaffold/brain"
 	appconfig "scaffold/config"
 	"scaffold/db"
 )
@@ -176,6 +178,7 @@ func (s bulletinSections) Empty() bool {
 
 type Cortex struct {
 	db       *db.DB
+	brain    *brain.Brain
 	llm      llmClient
 	cfg      appconfig.CortexConfig
 	bulletin *BulletinCache
@@ -183,7 +186,7 @@ type Cortex struct {
 	once     sync.Once
 }
 
-func New(database *db.DB, apiKey string, cfg appconfig.CortexConfig) *Cortex {
+func New(database *db.DB, b *brain.Brain, apiKey string, cfg appconfig.CortexConfig) *Cortex {
 	if cfg.Bulletin.IntervalMinutes <= 0 {
 		cfg.Bulletin.IntervalMinutes = 60
 	}
@@ -204,6 +207,7 @@ func New(database *db.DB, apiKey string, cfg appconfig.CortexConfig) *Cortex {
 
 	c := &Cortex{
 		db:       database,
+		brain:    b,
 		llm:      newAnthropicLLMClient(apiKey),
 		cfg:      cfg,
 		bulletin: newBulletinCache(maxStale),
@@ -306,16 +310,32 @@ func (c *Cortex) buildTasks() []*CortexTask {
 
 		for _, name := range names {
 			taskCfg := c.cfg.Tasks[name]
+			taskFn := c.taskFnForName(name)
+			if taskFn == nil {
+				log.Printf("cortex: no handler for task %q; skipping", name)
+				continue
+			}
 			tasks = append(tasks, &CortexTask{
 				Name:     name,
 				Interval: time.Duration(taskCfg.IntervalHours) * time.Hour,
 				Timeout:  time.Duration(taskCfg.TimeoutSeconds) * time.Second,
-				Fn:       nil,
+				Fn:       taskFn,
 			})
 		}
 	}
 
 	return tasks
+}
+
+func (c *Cortex) taskFnForName(name string) func(context.Context) error {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "prioritize":
+		return c.runPrioritization
+	case "session_cleanup":
+		return c.runSessionCleanup
+	default:
+		return nil
+	}
 }
 
 func (c *Cortex) taskByName(name string) *CortexTask {
@@ -402,6 +422,71 @@ func (c *Cortex) listType(memoryType string) ([]memorySnippet, error) {
 		return nil, err
 	}
 	return toSnippets(memories), nil
+}
+
+func (c *Cortex) runSessionCleanup(ctx context.Context) error {
+	if c.db == nil {
+		return fmt.Errorf("database is nil")
+	}
+	if err := c.db.CleanExpiredSessions(); err != nil {
+		return fmt.Errorf("clean expired sessions: %w", err)
+	}
+	return nil
+}
+
+func (c *Cortex) runPrioritization(ctx context.Context) error {
+	if c.db == nil {
+		return fmt.Errorf("database is nil")
+	}
+	if c.brain == nil {
+		return fmt.Errorf("brain is nil")
+	}
+
+	todos, err := c.db.ListTodosByImportance(0.5, 20)
+	if err != nil {
+		return fmt.Errorf("list todos: %w", err)
+	}
+
+	yesterdayDesk, err := c.db.YesterdaysDesk()
+	if err != nil {
+		return fmt.Errorf("yesterday's desk: %w", err)
+	}
+
+	tasks, err := c.brain.Prioritize(ctx, todos, yesterdayDesk)
+	if err != nil {
+		return fmt.Errorf("prioritize: %w", err)
+	}
+
+	todayDate := time.Now().Format("2006-01-02")
+	for i, task := range tasks {
+		stepsJSON, err := json.Marshal(task.MicroSteps)
+		if err != nil {
+			return fmt.Errorf("marshal micro_steps for %q: %w", task.Title, err)
+		}
+
+		item := db.DeskItem{
+			Title:    task.Title,
+			Position: i + 1,
+			Status:   "active",
+			MicroSteps: sql.NullString{
+				String: string(stepsJSON),
+				Valid:  true,
+			},
+			Date: todayDate,
+		}
+		if task.SourceMemoryID != "" {
+			item.MemoryID = sql.NullString{
+				String: task.SourceMemoryID,
+				Valid:  true,
+			}
+		}
+
+		if err := c.db.InsertDeskItem(item); err != nil {
+			return fmt.Errorf("insert desk item %q: %w", task.Title, err)
+		}
+	}
+
+	return nil
 }
 
 func toSnippets(memories []db.Memory) []memorySnippet {

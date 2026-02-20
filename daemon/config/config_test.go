@@ -96,6 +96,12 @@ func TestCortexConfig(t *testing.T) {
 	if _, ok := cfg.Cortex.Tasks["reindex"]; !ok {
 		t.Error("missing cortex task: reindex")
 	}
+	if _, ok := cfg.Cortex.Tasks["prioritize"]; !ok {
+		t.Error("missing cortex task: prioritize")
+	}
+	if _, ok := cfg.Cortex.Tasks["session_cleanup"]; !ok {
+		t.Error("missing cortex task: session_cleanup")
+	}
 
 	decay := cfg.Cortex.Tasks["decay"]
 	if decay.Factor != 0.95 {
@@ -133,10 +139,18 @@ func TestTemplateSubstitution(t *testing.T) {
 func TestDefaults(t *testing.T) {
 	dir := t.TempDir()
 
-	os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: Test\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "tools.yaml"), []byte("tools: []\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "triage.yaml"), []byte("prompt: test\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte("bulletin:\n  interval_minutes: 0\n"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: Test\n"), 0o644); err != nil {
+		t.Fatalf("write agent.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tools.yaml"), []byte("tools: []\n"), 0o644); err != nil {
+		t.Fatalf("write tools.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "triage.yaml"), []byte("prompt: test\n"), 0o644); err != nil {
+		t.Fatalf("write triage.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte("bulletin:\n  interval_minutes: 0\n"), 0o644); err != nil {
+		t.Fatalf("write cortex.yaml: %v", err)
+	}
 
 	cfg, err := Load(dir, "User")
 	if err != nil {
@@ -154,5 +168,71 @@ func TestDefaults(t *testing.T) {
 	}
 	if cfg.Cortex.Bulletin.MaxWords != 500 {
 		t.Errorf("expected default bulletin max_words 500, got %d", cfg.Cortex.Bulletin.MaxWords)
+	}
+	if _, ok := cfg.Cortex.Tasks["prioritize"]; !ok {
+		t.Error("expected default prioritize task")
+	}
+	if _, ok := cfg.Cortex.Tasks["session_cleanup"]; !ok {
+		t.Error("expected default session_cleanup task")
+	}
+}
+
+func TestLoadFailsOnInvalidTaskInterval(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: Test\n"), 0o644); err != nil {
+		t.Fatalf("write agent.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tools.yaml"), []byte("tools: []\n"), 0o644); err != nil {
+		t.Fatalf("write tools.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "triage.yaml"), []byte("prompt: test\n"), 0o644); err != nil {
+		t.Fatalf("write triage.yaml: %v", err)
+	}
+
+	cortexYAML := `
+bulletin:
+  interval_minutes: 60
+tasks:
+  prioritize:
+    interval_hours: 0
+    timeout_seconds: 30
+`
+	if err := os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte(cortexYAML), 0o644); err != nil {
+		t.Fatalf("write cortex.yaml: %v", err)
+	}
+
+	if _, err := Load(dir, "User"); err == nil {
+		t.Fatal("expected invalid cortex task interval to fail")
+	}
+}
+
+func TestLoadFailsOnDuplicateToolName(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: Test\n"), 0o644); err != nil {
+		t.Fatalf("write agent.yaml: %v", err)
+	}
+	toolsYAML := `
+tools:
+  - name: search
+    description: one
+    input_schema: {}
+  - name: search
+    description: two
+    input_schema: {}
+`
+	if err := os.WriteFile(filepath.Join(dir, "tools.yaml"), []byte(toolsYAML), 0o644); err != nil {
+		t.Fatalf("write tools.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "triage.yaml"), []byte("prompt: test\n"), 0o644); err != nil {
+		t.Fatalf("write triage.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte("bulletin:\n  interval_minutes: 60\n"), 0o644); err != nil {
+		t.Fatalf("write cortex.yaml: %v", err)
+	}
+
+	if _, err := Load(dir, "User"); err == nil {
+		t.Fatal("expected duplicate tool names to fail")
 	}
 }

@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 // Ingest runs the full capture→triage→memory pipeline.
 // Returns the capture ID, memory ID (empty if triage failed), and triage result (may be nil on triage failure).
 // A triage failure is non-fatal: capture is still stored and the ID returned.
+// Memory insert + capture triage link is atomic when triage succeeds.
 func Ingest(ctx context.Context, database *db.DB, b *brain.Brain, text, source string) (captureID, memoryID string, triage *brain.TriageResult, err error) {
 	captureID, err = database.InsertCapture(text, source)
 	if err != nil {
@@ -41,12 +43,8 @@ func Ingest(ctx context.Context, database *db.DB, b *brain.Brain, text, source s
 			Source:     source,
 			Tags:       strings.Join(triage.Tags, ","),
 		}
-		if err := database.InsertMemory(mem); err != nil {
-			log.Printf("memory insert error: %v", err)
-		}
-
-		if err := database.UpdateTriage(captureID, triage.Action, memoryID); err != nil {
-			log.Printf("triage update error: %v", err)
+		if err := database.PersistTriageResult(captureID, mem, triage.Action); err != nil {
+			return captureID, "", triage, fmt.Errorf("persist triage result: %w", err)
 		}
 	}
 

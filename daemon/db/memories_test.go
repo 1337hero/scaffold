@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 )
@@ -240,6 +241,78 @@ func TestConfirmCapture(t *testing.T) {
 	}
 	if caps[0].Confirmed != 1 {
 		t.Fatalf("expected confirmed 1, got %d", caps[0].Confirmed)
+	}
+}
+
+func TestPersistTriageResult(t *testing.T) {
+	database := newTestDB(t)
+	captureID, err := database.InsertCapture("test raw", "test-source")
+	if err != nil {
+		t.Fatalf("insert capture: %v", err)
+	}
+
+	mem := Memory{
+		ID:         "mem-persist",
+		Type:       "Todo",
+		Content:    "atomic content",
+		Title:      "Atomic title",
+		Importance: 0.8,
+		Source:     "signal",
+		Tags:       "atomic",
+	}
+	if err := database.PersistTriageResult(captureID, mem, "do"); err != nil {
+		t.Fatalf("persist triage result: %v", err)
+	}
+
+	capture, err := database.GetCapture(captureID)
+	if err != nil {
+		t.Fatalf("get capture: %v", err)
+	}
+	if capture == nil {
+		t.Fatal("expected capture")
+	}
+	if capture.Processed != 1 {
+		t.Fatalf("expected processed=1, got %d", capture.Processed)
+	}
+	if !capture.MemoryID.Valid || capture.MemoryID.String != "mem-persist" {
+		t.Fatalf("expected memory_id mem-persist, got %+v", capture.MemoryID)
+	}
+	if !capture.TriageAction.Valid || capture.TriageAction.String != "do" {
+		t.Fatalf("expected triage action do, got %+v", capture.TriageAction)
+	}
+
+	stored, err := database.GetMemory("mem-persist")
+	if err != nil {
+		t.Fatalf("get memory: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected stored memory")
+	}
+}
+
+func TestPersistTriageResultRollsBackWhenCaptureMissing(t *testing.T) {
+	database := newTestDB(t)
+
+	mem := Memory{
+		ID:         "mem-rollback",
+		Type:       "Todo",
+		Content:    "atomic content",
+		Title:      "Atomic title",
+		Importance: 0.8,
+		Source:     "signal",
+		Tags:       "atomic",
+	}
+	err := database.PersistTriageResult("missing-capture", mem, "do")
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected sql.ErrNoRows, got %v", err)
+	}
+
+	stored, err := database.GetMemory("mem-rollback")
+	if err != nil {
+		t.Fatalf("get memory after rollback: %v", err)
+	}
+	if stored != nil {
+		t.Fatal("expected memory insert rollback")
 	}
 }
 

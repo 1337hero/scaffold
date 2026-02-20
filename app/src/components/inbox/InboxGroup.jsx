@@ -1,7 +1,7 @@
 import { InboxCard } from './InboxCard.jsx'
 import { colorClass } from '../../data/mock.js'
 
-export function InboxGroup({ group }) {
+export function InboxGroup({ group, onConfirm, onOverride, onArchive, actionPending }) {
   return (
     <div class="mb-6">
       <div class="flex items-center gap-2.5 mb-2.5 cursor-default">
@@ -11,7 +11,14 @@ export function InboxGroup({ group }) {
       </div>
 
       {group.items.map((item) => (
-        <InboxCard key={item.id} item={item} />
+        <InboxCard
+          key={item.id}
+          item={item}
+          onConfirm={onConfirm}
+          onOverride={onOverride}
+          onArchive={onArchive}
+          actionPending={actionPending}
+        />
       ))}
     </div>
   )

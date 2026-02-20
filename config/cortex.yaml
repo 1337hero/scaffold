@@ -7,6 +7,12 @@ bulletin:
   model: claude-haiku-4-5
 
 tasks:
+  prioritize:
+    interval_hours: 24
+    timeout_seconds: 120
+  session_cleanup:
+    interval_hours: 24
+    timeout_seconds: 15
   consolidation:
     interval_hours: 6
     timeout_seconds: 60
