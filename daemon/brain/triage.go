@@ -8,7 +8,11 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+
+	"scaffold/db"
 )
+
+const maxToolRounds = 5
 
 type Config struct {
 	AssistantName    string
@@ -19,10 +23,16 @@ type Config struct {
 	TriageModel      string
 	RespondMaxTokens int
 	TriageMaxTokens  int
+	Tools            []ToolDefinition
 }
 
 type Brain struct {
 	client           anthropic.Client
+	responder        ToolUseResponder
+	db               *db.DB
+	tools            []ToolDefinition
+	toolRegistry     map[string]ToolHandler
+	bulletinProvider func() (string, bool)
 	systemPrompt     string
 	triagePrompt     string
 	respondModel     anthropic.Model
@@ -31,7 +41,7 @@ type Brain struct {
 	triageMaxTokens  int
 }
 
-func New(apiKey string, cfg Config) *Brain {
+func New(apiKey string, database *db.DB, cfg Config) *Brain {
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 	systemPrompt := strings.TrimSpace(cfg.SystemPrompt)
 	if systemPrompt == "" {
@@ -53,15 +63,27 @@ func New(apiKey string, cfg Config) *Brain {
 
 	respondMaxTokens := cfg.RespondMaxTokens
 	if respondMaxTokens <= 0 {
-		respondMaxTokens = 300
+		respondMaxTokens = 1024
 	}
 	triageMaxTokens := cfg.TriageMaxTokens
 	if triageMaxTokens <= 0 {
 		triageMaxTokens = 300
 	}
 
+	tools := make([]ToolDefinition, 0, len(cfg.Tools))
+	for _, tool := range cfg.Tools {
+		if strings.TrimSpace(tool.Name) == "" {
+			continue
+		}
+		tools = append(tools, tool)
+	}
+
 	return &Brain{
 		client:           client,
+		responder:        newAnthropicResponder(client),
+		db:               database,
+		tools:            tools,
+		toolRegistry:     defaultToolRegistry(),
 		systemPrompt:     systemPrompt,
 		triagePrompt:     triagePrompt,
 		respondModel:     respondModel,
@@ -195,37 +217,152 @@ func fallbackTriage(raw string) *TriageResult {
 }
 
 func (b *Brain) Respond(ctx context.Context, message string, history []ConversationTurn) (string, error) {
-	messages := make([]anthropic.MessageParam, 0, len(history))
+	messages := make([]RespondMessage, 0, len(history)+2)
 	for _, turn := range history {
 		text := strings.TrimSpace(turn.Content)
 		if text == "" {
 			continue
 		}
-		if turn.Role == "assistant" {
-			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(text)))
-			continue
+
+		role := "user"
+		if strings.EqualFold(strings.TrimSpace(turn.Role), "assistant") {
+			role = "assistant"
 		}
-		messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(text)))
+		messages = append(messages, RespondMessage{Role: role, Text: text})
+	}
+
+	if shouldAppendCurrentUserMessage(messages, message) {
+		messages = append(messages, RespondMessage{Role: "user", Text: strings.TrimSpace(message)})
 	}
 	if len(messages) == 0 {
-		messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(message)))
+		return "", fmt.Errorf("no user message to respond to")
 	}
 
-	resp, err := b.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     b.respondModel,
-		MaxTokens: int64(b.respondMaxTokens),
-		System: []anthropic.TextBlockParam{
-			{Text: b.systemPrompt},
-		},
-		Messages: messages,
-	})
-	if err != nil {
-		return "", fmt.Errorf("claude API: %w", err)
+	request := ToolUseRequest{
+		SystemPrompt: b.renderSystemPrompt(),
+		Model:        string(b.respondModel),
+		MaxTokens:    b.respondMaxTokens,
+		Tools:        b.tools,
 	}
 
-	if len(resp.Content) == 0 {
-		return "", fmt.Errorf("empty response from claude")
+	lastText := ""
+	for round := 0; round < maxToolRounds; round++ {
+		request.Messages = messages
+		resp, err := b.responder.Respond(ctx, request)
+		if err != nil {
+			return "", fmt.Errorf("respond model call: %w", err)
+		}
+
+		if text := strings.TrimSpace(resp.Text); text != "" {
+			lastText = text
+		}
+		if len(resp.ToolCalls) == 0 {
+			if lastText == "" {
+				return "", fmt.Errorf("empty response from model")
+			}
+			return lastText, nil
+		}
+
+		messages = append(messages, RespondMessage{
+			Role:      "assistant",
+			Text:      strings.TrimSpace(resp.Text),
+			ToolCalls: resp.ToolCalls,
+		})
+
+		toolResults := make([]ToolResult, 0, len(resp.ToolCalls))
+		for _, toolCall := range resp.ToolCalls {
+			resultText, err := b.executeTool(ctx, toolCall)
+			if err != nil {
+				toolResults = append(toolResults, ToolResult{
+					ToolUseID: toolCall.ID,
+					Content:   fmt.Sprintf("Tool %s failed: %v", toolCall.Name, err),
+					IsError:   true,
+				})
+				continue
+			}
+			toolResults = append(toolResults, ToolResult{
+				ToolUseID: toolCall.ID,
+				Content:   resultText,
+			})
+		}
+
+		messages = append(messages, RespondMessage{
+			Role:        "user",
+			ToolResults: toolResults,
+		})
 	}
 
-	return resp.Content[0].Text, nil
+	if lastText != "" {
+		if len(lastText) > 160 {
+			lastText = lastText[:160] + "..."
+		}
+		return "", fmt.Errorf("tool loop exceeded %d rounds (last text: %q)", maxToolRounds, lastText)
+	}
+	return "", fmt.Errorf("tool loop exceeded %d rounds", maxToolRounds)
+}
+
+func shouldAppendCurrentUserMessage(messages []RespondMessage, message string) bool {
+	text := strings.TrimSpace(message)
+	if text == "" {
+		return false
+	}
+	if len(messages) == 0 {
+		return true
+	}
+
+	last := messages[len(messages)-1]
+	if !strings.EqualFold(last.Role, "user") {
+		return true
+	}
+	if len(last.ToolResults) > 0 {
+		return true
+	}
+
+	return strings.TrimSpace(last.Text) != text
+}
+
+func (b *Brain) executeTool(ctx context.Context, toolCall ToolCall) (string, error) {
+	if strings.TrimSpace(toolCall.ID) == "" {
+		return "", fmt.Errorf("tool %s missing id", toolCall.Name)
+	}
+	if strings.TrimSpace(toolCall.Name) == "" {
+		return "", fmt.Errorf("tool call missing name")
+	}
+
+	return ExecuteTool(ctx, toolCall.Name, toolCall.Input, b.db, b, b.toolRegistry)
+}
+
+func (b *Brain) SetBulletinProvider(provider func() (string, bool)) {
+	b.bulletinProvider = provider
+}
+
+func (b *Brain) renderSystemPrompt() string {
+	const bulletinToken = "{{cortex_bulletin}}"
+
+	bulletinText := "No bulletin available yet."
+	if b.bulletinProvider != nil {
+		content, fresh := b.bulletinProvider()
+		content = strings.TrimSpace(content)
+		if content != "" {
+			bulletinText = content
+		}
+		if !fresh {
+			bulletinText = bulletinText + "\n\n[Context may be stale.]"
+		}
+	}
+
+	prompt := strings.TrimSpace(b.systemPrompt)
+	if strings.Contains(prompt, bulletinToken) {
+		return strings.ReplaceAll(prompt, bulletinToken, bulletinText)
+	}
+
+	if prompt == "" {
+		return "## Current Context\n" + bulletinText
+	}
+
+	var out strings.Builder
+	out.WriteString(prompt)
+	out.WriteString("\n\n## Current Context\n")
+	out.WriteString(bulletinText)
+	return out.String()
 }

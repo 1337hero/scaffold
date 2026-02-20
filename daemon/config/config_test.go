@@ -35,8 +35,8 @@ func TestAgentConfig(t *testing.T) {
 	if cfg.Agent.Name != "Scaffold" {
 		t.Errorf("expected agent name Scaffold, got %q", cfg.Agent.Name)
 	}
-	if cfg.Agent.MaxResponseTokens != 300 {
-		t.Errorf("expected max_response_tokens 300, got %d", cfg.Agent.MaxResponseTokens)
+	if cfg.Agent.MaxResponseTokens != 1024 {
+		t.Errorf("expected max_response_tokens 1024, got %d", cfg.Agent.MaxResponseTokens)
 	}
 	if cfg.Agent.Model != "claude-haiku-4-5" {
 		t.Errorf("expected model claude-haiku-4-5, got %q", cfg.Agent.Model)
@@ -143,8 +143,8 @@ func TestDefaults(t *testing.T) {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if cfg.Agent.MaxResponseTokens != 300 {
-		t.Errorf("expected default max_response_tokens 300, got %d", cfg.Agent.MaxResponseTokens)
+	if cfg.Agent.MaxResponseTokens != 1024 {
+		t.Errorf("expected default max_response_tokens 1024, got %d", cfg.Agent.MaxResponseTokens)
 	}
 	if cfg.Agent.Model != "claude-haiku-4-5" {
 		t.Errorf("expected default model claude-haiku-4-5, got %q", cfg.Agent.Model)

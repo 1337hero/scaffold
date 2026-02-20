@@ -68,6 +68,14 @@ func (db *DB) ListTodosByImportance(minImportance float64, limit int) ([]Memory,
 	)
 }
 
+func (db *DB) ListRecentMemories(limit int) ([]Memory, error) {
+	return db.queryMemories(
+		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at
+		 FROM memories WHERE suppressed_at IS NULL ORDER BY created_at DESC LIMIT ?`,
+		limit,
+	)
+}
+
 func (db *DB) queryMemories(query string, args ...any) ([]Memory, error) {
 	rows, err := db.conn.Query(query, args...)
 	if err != nil {

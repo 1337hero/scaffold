@@ -18,6 +18,7 @@ import (
 	"scaffold/api"
 	"scaffold/brain"
 	appconfig "scaffold/config"
+	"scaffold/cortex"
 	"scaffold/cron"
 	"scaffold/db"
 	signalcli "scaffold/signal"
@@ -67,7 +68,16 @@ func main() {
 		assistantName = appCfg.Agent.Name
 	}
 
-	b := brain.New(cfg.anthropicKey, brain.Config{
+	toolDefs := make([]brain.ToolDefinition, 0, len(appCfg.Tools.Tools))
+	for _, tool := range appCfg.Tools.Tools {
+		toolDefs = append(toolDefs, brain.ToolDefinition{
+			Name:        tool.Name,
+			Description: tool.Description,
+			InputSchema: tool.InputSchema,
+		})
+	}
+
+	b := brain.New(cfg.anthropicKey, database, brain.Config{
 		AssistantName:    assistantName,
 		UserName:         cfg.userName,
 		SystemPrompt:     buildAgentSystemPrompt(appCfg),
@@ -76,7 +86,12 @@ func main() {
 		TriageModel:      appCfg.Triage.Model,
 		RespondMaxTokens: appCfg.Agent.MaxResponseTokens,
 		TriageMaxTokens:  appCfg.Triage.MaxTokens,
+		Tools:            toolDefs,
 	})
+
+	cortexRuntime := cortex.New(database, cfg.anthropicKey, appCfg.Cortex)
+	b.SetBulletinProvider(cortexRuntime.CurrentBulletin)
+
 	client := signalcli.NewClient(cfg.signalURL, cfg.agentNumber)
 
 	srv := api.New(database, b, cfg.apiToken, api.AuthConfig{
@@ -100,6 +115,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	cortexRuntime.Start(ctx)
 	cron.Start(ctx, database, b)
 
 	if err := waitForSignal(client); err != nil {
@@ -339,19 +355,23 @@ func buildAgentSystemPrompt(cfg *appconfig.Config) string {
 			rules = append(rules, rule)
 		}
 	}
-	if len(rules) == 0 {
-		return base
-	}
-
 	var b strings.Builder
 	if base != "" {
 		b.WriteString(base)
-		b.WriteString("\n\n")
 	}
-	b.WriteString("Rules:")
-	for _, rule := range rules {
-		b.WriteString("\n- ")
-		b.WriteString(rule)
+	if len(rules) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString("Rules:")
+		for _, rule := range rules {
+			b.WriteString("\n- ")
+			b.WriteString(rule)
+		}
 	}
+
+	b.WriteString("\n\n## Current Context")
+	b.WriteString("\n{{cortex_bulletin}}")
+
 	return b.String()
 }

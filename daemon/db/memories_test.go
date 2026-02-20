@@ -1,6 +1,10 @@
 package db
 
-import "testing"
+import (
+	"database/sql"
+	"testing"
+	"time"
+)
 
 func insertTestMemory(t *testing.T, database *DB, id string) {
 	t.Helper()
@@ -236,5 +240,70 @@ func TestConfirmCapture(t *testing.T) {
 	}
 	if caps[0].Confirmed != 1 {
 		t.Fatalf("expected confirmed 1, got %d", caps[0].Confirmed)
+	}
+}
+
+func TestListRecentMemoriesFiltersSuppressedAndOrdersNewestFirst(t *testing.T) {
+	database := newTestDB(t)
+
+	err := database.InsertMemory(Memory{
+		ID:         "mem-old",
+		Type:       "Fact",
+		Content:    "older",
+		Title:      "Older",
+		Importance: 0.5,
+		Source:     "test",
+		CreatedAt:  "2026-02-18T10:00:00Z",
+		UpdatedAt:  "2026-02-18T10:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("insert old memory: %v", err)
+	}
+
+	err = database.InsertMemory(Memory{
+		ID:         "mem-new",
+		Type:       "Fact",
+		Content:    "newer",
+		Title:      "Newer",
+		Importance: 0.6,
+		Source:     "test",
+		CreatedAt:  "2026-02-19T10:00:00Z",
+		UpdatedAt:  "2026-02-19T10:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("insert new memory: %v", err)
+	}
+
+	err = database.InsertMemory(Memory{
+		ID:         "mem-suppressed",
+		Type:       "Fact",
+		Content:    "hidden",
+		Title:      "Suppressed",
+		Importance: 0.9,
+		Source:     "test",
+		CreatedAt:  "2026-02-20T10:00:00Z",
+		UpdatedAt:  "2026-02-20T10:00:00Z",
+		SuppressedAt: sql.NullString{
+			String: time.Now().Format(time.RFC3339),
+			Valid:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("insert suppressed memory: %v", err)
+	}
+
+	memories, err := database.ListRecentMemories(10)
+	if err != nil {
+		t.Fatalf("list recent memories: %v", err)
+	}
+
+	if len(memories) != 2 {
+		t.Fatalf("expected 2 visible memories, got %d", len(memories))
+	}
+	if memories[0].ID != "mem-new" {
+		t.Fatalf("expected newest memory first, got %s", memories[0].ID)
+	}
+	if memories[1].ID != "mem-old" {
+		t.Fatalf("expected older memory second, got %s", memories[1].ID)
 	}
 }

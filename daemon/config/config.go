@@ -31,7 +31,7 @@ type ToolsConfig struct {
 type ToolDef struct {
 	Name        string                 `yaml:"name"`
 	Description string                 `yaml:"description"`
-	Parameters  map[string]interface{} `yaml:"parameters"`
+	InputSchema map[string]interface{} `yaml:"input_schema"`
 }
 
 type TriageConfig struct {
@@ -96,7 +96,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Agent.Name = "Scaffold"
 	}
 	if cfg.Agent.MaxResponseTokens == 0 {
-		cfg.Agent.MaxResponseTokens = 300
+		cfg.Agent.MaxResponseTokens = 1024
 	}
 	if cfg.Agent.Model == "" {
 		cfg.Agent.Model = "claude-haiku-4-5"

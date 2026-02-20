@@ -1,5 +1,5 @@
 # Agent tool definitions — what tools the agent can call during conversation
-# These map to Go functions in the brain/tools package (Phase 2B)
+# These map to Go functions in brain/tools.go
 
 tools:
   - name: save_to_inbox
@@ -7,32 +7,74 @@ tools:
       Synthesize a capture from the conversation. Use when something worth
       saving emerges — an idea, task, decision, or reference. Don't save
       raw conversation text. Distill.
-    parameters:
-      title: { type: string, required: true }
-      content: { type: string, required: true }
-      type: { type: string, enum: [Todo, Goal, Decision, Idea, Fact, Preference, Event, Observation] }
-      importance: { type: number, min: 0, max: 1 }
-      tags: { type: array, items: string }
+    input_schema:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Short title for the capture
+        content:
+          type: string
+          description: The synthesized content to save
+        type:
+          type: string
+          enum: [Todo, Goal, Decision, Idea, Fact, Preference, Event, Observation]
+        importance:
+          type: number
+          description: Importance score 0.0-1.0
+        tags:
+          type: array
+          items:
+            type: string
+      required: [title, content]
 
   - name: get_desk
     description: Read today's desk items. THE ONE + up to 2 more.
+    input_schema:
+      type: object
+      properties: {}
 
   - name: search_memories
     description: Search the knowledge graph for memories matching a query.
-    parameters:
-      query: { type: string, required: true }
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search query to match against memory content and titles
+        type:
+          type: string
+          description: Optional memory type filter (Todo, Goal, Decision, etc)
+      required: [query]
 
   - name: update_desk_item
     description: Update a desk item — mark done, defer, reprioritize.
-    parameters:
-      id: { type: string, required: true }
-      status: { type: string, enum: [done, deferred, active] }
+    input_schema:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Desk item ID
+        status:
+          type: string
+          enum: [done, deferred, active]
+      required: [id, status]
 
   - name: get_inbox
     description: Read pending inbox items waiting for review.
+    input_schema:
+      type: object
+      properties: {}
 
   - name: add_to_notebook
     description: Append content to a notebook thread.
-    parameters:
-      notebook: { type: string, required: true }
-      content: { type: string, required: true }
+    input_schema:
+      type: object
+      properties:
+        notebook:
+          type: string
+          description: Notebook name
+        content:
+          type: string
+          description: Content to append
+      required: [notebook, content]

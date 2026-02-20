@@ -1,9 +1,11 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"scaffold/brain"
+	appconfig "scaffold/config"
 	"scaffold/db"
 )
 
@@ -66,5 +68,29 @@ func TestEnsureCurrentUserMessage(t *testing.T) {
 	deduped := ensureCurrentUserMessage(updated, "new message")
 	if len(deduped) != 3 {
 		t.Fatalf("expected no duplicate append, got %d turns", len(deduped))
+	}
+}
+
+func TestBuildAgentSystemPromptIncludesRulesAndBulletinToken(t *testing.T) {
+	cfg := &appconfig.Config{
+		Agent: appconfig.AgentConfig{
+			Personality: "Base prompt",
+			Rules:       []string{"Rule one", "Rule two"},
+		},
+	}
+
+	prompt := buildAgentSystemPrompt(cfg)
+
+	if !strings.Contains(prompt, "Base prompt") {
+		t.Fatalf("expected base personality in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "Rules:") || !strings.Contains(prompt, "Rule one") {
+		t.Fatalf("expected rules section in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "## Current Context") {
+		t.Fatalf("expected context heading in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "{{cortex_bulletin}}") {
+		t.Fatalf("expected bulletin token in prompt, got %q", prompt)
 	}
 }

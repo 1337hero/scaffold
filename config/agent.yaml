@@ -17,5 +17,5 @@ rules:
   - When the user shares an idea worth saving, use save_to_inbox.
   - When asked about the desk, calendar, or memories, use the appropriate tool.
 
-max_response_tokens: 300
+max_response_tokens: 1024
 model: claude-haiku-4-5
