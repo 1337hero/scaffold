@@ -3,10 +3,14 @@ package api
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -29,6 +33,7 @@ type Server struct {
 	db              *db.DB
 	brain           *brain.Brain
 	mux             *http.ServeMux
+	frontendDistDir string
 	apiToken        string
 	appUsername     string
 	appPasswordHash string
@@ -81,10 +86,42 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	return s
 }
 
+// EnableFrontendServing configures the daemon to serve built frontend assets
+// from distDir on all non-/api routes, with SPA fallback to index.html.
+func (s *Server) EnableFrontendServing(distDir string) error {
+	distDir = strings.TrimSpace(distDir)
+	if distDir == "" {
+		return fmt.Errorf("frontend dist dir is empty")
+	}
+
+	absDir, err := filepath.Abs(distDir)
+	if err != nil {
+		return fmt.Errorf("resolve frontend dist dir: %w", err)
+	}
+	info, err := os.Stat(absDir)
+	if err != nil {
+		return fmt.Errorf("stat frontend dist dir: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("frontend dist path is not a directory: %s", absDir)
+	}
+	indexPath := filepath.Join(absDir, "index.html")
+	indexInfo, err := os.Stat(indexPath)
+	if err != nil {
+		return fmt.Errorf("frontend index missing (%s): %w", indexPath, err)
+	}
+	if indexInfo.IsDir() {
+		return fmt.Errorf("frontend index is a directory: %s", indexPath)
+	}
+
+	s.frontendDistDir = absDir
+	return nil
+}
+
 func (s *Server) NewHTTPServer(addr string) *http.Server {
 	return &http.Server{
 		Addr:              addr,
-		Handler:           s.mux,
+		Handler:           s.httpHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -96,6 +133,69 @@ func (s *Server) ListenAndServe(addr string) error {
 	log.Printf("API server listening on %s", addr)
 	server := s.NewHTTPServer(addr)
 	return server.ListenAndServe()
+}
+
+func (s *Server) httpHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
+			s.mux.ServeHTTP(w, r)
+			return
+		}
+
+		if s.frontendDistDir != "" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			s.serveFrontend(w, r)
+			return
+		}
+
+		http.NotFound(w, r)
+	})
+}
+
+func (s *Server) serveFrontend(w http.ResponseWriter, r *http.Request) {
+	cleanPath := path.Clean("/" + r.URL.Path)
+	relPath := strings.TrimPrefix(cleanPath, "/")
+	indexPath := filepath.Join(s.frontendDistDir, "index.html")
+
+	if relPath == "" || relPath == "." {
+		http.ServeFile(w, r, indexPath)
+		return
+	}
+
+	assetPath := filepath.Join(s.frontendDistDir, filepath.FromSlash(relPath))
+	if !pathWithinRoot(s.frontendDistDir, assetPath) {
+		http.NotFound(w, r)
+		return
+	}
+
+	if info, err := os.Stat(assetPath); err == nil {
+		if info.IsDir() {
+			dirIndex := filepath.Join(assetPath, "index.html")
+			if idxInfo, err := os.Stat(dirIndex); err == nil && !idxInfo.IsDir() {
+				http.ServeFile(w, r, dirIndex)
+				return
+			}
+		} else {
+			http.ServeFile(w, r, assetPath)
+			return
+		}
+	}
+
+	// Missing extension usually means a client-side route, so return SPA shell.
+	if filepath.Ext(relPath) == "" {
+		http.ServeFile(w, r, indexPath)
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+func pathWithinRoot(root, candidate string) bool {
+	root = filepath.Clean(root)
+	candidate = filepath.Clean(candidate)
+	if candidate == root {
+		return true
+	}
+	return strings.HasPrefix(candidate, root+string(os.PathSeparator))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +257,8 @@ func (s *Server) authorizedByBearer(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1
 }
 
-// originTrusted checks that the request Origin (or Referer) host matches the request Host.
+// originTrusted checks that the request Origin (or Referer) host matches the
+// effective request host/scheme. For proxied requests, prefer forwarded host.
 func (s *Server) originTrusted(r *http.Request) bool {
 	raw := strings.TrimSpace(r.Header.Get("Origin"))
 	if raw == "" {
@@ -177,7 +278,7 @@ func (s *Server) originTrusted(r *http.Request) bool {
 	}
 
 	reqScheme := requestScheme(r)
-	reqHost, reqPort := splitHostPort(r.Host)
+	reqHost, reqPort := requestHost(r)
 	expectedHost := canonicalHostPort(reqHost, reqPort, reqScheme)
 	if reqScheme == "" || expectedHost == "" {
 		return false
@@ -202,6 +303,17 @@ func requestScheme(r *http.Request) string {
 		return "https"
 	}
 	return "http"
+}
+
+func requestHost(r *http.Request) (string, string) {
+	if xfHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); xfHost != "" {
+		// Proxies may append multiple hosts; first value is the original host.
+		first := strings.TrimSpace(strings.Split(xfHost, ",")[0])
+		if first != "" {
+			return splitHostPort(first)
+		}
+	}
+	return splitHostPort(r.Host)
 }
 
 func splitHostPort(host string) (string, string) {

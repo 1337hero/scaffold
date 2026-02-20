@@ -94,6 +94,11 @@ func main() {
 		LoginRateLimitWindow: time.Duration(cfg.loginRateLimitWindowSecs) * time.Second,
 		LoginRateLimitMax:    cfg.loginRateLimitMax,
 	})
+	if err := srv.EnableFrontendServing(cfg.frontendDistDir); err != nil {
+		log.Printf("frontend static serving disabled: %v", err)
+	} else {
+		log.Printf("frontend static serving from %s", cfg.frontendDistDir)
+	}
 	apiAddr := net.JoinHostPort(cfg.apiHost, cfg.apiPort)
 	httpServer := srv.NewHTTPServer(apiAddr)
 	go func() {
@@ -197,6 +202,7 @@ func handleMessage(client *signalcli.Client, b *brain.Brain, database *db.DB, ms
 
 type config struct {
 	configDir                string
+	frontendDistDir          string
 	anthropicKey             string
 	signalURL                string
 	agentNumber              string
@@ -267,6 +273,7 @@ func loadConfig() config {
 
 	return config{
 		configDir:                withDefault("CONFIG_DIR", "./config"),
+		frontendDistDir:          withDefault("FRONTEND_DIST_DIR", "../app/dist"),
 		anthropicKey:             required("ANTHROPIC_API_KEY"),
 		agentNumber:              required("AGENT_NUMBER"),
 		userNumber:               required("USER_NUMBER"),

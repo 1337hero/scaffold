@@ -280,4 +280,18 @@ func TestMutatingCookieAuthOriginCheck(t *testing.T) {
 	if goodRec.Code == http.StatusForbidden {
 		t.Fatalf("expected non-403 for trusted origin, got 403")
 	}
+
+	proxiedReq := httptest.NewRequest(http.MethodPost, "/api/capture", strings.NewReader(`{"text":"hello"}`))
+	proxiedReq.Header.Set("Content-Type", "application/json")
+	proxiedReq.Header.Set("Origin", "http://localhost:4002")
+	proxiedReq.Header.Set("X-Forwarded-Host", "localhost:4002")
+	proxiedReq.Header.Set("X-Forwarded-Proto", "http")
+	proxiedReq.Host = "127.0.0.1:46873"
+	proxiedReq.AddCookie(&http.Cookie{Name: "session", Value: rawToken})
+	proxiedRec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(proxiedRec, proxiedReq)
+
+	if proxiedRec.Code == http.StatusForbidden {
+		t.Fatalf("expected non-403 for trusted proxied origin, got 403")
+	}
 }
