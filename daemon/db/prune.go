@@ -81,6 +81,10 @@ func (db *DB) PruneSuppressedMemories(suppressedDays int) (PruneReport, error) {
 	return report, nil
 }
 
+func (db *DB) CountMemoryReferences(id string) (int, error) {
+	return db.countPruneReferences(id)
+}
+
 func (db *DB) countPruneReferences(memoryID string) (int, error) {
 	var deskRefs int
 	if err := db.conn.QueryRow(`SELECT COUNT(*) FROM desk WHERE memory_id = ?`, memoryID).Scan(&deskRefs); err != nil {

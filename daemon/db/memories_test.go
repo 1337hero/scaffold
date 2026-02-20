@@ -764,3 +764,223 @@ func TestReindexMemoryCentralityCreatesScores(t *testing.T) {
 		t.Fatalf("expected central-b score 1, got %.4f", score)
 	}
 }
+
+func TestEnqueueEmbeddingJobCreatesJob(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "emb-enqueue")
+
+	if err := database.EnqueueEmbeddingJob("emb-enqueue", "insert"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	jobs, err := database.DequeueEmbeddingJobs(10)
+	if err != nil {
+		t.Fatalf("dequeue: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if jobs[0].MemoryID != "emb-enqueue" {
+		t.Fatalf("expected memory_id emb-enqueue, got %s", jobs[0].MemoryID)
+	}
+	if jobs[0].Reason != "insert" {
+		t.Fatalf("expected reason insert, got %s", jobs[0].Reason)
+	}
+	if jobs[0].Attempts != 0 {
+		t.Fatalf("expected 0 attempts, got %d", jobs[0].Attempts)
+	}
+}
+
+func TestEnqueueEmbeddingJobUpserts(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "emb-upsert")
+
+	if err := database.EnqueueEmbeddingJob("emb-upsert", "insert"); err != nil {
+		t.Fatalf("enqueue first: %v", err)
+	}
+	if err := database.EnqueueEmbeddingJob("emb-upsert", "update"); err != nil {
+		t.Fatalf("enqueue second: %v", err)
+	}
+
+	jobs, err := database.DequeueEmbeddingJobs(10)
+	if err != nil {
+		t.Fatalf("dequeue: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job after upsert, got %d", len(jobs))
+	}
+	if jobs[0].Reason != "update" {
+		t.Fatalf("expected reason update after upsert, got %s", jobs[0].Reason)
+	}
+}
+
+func TestDequeueEmbeddingJobsOrdersByAttemptsAndTime(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "emb-order-a")
+	insertTestMemory(t, database, "emb-order-b")
+
+	if err := database.EnqueueEmbeddingJob("emb-order-a", "insert"); err != nil {
+		t.Fatalf("enqueue a: %v", err)
+	}
+	if err := database.EnqueueEmbeddingJob("emb-order-b", "insert"); err != nil {
+		t.Fatalf("enqueue b: %v", err)
+	}
+	if err := database.IncrementEmbeddingJobAttempts("emb-order-a"); err != nil {
+		t.Fatalf("increment a: %v", err)
+	}
+
+	jobs, err := database.DequeueEmbeddingJobs(10)
+	if err != nil {
+		t.Fatalf("dequeue: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("expected 2 jobs, got %d", len(jobs))
+	}
+	if jobs[0].MemoryID != "emb-order-b" {
+		t.Fatalf("expected emb-order-b first (fewer attempts), got %s", jobs[0].MemoryID)
+	}
+	if jobs[1].MemoryID != "emb-order-a" {
+		t.Fatalf("expected emb-order-a second, got %s", jobs[1].MemoryID)
+	}
+}
+
+func TestDequeueEmbeddingJobsSkipsSuppressed(t *testing.T) {
+	database := newTestDB(t)
+	if err := database.InsertMemory(Memory{
+		ID:         "emb-suppressed",
+		Type:       "Fact",
+		Content:    "suppressed",
+		Title:      "Suppressed",
+		Importance: 0.5,
+		Source:     "test",
+		SuppressedAt: sql.NullString{
+			String: time.Now().Format(time.RFC3339),
+			Valid:  true,
+		},
+	}); err != nil {
+		t.Fatalf("insert suppressed: %v", err)
+	}
+	if err := database.EnqueueEmbeddingJob("emb-suppressed", "insert"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	jobs, err := database.DequeueEmbeddingJobs(10)
+	if err != nil {
+		t.Fatalf("dequeue: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("expected 0 jobs for suppressed memory, got %d", len(jobs))
+	}
+}
+
+func TestIncrementEmbeddingJobAttempts(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "emb-inc")
+
+	if err := database.EnqueueEmbeddingJob("emb-inc", "insert"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	if err := database.IncrementEmbeddingJobAttempts("emb-inc"); err != nil {
+		t.Fatalf("increment: %v", err)
+	}
+	if err := database.IncrementEmbeddingJobAttempts("emb-inc"); err != nil {
+		t.Fatalf("increment 2: %v", err)
+	}
+
+	jobs, err := database.DequeueEmbeddingJobs(10)
+	if err != nil {
+		t.Fatalf("dequeue: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if jobs[0].Attempts != 2 {
+		t.Fatalf("expected 2 attempts, got %d", jobs[0].Attempts)
+	}
+}
+
+func TestDeleteEmbeddingJob(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "emb-del")
+
+	if err := database.EnqueueEmbeddingJob("emb-del", "insert"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	if err := database.DeleteEmbeddingJob("emb-del"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	jobs, err := database.DequeueEmbeddingJobs(10)
+	if err != nil {
+		t.Fatalf("dequeue: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("expected 0 jobs after delete, got %d", len(jobs))
+	}
+}
+
+func TestListMemoriesWithoutEmbedding(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "emb-has")
+	insertTestMemory(t, database, "emb-missing")
+
+	if err := database.UpsertEmbedding("emb-has", []float32{0.1, 0.2, 0.3}, "test"); err != nil {
+		t.Fatalf("upsert embedding: %v", err)
+	}
+
+	ids, err := database.ListMemoriesWithoutEmbedding(10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(ids) != 1 {
+		t.Fatalf("expected 1 memory without embedding, got %d", len(ids))
+	}
+	if ids[0] != "emb-missing" {
+		t.Fatalf("expected emb-missing, got %s", ids[0])
+	}
+}
+
+func TestListMemoriesWithoutEmbeddingExcludesSuppressed(t *testing.T) {
+	database := newTestDB(t)
+	if err := database.InsertMemory(Memory{
+		ID:         "emb-supp-no-emb",
+		Type:       "Fact",
+		Content:    "suppressed no emb",
+		Title:      "Suppressed",
+		Importance: 0.5,
+		Source:     "test",
+		SuppressedAt: sql.NullString{
+			String: time.Now().Format(time.RFC3339),
+			Valid:  true,
+		},
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	ids, err := database.ListMemoriesWithoutEmbedding(10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("expected 0 memories (suppressed excluded), got %d", len(ids))
+	}
+}
+
+func TestInsertMemoryEnqueuesEmbeddingJob(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "emb-auto")
+
+	jobs, err := database.DequeueEmbeddingJobs(10)
+	if err != nil {
+		t.Fatalf("dequeue: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 auto-enqueued job, got %d", len(jobs))
+	}
+	if jobs[0].MemoryID != "emb-auto" {
+		t.Fatalf("expected memory_id emb-auto, got %s", jobs[0].MemoryID)
+	}
+	if jobs[0].Reason != "insert" {
+		t.Fatalf("expected reason insert, got %s", jobs[0].Reason)
+	}
+}

@@ -10,10 +10,18 @@ import (
 )
 
 type Config struct {
-	Agent  AgentConfig
-	Tools  ToolsConfig
-	Triage TriageConfig
-	Cortex CortexConfig
+	Agent     AgentConfig
+	Tools     ToolsConfig
+	Triage    TriageConfig
+	Cortex    CortexConfig
+	Embedding EmbeddingConfig
+}
+
+type EmbeddingConfig struct {
+	Provider   string `yaml:"provider"`
+	URL        string `yaml:"url"`
+	Model      string `yaml:"model"`
+	Dimensions int    `yaml:"dimensions"`
 }
 
 type AgentConfig struct {
@@ -76,6 +84,9 @@ func Load(configDir string, userName string) (*Config, error) {
 	if err := loadFile(filepath.Join(configDir, "cortex.yaml"), &cfg.Cortex); err != nil {
 		return nil, fmt.Errorf("load cortex.yaml: %w", err)
 	}
+	if err := loadFile(filepath.Join(configDir, "embedding.yaml"), &cfg.Embedding); err != nil {
+		return nil, fmt.Errorf("load embedding.yaml: %w", err)
+	}
 
 	applyDefaults(cfg)
 	substituteVars(cfg, userName)
@@ -136,6 +147,19 @@ func applyDefaults(cfg *Config) {
 			IntervalHours:  24,
 			TimeoutSeconds: 15,
 		}
+	}
+
+	if cfg.Embedding.Provider == "" {
+		cfg.Embedding.Provider = "ollama"
+	}
+	if cfg.Embedding.URL == "" {
+		cfg.Embedding.URL = "http://127.0.0.1:11434"
+	}
+	if cfg.Embedding.Model == "" {
+		cfg.Embedding.Model = "all-minilm"
+	}
+	if cfg.Embedding.Dimensions == 0 {
+		cfg.Embedding.Dimensions = 384
 	}
 }
 
@@ -212,6 +236,26 @@ func validate(cfg *Config) error {
 			return fmt.Errorf("cortex task %q suppressed_days must be >= 0", name)
 		}
 	}
+
+	provider := strings.ToLower(strings.TrimSpace(cfg.Embedding.Provider))
+	if provider == "" {
+		return fmt.Errorf("embedding.provider must not be empty")
+	}
+	switch provider {
+	case "ollama":
+		if strings.TrimSpace(cfg.Embedding.URL) == "" {
+			return fmt.Errorf("embedding.url must not be empty for provider %q", provider)
+		}
+		if strings.TrimSpace(cfg.Embedding.Model) == "" {
+			return fmt.Errorf("embedding.model must not be empty for provider %q", provider)
+		}
+		if cfg.Embedding.Dimensions <= 0 {
+			return fmt.Errorf("embedding.dimensions must be > 0 for provider %q", provider)
+		}
+	default:
+		return fmt.Errorf("unsupported embedding.provider %q", cfg.Embedding.Provider)
+	}
+	cfg.Embedding.Provider = provider
 
 	return nil
 }

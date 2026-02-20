@@ -18,6 +18,14 @@ type ConsolidationReport struct {
 	EdgesCreated       int
 	MemoriesSuppressed int
 	SkippedReferenced  int
+	PairsEvaluated     int
+	LLMDecisions       int
+}
+
+type ConsolidationCandidate struct {
+	MemoryA    Memory
+	MemoryB    Memory
+	Similarity float64
 }
 
 type ReindexReport struct {
@@ -308,4 +316,68 @@ func normalizeConsolidationText(text string) string {
 		return ""
 	}
 	return strings.Join(strings.Fields(text), " ")
+}
+
+func (db *DB) FindConsolidationCandidates(threshold float64, maxPairs int) ([]ConsolidationCandidate, error) {
+	embeddings, err := db.ListEmbeddings()
+	if err != nil {
+		return nil, fmt.Errorf("list embeddings: %w", err)
+	}
+	if len(embeddings) < 2 {
+		return nil, nil
+	}
+
+	seen := make(map[string]bool)
+	var candidates []ConsolidationCandidate
+
+	for memID, emb := range embeddings {
+		neighbors, err := db.NearestNeighbors(emb, 5, []string{memID})
+		if err != nil {
+			continue
+		}
+		for _, n := range neighbors {
+			if n.VectorScore < threshold {
+				continue
+			}
+
+			a, b := memID, n.ID
+			if a > b {
+				a, b = b, a
+			}
+			key := a + "|" + b
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+
+			memA, err := db.GetMemory(a)
+			if err != nil || memA == nil {
+				continue
+			}
+			memB, err := db.GetMemory(b)
+			if err != nil || memB == nil {
+				continue
+			}
+			if memA.SuppressedAt.Valid || memB.SuppressedAt.Valid {
+				continue
+			}
+			if strings.EqualFold(memA.Type, "Identity") || strings.EqualFold(memB.Type, "Identity") {
+				continue
+			}
+
+			candidates = append(candidates, ConsolidationCandidate{
+				MemoryA:    *memA,
+				MemoryB:    *memB,
+				Similarity: n.VectorScore,
+			})
+			if len(candidates) >= maxPairs {
+				return candidates, nil
+			}
+		}
+	}
+	return candidates, nil
+}
+
+func (db *DB) EnsureUndirectedEdge(idA, idB, relation string, weight float64) (bool, error) {
+	return db.ensureUndirectedEdge(idA, idB, relation, weight)
 }

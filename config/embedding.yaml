@@ -1,0 +1,4 @@
+provider: ollama
+url: http://127.0.0.1:11434
+model: all-minilm
+dimensions: 384

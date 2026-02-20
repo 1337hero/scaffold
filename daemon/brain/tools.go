@@ -154,26 +154,47 @@ func handleSearchMemories(ctx context.Context, database *db.DB, b *Brain, params
 	if p.Query == "" {
 		return "", fmt.Errorf("search_memories: query required")
 	}
+	requestedType := strings.TrimSpace(p.Type)
 
-	var memories []db.Memory
-	var err error
-	if p.Type != "" {
-		memories, err = database.ListByType(p.Type, 20)
-	} else {
-		memories, err = database.ListByImportance(20)
+	const topK = 10
+
+	if b != nil && b.embedder != nil && b.embedder.Available(ctx) {
+		vec, err := b.embedder.Embed(ctx, p.Query)
+		if err == nil {
+			results, err := database.SearchHybrid(p.Query, vec, topK*3)
+			if err == nil && len(results) > 0 {
+				filtered := filterScoredMemoriesByType(results, requestedType, topK)
+				if len(filtered) > 0 {
+					return formatSearchResults(p.Query, filtered), nil
+				}
+			}
+		}
 	}
+
+	ftsResults, err := database.SearchFTS(p.Query, topK*3)
+	if err == nil && len(ftsResults) > 0 {
+		filtered := filterScoredMemoriesByType(ftsResults, requestedType, topK)
+		if len(filtered) > 0 {
+			return formatSearchResults(p.Query, filtered), nil
+		}
+	}
+
+	memories, err := database.ListByImportance(200)
 	if err != nil {
 		return "", fmt.Errorf("search_memories: %w", err)
 	}
 
 	query := strings.ToLower(p.Query)
-	var results []db.Memory
+	var results []db.ScoredMemory
 	for _, m := range memories {
+		if requestedType != "" && !strings.EqualFold(strings.TrimSpace(m.Type), requestedType) {
+			continue
+		}
 		if strings.Contains(strings.ToLower(m.Title), query) ||
 			strings.Contains(strings.ToLower(m.Content), query) ||
 			strings.Contains(strings.ToLower(m.Tags), query) {
-			results = append(results, m)
-			if len(results) >= 10 {
+			results = append(results, db.ScoredMemory{Memory: m})
+			if len(results) >= topK {
 				break
 			}
 		}
@@ -182,20 +203,50 @@ func handleSearchMemories(ctx context.Context, database *db.DB, b *Brain, params
 	if len(results) == 0 {
 		return fmt.Sprintf("No memories found matching %q.", p.Query), nil
 	}
+	return formatSearchResults(p.Query, results), nil
+}
 
+func filterScoredMemoriesByType(results []db.ScoredMemory, requestedType string, limit int) []db.ScoredMemory {
+	if limit <= 0 {
+		limit = len(results)
+	}
+	requestedType = strings.TrimSpace(requestedType)
+	if requestedType == "" {
+		if len(results) > limit {
+			return results[:limit]
+		}
+		return results
+	}
+
+	filtered := make([]db.ScoredMemory, 0, len(results))
+	for _, result := range results {
+		if strings.EqualFold(strings.TrimSpace(result.Type), requestedType) {
+			filtered = append(filtered, result)
+			if len(filtered) >= limit {
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+func formatSearchResults(query string, results []db.ScoredMemory) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d memories matching %q:\n", len(results), p.Query))
-	for i, m := range results {
-		sb.WriteString(fmt.Sprintf("%d. [%s/%.1f] %s\n", i+1, m.Type, m.Importance, m.Title))
-		if m.Content != m.Title {
-			content := m.Content
+	sb.WriteString(fmt.Sprintf("Found %d memories matching %q:\n", len(results), query))
+	for i, r := range results {
+		sb.WriteString(fmt.Sprintf("%d. [%s/%.1f] %s\n", i+1, r.Type, r.Importance, r.Title))
+		if r.Content != r.Title {
+			content := r.Content
 			if len(content) > 100 {
 				content = content[:100] + "..."
 			}
 			sb.WriteString(fmt.Sprintf("   %s\n", content))
 		}
+		if r.FusedScore > 0 {
+			sb.WriteString(fmt.Sprintf("   score: %.3f (fts=%.3f vec=%.3f)\n", r.FusedScore, r.FTSScore, r.VectorScore))
+		}
 	}
-	return sb.String(), nil
+	return sb.String()
 }
 
 func handleUpdateDeskItem(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {

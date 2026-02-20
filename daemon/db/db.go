@@ -86,6 +86,50 @@ func (db *DB) migrate() error {
 	if err != nil {
 		return fmt.Errorf("apply extended schema: %w", err)
 	}
+
+	_, err = db.conn.Exec(`
+		CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+		  memory_id UNINDEXED,
+		  title,
+		  content,
+		  tags
+		);
+
+		CREATE TABLE IF NOT EXISTS memory_embeddings (
+		  memory_id  TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+		  embedding  BLOB NOT NULL,
+		  model      TEXT NOT NULL,
+		  updated_at TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS embedding_jobs (
+		  memory_id   TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+		  reason      TEXT NOT NULL,
+		  enqueued_at TEXT NOT NULL,
+		  attempts    INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TRIGGER IF NOT EXISTS memories_fts_insert
+		AFTER INSERT ON memories BEGIN
+		  INSERT INTO memories_fts(memory_id, title, content, tags)
+		  VALUES (new.id, COALESCE(new.title,''), new.content, COALESCE(new.tags,''));
+		END;
+
+		CREATE TRIGGER IF NOT EXISTS memories_fts_update
+		AFTER UPDATE OF title, content, tags ON memories BEGIN
+		  DELETE FROM memories_fts WHERE memory_id = old.id;
+		  INSERT INTO memories_fts(memory_id, title, content, tags)
+		  VALUES (new.id, COALESCE(new.title,''), new.content, COALESCE(new.tags,''));
+		END;
+
+		CREATE TRIGGER IF NOT EXISTS memories_fts_delete
+		AFTER DELETE ON memories BEGIN
+		  DELETE FROM memories_fts WHERE memory_id = old.id;
+		END;
+	`)
+	if err != nil {
+		return fmt.Errorf("apply semantic schema: %w", err)
+	}
 	return nil
 }
 

@@ -9,7 +9,7 @@ export function Notebooks({ onOpen }) {
 
   return (
     <div class="panel-shell">
-      <div class="flex justify-between items-center mb-7">
+      <div class="flex justify-between items-center mb-8">
         <h2 class="panel-title">Notebooks</h2>
       </div>
 

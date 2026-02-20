@@ -29,3 +29,9 @@ tasks:
   reindex:
     interval_hours: 12
     timeout_seconds: 30
+  embedding_backfill:
+    interval_hours: 6
+    timeout_seconds: 300
+  observations:
+    interval_hours: 24
+    timeout_seconds: 120

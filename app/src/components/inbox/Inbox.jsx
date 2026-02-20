@@ -91,15 +91,15 @@ export function Inbox() {
 
   return (
     <div class="panel-shell">
-      <div class="flex justify-between items-center mb-6">
+      <div class="flex justify-between items-center mb-8">
         <h2 class="panel-title">Inbox</h2>
-        <div class="flex gap-1">
+        <div class="flex gap-1.5">
           {views.map((v) => (
             <button
               type="button"
               key={v}
               onClick={() => setActiveView(v)}
-              class={`text-[0.72rem] font-medium py-1.5 px-3.5 rounded-md border font-sans cursor-pointer transition-all
+              class={`text-[0.86rem] font-medium py-2 px-4 rounded-md border font-sans cursor-pointer transition-all
                 ${activeView === v
                   ? 'bg-surface-2 text-text border-border-light'
                   : 'bg-transparent text-text-dim border-border hover:bg-surface-2 hover:text-text hover:border-border-light'
@@ -112,7 +112,7 @@ export function Inbox() {
       </div>
 
       {actionError && (
-        <div class="mb-4 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-[0.78rem] text-red-300">
+        <div class="mb-5 rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-[0.9rem] text-red-300">
           {actionError}
         </div>
       )}

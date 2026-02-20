@@ -51,6 +51,7 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
   min-height: 100vh;
+  font-size: 16px;
   line-height: 1.5;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -88,21 +89,21 @@ input:focus {
 }
 
 .panel-shell {
-  max-width: 760px;
+  max-width: 940px;
   margin: 0 auto;
-  padding: 32px 32px 100px;
+  padding: 42px 44px 110px;
 }
 
 .panel-title {
-  font-size: 1.4rem;
+  font-size: 2rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
 
 .surface-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 12px;
   transition: border-color 0.15s, background-color 0.15s;
 }
 
@@ -112,10 +113,11 @@ input:focus {
 
 @media (max-width: 768px) {
   .panel-shell {
-    padding: 20px 16px 100px;
+    max-width: none;
+    padding: 24px 18px 100px;
   }
 
   .panel-title {
-    font-size: 1.25rem;
+    font-size: 1.5rem;
   }
 }

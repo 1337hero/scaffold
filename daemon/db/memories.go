@@ -1,6 +1,10 @@
 package db
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+	"log"
+)
 
 type Memory struct {
 	ID           string
@@ -16,6 +20,12 @@ type Memory struct {
 	AccessCount  int
 	Archived     int
 	SuppressedAt sql.NullString
+}
+
+type EmbeddingJob struct {
+	MemoryID string
+	Reason   string
+	Attempts int
 }
 
 type ReclassifyParams struct {
@@ -43,7 +53,11 @@ func (db *DB) InsertMemory(m Memory) error {
 		m.ID, m.Type, m.Content, m.Title, m.Importance, m.Source, m.Tags,
 		m.CreatedAt, m.UpdatedAt, m.AccessedAt, m.AccessCount, m.Archived, m.SuppressedAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	_ = db.EnqueueEmbeddingJob(m.ID, "insert")
+	return nil
 }
 
 func (db *DB) ListByImportance(limit int) ([]Memory, error) {
@@ -124,6 +138,37 @@ func (db *DB) ReclassifyMemory(id string, p ReclassifyParams) error {
 	return tx.Commit()
 }
 
+func (db *DB) InsertObservation(pattern string, importance float64, evidenceIDs []string) (string, error) {
+	mem := Memory{
+		ID:         newID(),
+		Type:       "Observation",
+		Content:    pattern,
+		Title:      pattern,
+		Importance: importance,
+		Source:     "cortex",
+	}
+	if err := db.InsertMemory(mem); err != nil {
+		return "", fmt.Errorf("insert observation memory: %w", err)
+	}
+
+	for _, evidenceID := range evidenceIDs {
+		target, err := db.GetMemory(evidenceID)
+		if err != nil || target == nil {
+			continue
+		}
+		if err := db.InsertEdge(Edge{
+			FromID:   mem.ID,
+			ToID:     evidenceID,
+			Relation: "DerivedFrom",
+			Weight:   0.7,
+		}); err != nil {
+			log.Printf("db: insert DerivedFrom edge %s -> %s: %v", mem.ID, evidenceID, err)
+		}
+	}
+
+	return mem.ID, nil
+}
+
 func (db *DB) SuppressMemory(id string) error {
 	result, err := db.conn.Exec(
 		`UPDATE memories SET suppressed_at = ? WHERE id = ?`, now(), id,
@@ -161,4 +206,70 @@ func (db *DB) GetMemory(id string) (*Memory, error) {
 		return nil, err
 	}
 	return &m, nil
+}
+
+func (db *DB) EnqueueEmbeddingJob(memoryID, reason string) error {
+	_, err := db.conn.Exec(
+		`INSERT INTO embedding_jobs (memory_id, reason, enqueued_at, attempts)
+		 VALUES (?, ?, ?, 0)
+		 ON CONFLICT(memory_id) DO UPDATE SET reason = excluded.reason, enqueued_at = excluded.enqueued_at`,
+		memoryID, reason, now(),
+	)
+	return err
+}
+
+func (db *DB) DequeueEmbeddingJobs(limit int) ([]EmbeddingJob, error) {
+	rows, err := db.conn.Query(
+		`SELECT ej.memory_id, ej.reason, ej.attempts
+		 FROM embedding_jobs ej
+		 JOIN memories m ON m.id = ej.memory_id
+		 WHERE m.suppressed_at IS NULL
+		 ORDER BY ej.attempts ASC, ej.enqueued_at ASC
+		 LIMIT ?`, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var jobs []EmbeddingJob
+	for rows.Next() {
+		var j EmbeddingJob
+		if err := rows.Scan(&j.MemoryID, &j.Reason, &j.Attempts); err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, j)
+	}
+	return jobs, rows.Err()
+}
+
+func (db *DB) IncrementEmbeddingJobAttempts(memoryID string) error {
+	_, err := db.conn.Exec(`UPDATE embedding_jobs SET attempts = attempts + 1 WHERE memory_id = ?`, memoryID)
+	return err
+}
+
+func (db *DB) DeleteEmbeddingJob(memoryID string) error {
+	_, err := db.conn.Exec(`DELETE FROM embedding_jobs WHERE memory_id = ?`, memoryID)
+	return err
+}
+
+func (db *DB) ListMemoriesWithoutEmbedding(limit int) ([]string, error) {
+	rows, err := db.conn.Query(
+		`SELECT m.id FROM memories m
+		 LEFT JOIN memory_embeddings me ON me.memory_id = m.id
+		 WHERE m.suppressed_at IS NULL AND me.memory_id IS NULL
+		 LIMIT ?`, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

@@ -41,8 +41,22 @@ func TestAgentConfig(t *testing.T) {
 	if cfg.Agent.Model != "claude-haiku-4-5" {
 		t.Errorf("expected model claude-haiku-4-5, got %q", cfg.Agent.Model)
 	}
-	if len(cfg.Agent.Rules) != 4 {
-		t.Errorf("expected 4 rules, got %d", len(cfg.Agent.Rules))
+	if len(cfg.Agent.Rules) == 0 {
+		t.Fatal("expected at least one agent rule")
+	}
+
+	requiredRules := []string{
+		"Never store raw message text as a memory. Distill and synthesize first.",
+		"Never let the desk grow past 3. If he tries, push back.",
+	}
+	seen := make(map[string]struct{}, len(cfg.Agent.Rules))
+	for _, rule := range cfg.Agent.Rules {
+		seen[rule] = struct{}{}
+	}
+	for _, rule := range requiredRules {
+		if _, ok := seen[rule]; !ok {
+			t.Errorf("missing required agent rule: %q", rule)
+		}
 	}
 }
 
@@ -151,6 +165,9 @@ func TestDefaults(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte("bulletin:\n  interval_minutes: 0\n"), 0o644); err != nil {
 		t.Fatalf("write cortex.yaml: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "embedding.yaml"), []byte("provider: ollama\n"), 0o644); err != nil {
+		t.Fatalf("write embedding.yaml: %v", err)
+	}
 
 	cfg, err := Load(dir, "User")
 	if err != nil {
@@ -201,6 +218,9 @@ tasks:
 	if err := os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte(cortexYAML), 0o644); err != nil {
 		t.Fatalf("write cortex.yaml: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "embedding.yaml"), []byte("provider: ollama\n"), 0o644); err != nil {
+		t.Fatalf("write embedding.yaml: %v", err)
+	}
 
 	if _, err := Load(dir, "User"); err == nil {
 		t.Fatal("expected invalid cortex task interval to fail")
@@ -231,8 +251,35 @@ tools:
 	if err := os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte("bulletin:\n  interval_minutes: 60\n"), 0o644); err != nil {
 		t.Fatalf("write cortex.yaml: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "embedding.yaml"), []byte("provider: ollama\n"), 0o644); err != nil {
+		t.Fatalf("write embedding.yaml: %v", err)
+	}
 
 	if _, err := Load(dir, "User"); err == nil {
 		t.Fatal("expected duplicate tool names to fail")
+	}
+}
+
+func TestLoadFailsOnUnsupportedEmbeddingProvider(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: Test\n"), 0o644); err != nil {
+		t.Fatalf("write agent.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tools.yaml"), []byte("tools: []\n"), 0o644); err != nil {
+		t.Fatalf("write tools.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "triage.yaml"), []byte("prompt: test\n"), 0o644); err != nil {
+		t.Fatalf("write triage.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte("bulletin:\n  interval_minutes: 60\n"), 0o644); err != nil {
+		t.Fatalf("write cortex.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "embedding.yaml"), []byte("provider: fake-provider\n"), 0o644); err != nil {
+		t.Fatalf("write embedding.yaml: %v", err)
+	}
+
+	if _, err := Load(dir, "User"); err == nil {
+		t.Fatal("expected unsupported embedding provider to fail")
 	}
 }

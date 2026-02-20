@@ -18,19 +18,33 @@ func (db *DB) InsertConversationEntry(sender, role, content string) (string, err
 }
 
 func (db *DB) ListRecentConversation(sender string, limit int) ([]ConversationEntry, error) {
-	rows, err := db.conn.Query(
+	return db.queryConversation(
 		`SELECT id, sender, role, content, created_at FROM (
 			SELECT id, sender, role, content, created_at
 			FROM conversation_log WHERE sender = ?
 			ORDER BY created_at DESC LIMIT ?
 		) ORDER BY created_at ASC`, sender, limit,
 	)
+}
+
+func (db *DB) ListConversationSince(since string, limit int) ([]ConversationEntry, error) {
+	return db.queryConversation(
+		`SELECT id, sender, role, content, created_at
+		 FROM conversation_log
+		 WHERE created_at >= ?
+		 ORDER BY created_at ASC
+		 LIMIT ?`, since, limit,
+	)
+}
+
+func (db *DB) queryConversation(query string, args ...any) ([]ConversationEntry, error) {
+	rows, err := db.conn.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	out := make([]ConversationEntry, 0)
+	var out []ConversationEntry
 	for rows.Next() {
 		var e ConversationEntry
 		if err := rows.Scan(&e.ID, &e.Sender, &e.Role, &e.Content, &e.CreatedAt); err != nil {

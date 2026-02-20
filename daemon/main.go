@@ -20,6 +20,7 @@ import (
 	appconfig "scaffold/config"
 	"scaffold/cortex"
 	"scaffold/db"
+	"scaffold/embedding"
 	signalcli "scaffold/signal"
 )
 
@@ -80,7 +81,19 @@ func main() {
 		Tools:            toolDefs,
 	})
 
-	cortexRuntime := cortex.New(database, b, cfg.anthropicKey, appCfg.Cortex)
+	var embedder embedding.Embedder
+	switch strings.ToLower(strings.TrimSpace(appCfg.Embedding.Provider)) {
+	case "ollama":
+		embedder = embedding.NewOllamaClient(
+			appCfg.Embedding.URL,
+			appCfg.Embedding.Model,
+			appCfg.Embedding.Dimensions,
+		)
+	default:
+		log.Fatalf("unsupported embedding provider %q", appCfg.Embedding.Provider)
+	}
+	b.SetEmbedder(embedder)
+	cortexRuntime := cortex.New(database, b, cfg.anthropicKey, appCfg.Cortex, embedder)
 	b.SetBulletinProvider(cortexRuntime.CurrentBulletin)
 
 	client := signalcli.NewClient(cfg.signalURL, cfg.agentNumber)

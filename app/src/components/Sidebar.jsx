@@ -11,12 +11,12 @@ const toolItems = [search, graph]
 
 export function Sidebar({ activePanel, onNavigate, onCapture, inboxCount }) {
   return (
-    <aside class="hidden md:flex w-[220px] bg-sidebar border-r border-border flex-col py-5 shrink-0 h-screen sticky top-0">
-      <div class="px-5 mb-7 flex items-center gap-2.5">
-        <div class="w-8 h-8 rounded-lg bg-amber-dim border border-amber-border flex items-center justify-center text-[0.9rem] text-amber">
+    <aside class="hidden md:flex w-[264px] bg-sidebar border-r border-border flex-col py-7 shrink-0 h-screen sticky top-0">
+      <div class="px-6 mb-9 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-amber-dim border border-amber-border flex items-center justify-center text-[1rem] text-amber">
           {'\u26a1'}
         </div>
-        <span class="text-[1.1rem] font-bold tracking-[-0.02em] leading-none">Scaffold</span>
+        <span class="text-[2rem] font-bold tracking-[-0.03em] leading-none">Scaffold</span>
       </div>
 
       <nav class="flex-1">
@@ -26,7 +26,7 @@ export function Sidebar({ activePanel, onNavigate, onCapture, inboxCount }) {
             key={item.id}
             onClick={() => onNavigate(item.id)}
             class={cn(
-              "flex items-center gap-3 w-full px-5 py-2.5 border-l-[3px] text-[0.88rem] font-medium transition-all cursor-pointer text-left",
+              "flex items-center gap-3.5 w-full px-6 py-3 border-l-[3px] text-[1rem] font-medium transition-all cursor-pointer text-left",
               activePanel === item.id
                 ? "bg-[rgba(245,158,11,0.06)] border-l-amber text-text"
                 : "border-l-transparent text-text-dim hover:bg-[rgba(255,255,255,0.03)] hover:text-text"
@@ -34,17 +34,17 @@ export function Sidebar({ activePanel, onNavigate, onCapture, inboxCount }) {
             aria-label={item.label}
             aria-current={activePanel === item.id ? "page" : undefined}
           >
-            <item.icon size={18} class={cn("shrink-0", activePanel === item.id ? "opacity-100" : "opacity-70")} />
+            <item.icon size={20} class={cn("shrink-0", activePanel === item.id ? "opacity-100" : "opacity-70")} />
             {item.label}
             {item.hasBadge && inboxCount > 0 && (
-              <span class="ml-auto font-mono text-[0.62rem] font-semibold bg-amber-dim text-amber px-1.5 py-0.5 rounded-sm">
+              <span class="ml-auto font-mono text-[0.72rem] font-semibold bg-amber-dim text-amber px-2 py-0.5 rounded-sm">
                 {inboxCount}
               </span>
             )}
           </button>
         ))}
 
-        <div class="text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-text-muted px-5 pt-4 pb-2">
+        <div class="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-text-muted px-6 pt-5 pb-2.5">
           Tools
         </div>
 
@@ -52,21 +52,21 @@ export function Sidebar({ activePanel, onNavigate, onCapture, inboxCount }) {
           <button
             type="button"
             key={item.id}
-            class="flex items-center gap-3 w-full px-5 py-2.5 border-l-[3px] border-l-transparent text-text-dim text-[0.88rem] font-medium opacity-40 cursor-default text-left"
+            class="flex items-center gap-3.5 w-full px-6 py-3 border-l-[3px] border-l-transparent text-text-dim text-[1rem] font-medium opacity-40 cursor-default text-left"
             disabled
             aria-label={`${item.label} (coming soon)`}
           >
-            <item.icon size={18} class="shrink-0 opacity-70" />
+            <item.icon size={20} class="shrink-0 opacity-70" />
             {item.label}
           </button>
         ))}
       </nav>
 
-      <div class="px-4 pt-4 border-t border-border">
+      <div class="px-5 pt-5 border-t border-border">
         <button
           type="button"
           onClick={onCapture}
-          class="w-full py-2.5 px-4 bg-amber-dim border border-amber-border text-amber rounded-lg font-sans text-[0.82rem] font-semibold cursor-pointer transition-all hover:bg-[rgba(245,158,11,0.18)] flex items-center justify-center gap-2"
+          class="w-full py-3 px-4 bg-amber-dim border border-amber-border text-amber rounded-lg font-sans text-[0.95rem] font-semibold cursor-pointer transition-all hover:bg-[rgba(245,158,11,0.18)] flex items-center justify-center gap-2"
           aria-label="Capture new item"
         >
           + Capture

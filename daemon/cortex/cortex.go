@@ -18,6 +18,7 @@ import (
 	"scaffold/brain"
 	appconfig "scaffold/config"
 	"scaffold/db"
+	"scaffold/embedding"
 )
 
 const (
@@ -79,6 +80,7 @@ func (b *BulletinCache) Set(content string) {
 
 type llmClient interface {
 	SynthesizeBulletin(ctx context.Context, model string, maxWords int, sections bulletinSections) (string, error)
+	CompletionJSON(ctx context.Context, model, systemPrompt, userPrompt string, maxTokens int64) (string, error)
 }
 
 type anthropicLLMClient struct {
@@ -145,6 +147,22 @@ Do not:
 	return truncateWords(text, maxWords), nil
 }
 
+func (c *anthropicLLMClient) CompletionJSON(ctx context.Context, model, systemPrompt, userPrompt string, maxTokens int64) (string, error) {
+	resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.Model(model),
+		MaxTokens: maxTokens,
+		System:    []anthropic.TextBlockParam{{Text: systemPrompt}},
+		Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt))},
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(resp.Content) == 0 {
+		return "", fmt.Errorf("empty response")
+	}
+	return strings.TrimSpace(resp.Content[0].Text), nil
+}
+
 type memorySnippet struct {
 	Type       string  `json:"type"`
 	Title      string  `json:"title"`
@@ -181,12 +199,13 @@ type Cortex struct {
 	brain    *brain.Brain
 	llm      llmClient
 	cfg      appconfig.CortexConfig
+	embedder embedding.Embedder
 	bulletin *BulletinCache
 	tasks    []*CortexTask
 	once     sync.Once
 }
 
-func New(database *db.DB, b *brain.Brain, apiKey string, cfg appconfig.CortexConfig) *Cortex {
+func New(database *db.DB, b *brain.Brain, apiKey string, cfg appconfig.CortexConfig, embedder embedding.Embedder) *Cortex {
 	if cfg.Bulletin.IntervalMinutes <= 0 {
 		cfg.Bulletin.IntervalMinutes = 60
 	}
@@ -210,6 +229,7 @@ func New(database *db.DB, b *brain.Brain, apiKey string, cfg appconfig.CortexCon
 		brain:    b,
 		llm:      newAnthropicLLMClient(apiKey),
 		cfg:      cfg,
+		embedder: embedder,
 		bulletin: newBulletinCache(maxStale),
 	}
 
@@ -341,6 +361,10 @@ func (c *Cortex) taskFnForName(name string) func(context.Context) error {
 		return c.runReindex
 	case "session_cleanup":
 		return c.runSessionCleanup
+	case "embedding_backfill":
+		return c.runEmbeddingBackfill
+	case "observations":
+		return c.runObservations
 	default:
 		return nil
 	}
@@ -560,24 +584,138 @@ func (c *Cortex) runDecay(ctx context.Context) error {
 }
 
 func (c *Cortex) runConsolidation(ctx context.Context) error {
-	_ = ctx
 	if c.db == nil {
 		return fmt.Errorf("database is nil")
 	}
 
 	report, err := c.db.ConsolidateMemories()
 	if err != nil {
-		return fmt.Errorf("consolidate memories: %w", err)
+		return fmt.Errorf("consolidate memories (exact): %w", err)
 	}
 	log.Printf(
-		"cortex: consolidation groups=%d duplicates=%d edges_created=%d suppressed=%d skipped_referenced=%d",
-		report.GroupsFound,
-		report.DuplicatesFound,
-		report.EdgesCreated,
-		report.MemoriesSuppressed,
-		report.SkippedReferenced,
+		"cortex: consolidation (exact) groups=%d duplicates=%d edges=%d suppressed=%d",
+		report.GroupsFound, report.DuplicatesFound, report.EdgesCreated, report.MemoriesSuppressed,
+	)
+
+	if c.embedder == nil || !c.embedder.Available(ctx) {
+		log.Printf("cortex: consolidation semantic path skipped (embedder unavailable)")
+		return nil
+	}
+
+	const similarityThreshold = 0.85
+	const maxLLMCalls = 20
+	candidates, err := c.db.FindConsolidationCandidates(similarityThreshold, maxLLMCalls*2)
+	if err != nil {
+		log.Printf("cortex: find consolidation candidates: %v", err)
+		return nil
+	}
+
+	llmCalls := 0
+	for _, candidate := range candidates {
+		if llmCalls >= maxLLMCalls {
+			break
+		}
+
+		decision, err := c.consolidationDecision(ctx, candidate)
+		if err != nil {
+			log.Printf("cortex: consolidation LLM decision failed: %v", err)
+			continue
+		}
+		llmCalls++
+
+		switch decision.Action {
+		case "merge":
+			loserID := candidate.MemoryA.ID
+			winnerID := candidate.MemoryB.ID
+			if decision.KeepID == candidate.MemoryA.ID {
+				loserID = candidate.MemoryB.ID
+				winnerID = candidate.MemoryA.ID
+			}
+			refs, err := c.db.CountMemoryReferences(loserID)
+			if err != nil || refs > 0 {
+				continue
+			}
+			if _, err := c.db.EnsureUndirectedEdge(loserID, winnerID, "RelatedTo", 0.9); err != nil {
+				log.Printf("cortex: consolidation merge edge: %v", err)
+			}
+			if err := c.db.SuppressMemory(loserID); err != nil {
+				log.Printf("cortex: consolidation suppress: %v", err)
+			} else {
+				report.MemoriesSuppressed++
+			}
+		case "relate":
+			if _, err := c.db.EnsureUndirectedEdge(candidate.MemoryA.ID, candidate.MemoryB.ID, "RelatedTo", 0.8); err != nil {
+				log.Printf("cortex: consolidation relate edge: %v", err)
+			} else {
+				report.EdgesCreated++
+			}
+		}
+		report.PairsEvaluated++
+		report.LLMDecisions++
+	}
+
+	log.Printf(
+		"cortex: consolidation (semantic) pairs_evaluated=%d llm_decisions=%d",
+		report.PairsEvaluated, report.LLMDecisions,
 	)
 	return nil
+}
+
+type consolidationDecision struct {
+	Action string
+	KeepID string
+	Reason string
+}
+
+func (c *Cortex) consolidationDecision(ctx context.Context, candidate db.ConsolidationCandidate) (consolidationDecision, error) {
+	snippetA := candidate.MemoryA.Title
+	if len(candidate.MemoryA.Content) < 200 {
+		snippetA += " — " + candidate.MemoryA.Content
+	} else {
+		snippetA += " — " + candidate.MemoryA.Content[:200] + "..."
+	}
+	snippetB := candidate.MemoryB.Title
+	if len(candidate.MemoryB.Content) < 200 {
+		snippetB += " — " + candidate.MemoryB.Content
+	} else {
+		snippetB += " — " + candidate.MemoryB.Content[:200] + "..."
+	}
+
+	system := `You compare memory pairs and decide their relationship. Respond with valid JSON only.`
+	user := fmt.Sprintf(`Compare these memories and decide the relationship:
+A (id=%s): %s
+B (id=%s): %s
+
+Options:
+- merge: These are duplicates or one supersedes the other. Keep the better one.
+- relate: These are related but distinct. Create an edge.
+- keep_separate: No meaningful relationship.
+
+Respond with JSON: {"decision": "merge|relate|keep_separate", "keep_id": "%s or %s or empty", "reason": "brief reason"}`,
+		candidate.MemoryA.ID, snippetA,
+		candidate.MemoryB.ID, snippetB,
+		candidate.MemoryA.ID, candidate.MemoryB.ID,
+	)
+
+	raw, err := c.llm.CompletionJSON(ctx, "claude-haiku-4-5", system, user, 150)
+	if err != nil {
+		return consolidationDecision{}, err
+	}
+
+	var result struct {
+		Decision string `json:"decision"`
+		KeepID   string `json:"keep_id"`
+		Reason   string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return consolidationDecision{}, fmt.Errorf("parse decision: %w (raw: %s)", err, raw)
+	}
+
+	return consolidationDecision{
+		Action: result.Decision,
+		KeepID: result.KeepID,
+		Reason: result.Reason,
+	}, nil
 }
 
 func (c *Cortex) runReindex(ctx context.Context) error {
@@ -616,6 +754,106 @@ func toSnippets(memories []db.Memory) []memorySnippet {
 		})
 	}
 	return out
+}
+
+func (c *Cortex) runEmbeddingBackfill(ctx context.Context) error {
+	if c.embedder == nil {
+		return fmt.Errorf("embedder not configured")
+	}
+	if !c.embedder.Available(ctx) {
+		log.Printf("cortex: embedding_backfill skipped (embedder unavailable)")
+		return nil
+	}
+	modelName := strings.TrimSpace(c.embedder.ModelName())
+	if modelName == "" {
+		return fmt.Errorf("embedder model name is empty")
+	}
+
+	const batchSize = 50
+	processed := 0
+
+	jobs, err := c.db.DequeueEmbeddingJobs(batchSize)
+	if err != nil {
+		return fmt.Errorf("dequeue embedding jobs: %w", err)
+	}
+	if len(jobs) > 0 {
+		type jobMem struct {
+			job db.EmbeddingJob
+			mem *db.Memory
+		}
+		var valid []jobMem
+		for _, j := range jobs {
+			mem, err := c.db.GetMemory(j.MemoryID)
+			if err != nil || mem == nil {
+				_ = c.db.DeleteEmbeddingJob(j.MemoryID)
+				continue
+			}
+			valid = append(valid, jobMem{j, mem})
+		}
+		if len(valid) > 0 {
+			texts := make([]string, len(valid))
+			for i, v := range valid {
+				texts[i] = v.mem.Title + " " + v.mem.Content
+			}
+			embeddings, err := c.embedder.EmbedBatch(ctx, texts)
+			if err != nil {
+				for _, v := range valid {
+					_ = c.db.IncrementEmbeddingJobAttempts(v.job.MemoryID)
+				}
+				log.Printf("cortex: embedding_backfill batch failed: %v", err)
+			} else {
+				for i, v := range valid {
+					if i >= len(embeddings) {
+						break
+					}
+					if err := c.db.UpsertEmbedding(v.job.MemoryID, embeddings[i], modelName); err != nil {
+						log.Printf("cortex: upsert embedding %s: %v", v.job.MemoryID, err)
+						_ = c.db.IncrementEmbeddingJobAttempts(v.job.MemoryID)
+					} else {
+						_ = c.db.DeleteEmbeddingJob(v.job.MemoryID)
+						processed++
+					}
+				}
+			}
+		}
+	}
+
+	ids, err := c.db.ListMemoriesWithoutEmbedding(batchSize)
+	if err != nil {
+		return fmt.Errorf("list memories without embedding: %w", err)
+	}
+	if len(ids) > 0 {
+		texts := make([]string, 0, len(ids))
+		mems := make([]*db.Memory, 0, len(ids))
+		for _, id := range ids {
+			mem, err := c.db.GetMemory(id)
+			if err != nil || mem == nil {
+				continue
+			}
+			texts = append(texts, mem.Title+" "+mem.Content)
+			mems = append(mems, mem)
+		}
+		if len(texts) > 0 {
+			embeddings, err := c.embedder.EmbedBatch(ctx, texts)
+			if err != nil {
+				log.Printf("cortex: embedding_backfill backfill batch failed: %v", err)
+			} else {
+				for i, mem := range mems {
+					if i >= len(embeddings) {
+						break
+					}
+					if err := c.db.UpsertEmbedding(mem.ID, embeddings[i], modelName); err != nil {
+						log.Printf("cortex: upsert embedding %s: %v", mem.ID, err)
+					} else {
+						processed++
+					}
+				}
+			}
+		}
+	}
+
+	log.Printf("cortex: embedding_backfill processed=%d", processed)
+	return nil
 }
 
 func truncateWords(text string, maxWords int) string {

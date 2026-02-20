@@ -10,6 +10,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"scaffold/db"
+	"scaffold/embedding"
 )
 
 const maxToolRounds = 5
@@ -30,6 +31,7 @@ type Brain struct {
 	client           anthropic.Client
 	responder        ToolUseResponder
 	db               *db.DB
+	embedder         embedding.Embedder
 	tools            []ToolDefinition
 	toolRegistry     map[string]ToolHandler
 	bulletinProvider func() (string, bool)
@@ -334,6 +336,10 @@ func (b *Brain) executeTool(ctx context.Context, toolCall ToolCall) (string, err
 
 func (b *Brain) SetBulletinProvider(provider func() (string, bool)) {
 	b.bulletinProvider = provider
+}
+
+func (b *Brain) SetEmbedder(e embedding.Embedder) {
+	b.embedder = e
 }
 
 func (b *Brain) renderSystemPrompt() string {
