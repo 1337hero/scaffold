@@ -23,7 +23,15 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, captures)
+
+	filtered := captures[:0]
+	for _, capture := range captures {
+		if strings.EqualFold(strings.TrimSpace(capture.Source), "user:archive") {
+			continue
+		}
+		filtered = append(filtered, capture)
+	}
+	writeJSON(w, http.StatusOK, filtered)
 }
 
 func (s *Server) handleInboxConfirm(w http.ResponseWriter, r *http.Request) {
@@ -62,24 +70,38 @@ func (s *Server) handleInboxArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !capture.MemoryID.Valid || strings.TrimSpace(capture.MemoryID.String) == "" {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "capture has no linked memory"})
+		if err := s.db.UpdateCaptureSource(captureID, "user:archive"); err != nil {
+			writeInternalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id":             captureID,
+			"memory_missing": true,
+			"archived":       true,
+		})
 		return
 	}
 
 	memoryID := strings.TrimSpace(capture.MemoryID.String)
+	memoryMissing := false
 	if err := s.db.SuppressMemory(memoryID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "memory not found"})
+		if !errors.Is(err, sql.ErrNoRows) {
+			writeInternalError(w, err)
 			return
 		}
+		memoryMissing = true
+	}
+
+	if err := s.db.UpdateCaptureSource(captureID, "user:archive"); err != nil {
 		writeInternalError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":        captureID,
-		"memory_id": memoryID,
-		"archived":  true,
+		"id":             captureID,
+		"memory_id":      memoryID,
+		"memory_missing": memoryMissing,
+		"archived":       true,
 	})
 }
 

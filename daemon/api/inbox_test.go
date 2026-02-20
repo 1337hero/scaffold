@@ -71,6 +71,17 @@ func TestHandleInboxArchive(t *testing.T) {
 	if !memory.SuppressedAt.Valid {
 		t.Fatal("expected memory to be suppressed")
 	}
+
+	capture, err := database.GetCapture(captureID)
+	if err != nil {
+		t.Fatalf("get capture: %v", err)
+	}
+	if capture == nil {
+		t.Fatal("expected capture to exist")
+	}
+	if capture.Source != "user:archive" {
+		t.Fatalf("expected source user:archive, got %q", capture.Source)
+	}
 }
 
 func TestHandleInboxArchiveWithoutLinkedMemory(t *testing.T) {
@@ -84,8 +95,19 @@ func TestHandleInboxArchiveWithoutLinkedMemory(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.mux.ServeHTTP(rec, authedRequest(http.MethodPost, "/api/inbox/"+captureID+"/archive", ""))
 
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected 409, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	capture, err := database.GetCapture(captureID)
+	if err != nil {
+		t.Fatalf("get capture: %v", err)
+	}
+	if capture == nil {
+		t.Fatal("expected capture to exist")
+	}
+	if capture.Source != "user:archive" {
+		t.Fatalf("expected source user:archive, got %q", capture.Source)
 	}
 }
 
@@ -195,6 +217,39 @@ func TestHandleInboxListReturnsCaptures(t *testing.T) {
 	}
 	if len(captures) != 2 {
 		t.Fatalf("expected 2 captures, got %d", len(captures))
+	}
+}
+
+func TestHandleInboxListExcludesArchivedSource(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	keepID, err := database.InsertCapture("keep me", "web")
+	if err != nil {
+		t.Fatalf("insert keep capture: %v", err)
+	}
+	hideID, err := database.InsertCapture("hide me", "web")
+	if err != nil {
+		t.Fatalf("insert hide capture: %v", err)
+	}
+	if err := database.UpdateCaptureSource(hideID, "user:archive"); err != nil {
+		t.Fatalf("update capture source: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(rec, authedRequest(http.MethodGet, "/api/inbox", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var captures []db.Capture
+	if err := json.NewDecoder(rec.Body).Decode(&captures); err != nil {
+		t.Fatalf("decode captures: %v", err)
+	}
+	if len(captures) != 1 {
+		t.Fatalf("expected 1 capture after filtering archived source, got %d", len(captures))
+	}
+	if captures[0].ID != keepID {
+		t.Fatalf("expected capture %q, got %q", keepID, captures[0].ID)
 	}
 }
 
