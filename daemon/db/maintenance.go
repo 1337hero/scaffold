@@ -318,8 +318,13 @@ func normalizeConsolidationText(text string) string {
 	return strings.Join(strings.Fields(text), " ")
 }
 
-func (db *DB) FindConsolidationCandidates(threshold float64, maxPairs int) ([]ConsolidationCandidate, error) {
-	embeddings, err := db.ListEmbeddings()
+func (db *DB) FindConsolidationCandidates(threshold float64, maxPairs int, embeddingModel string) ([]ConsolidationCandidate, error) {
+	embeddingModel = strings.TrimSpace(embeddingModel)
+	if embeddingModel == "" {
+		return nil, nil
+	}
+
+	embeddings, err := db.ListEmbeddings(embeddingModel)
 	if err != nil {
 		return nil, fmt.Errorf("list embeddings: %w", err)
 	}
@@ -331,7 +336,7 @@ func (db *DB) FindConsolidationCandidates(threshold float64, maxPairs int) ([]Co
 	var candidates []ConsolidationCandidate
 
 	for memID, emb := range embeddings {
-		neighbors, err := db.NearestNeighbors(emb, 5, []string{memID})
+		neighbors, err := db.NearestNeighbors(emb, 5, []string{memID}, embeddingModel)
 		if err != nil {
 			continue
 		}

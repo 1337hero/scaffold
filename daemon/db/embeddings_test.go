@@ -72,7 +72,7 @@ func TestListEmbeddings(t *testing.T) {
 		t.Fatalf("upsert b: %v", err)
 	}
 
-	all, err := database.ListEmbeddings()
+	all, err := database.ListEmbeddings("")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestListEmbeddings(t *testing.T) {
 func TestListEmbeddingsEmpty(t *testing.T) {
 	database := newTestDB(t)
 
-	all, err := database.ListEmbeddings()
+	all, err := database.ListEmbeddings("")
 	if err != nil {
 		t.Fatalf("list empty: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestNearestNeighbors(t *testing.T) {
 	database.UpsertEmbedding("nn-b", []float32{0.9, 0.1, 0}, "m")
 	database.UpsertEmbedding("nn-c", []float32{0, 0, 1}, "m")
 
-	results, err := database.NearestNeighbors([]float32{1, 0, 0}, 2, nil)
+	results, err := database.NearestNeighbors([]float32{1, 0, 0}, 2, nil, "m")
 	if err != nil {
 		t.Fatalf("nearest neighbors: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestNearestNeighborsExclude(t *testing.T) {
 	database.UpsertEmbedding("ex-a", []float32{1, 0}, "m")
 	database.UpsertEmbedding("ex-b", []float32{0.9, 0.1}, "m")
 
-	results, err := database.NearestNeighbors([]float32{1, 0}, 10, []string{"ex-a"})
+	results, err := database.NearestNeighbors([]float32{1, 0}, 10, []string{"ex-a"}, "m")
 	if err != nil {
 		t.Fatalf("nn with exclude: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestNearestNeighborsExclude(t *testing.T) {
 func TestNearestNeighborsEmpty(t *testing.T) {
 	database := newTestDB(t)
 
-	results, err := database.NearestNeighbors([]float32{1, 0, 0}, 5, nil)
+	results, err := database.NearestNeighbors([]float32{1, 0, 0}, 5, nil, "m")
 	if err != nil {
 		t.Fatalf("nn empty: %v", err)
 	}
@@ -208,5 +208,53 @@ func TestFloat32BytesRoundTrip(t *testing.T) {
 		if decoded[i] != original[i] {
 			t.Fatalf("index %d: expected %f, got %f", i, original[i], decoded[i])
 		}
+	}
+}
+
+func TestListEmbeddingsFiltersByModel(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "list-model-a")
+	insertTestMemory(t, database, "list-model-b")
+
+	if err := database.UpsertEmbedding("list-model-a", []float32{1, 0, 0}, "model-a"); err != nil {
+		t.Fatalf("upsert model-a: %v", err)
+	}
+	if err := database.UpsertEmbedding("list-model-b", []float32{0, 1, 0}, "model-b"); err != nil {
+		t.Fatalf("upsert model-b: %v", err)
+	}
+
+	filtered, err := database.ListEmbeddings("model-a")
+	if err != nil {
+		t.Fatalf("list filtered embeddings: %v", err)
+	}
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 embedding for model-a, got %d", len(filtered))
+	}
+	if _, ok := filtered["list-model-a"]; !ok {
+		t.Fatalf("expected list-model-a in filtered results, got keys=%v", filtered)
+	}
+}
+
+func TestNearestNeighborsFiltersByModel(t *testing.T) {
+	database := newTestDB(t)
+	insertTestMemory(t, database, "nn-model-a")
+	insertTestMemory(t, database, "nn-model-b")
+
+	if err := database.UpsertEmbedding("nn-model-a", []float32{1, 0, 0}, "model-a"); err != nil {
+		t.Fatalf("upsert model-a: %v", err)
+	}
+	if err := database.UpsertEmbedding("nn-model-b", []float32{0.99, 0.01, 0}, "model-b"); err != nil {
+		t.Fatalf("upsert model-b: %v", err)
+	}
+
+	results, err := database.NearestNeighbors([]float32{1, 0, 0}, 10, nil, "model-a")
+	if err != nil {
+		t.Fatalf("nearest neighbors filtered: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for model-a, got %d", len(results))
+	}
+	if results[0].ID != "nn-model-a" {
+		t.Fatalf("expected nn-model-a, got %s", results[0].ID)
 	}
 }

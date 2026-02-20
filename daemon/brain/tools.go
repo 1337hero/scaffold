@@ -161,11 +161,14 @@ func handleSearchMemories(ctx context.Context, database *db.DB, b *Brain, params
 	if b != nil && b.embedder != nil && b.embedder.Available(ctx) {
 		vec, err := b.embedder.Embed(ctx, p.Query)
 		if err == nil {
-			results, err := database.SearchHybrid(p.Query, vec, topK*3)
-			if err == nil && len(results) > 0 {
-				filtered := filterScoredMemoriesByType(results, requestedType, topK)
-				if len(filtered) > 0 {
-					return formatSearchResults(p.Query, filtered), nil
+			embeddingModel := strings.TrimSpace(b.embedder.ModelName())
+			if embeddingModel != "" {
+				results, err := database.SearchHybrid(p.Query, vec, embeddingModel, topK*3)
+				if err == nil && len(results) > 0 {
+					filtered := filterScoredMemoriesByType(results, requestedType, topK)
+					if len(filtered) > 0 {
+						return formatSearchResults(p.Query, filtered), nil
+					}
 				}
 			}
 		}

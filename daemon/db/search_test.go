@@ -128,7 +128,7 @@ func TestSearchHybrid_FTSOnly(t *testing.T) {
 		t.Fatalf("insert: %v", err)
 	}
 
-	results, err := database.SearchHybrid("transformers", nil, 10)
+	results, err := database.SearchHybrid("transformers", nil, "", 10)
 	if err != nil {
 		t.Fatalf("hybrid search: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestSearchHybrid_VectorOnly(t *testing.T) {
 		t.Fatalf("upsert embedding: %v", err)
 	}
 
-	results, err := database.SearchHybrid("zyxwvutsrqp", []float32{1, 0, 0}, 10)
+	results, err := database.SearchHybrid("zyxwvutsrqp", []float32{1, 0, 0}, "test-model", 10)
 	if err != nil {
 		t.Fatalf("hybrid search: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestSearchHybrid_Fusion(t *testing.T) {
 		t.Fatalf("upsert embedding fusion-vec-only: %v", err)
 	}
 
-	results, err := database.SearchHybrid("rust", []float32{1, 0, 0}, 10)
+	results, err := database.SearchHybrid("rust", []float32{1, 0, 0}, "test-model", 10)
 	if err != nil {
 		t.Fatalf("hybrid search: %v", err)
 	}
@@ -250,12 +250,12 @@ func TestSearchHybrid_Fusion(t *testing.T) {
 func TestSearchHybrid_EmptyQuery(t *testing.T) {
 	database := newTestDB(t)
 
-	_, err := database.SearchHybrid("", nil, 10)
+	_, err := database.SearchHybrid("", nil, "", 10)
 	if err == nil {
 		t.Fatal("expected error for empty query")
 	}
 
-	_, err = database.SearchHybrid("  ", []float32{1, 0}, 10)
+	_, err = database.SearchHybrid("  ", []float32{1, 0}, "test-model", 10)
 	if err == nil {
 		t.Fatal("expected error for whitespace-only query")
 	}
@@ -318,5 +318,48 @@ func TestSearchFTS_MultipleResults_Ranked(t *testing.T) {
 	}
 	if results[0].ID != "rank-a" {
 		t.Fatalf("expected rank-a, got %s", results[0].ID)
+	}
+}
+
+func TestSearchHybrid_FiltersVectorByEmbeddingModel(t *testing.T) {
+	database := newTestDB(t)
+
+	if err := database.InsertMemory(Memory{
+		ID:         "hybrid-model-a",
+		Type:       "fact",
+		Content:    "model A memory content",
+		Title:      "model a",
+		Importance: 0.8,
+		Source:     "test",
+	}); err != nil {
+		t.Fatalf("insert model-a memory: %v", err)
+	}
+	if err := database.InsertMemory(Memory{
+		ID:         "hybrid-model-b",
+		Type:       "fact",
+		Content:    "model B memory content",
+		Title:      "model b",
+		Importance: 0.8,
+		Source:     "test",
+	}); err != nil {
+		t.Fatalf("insert model-b memory: %v", err)
+	}
+
+	if err := database.UpsertEmbedding("hybrid-model-a", []float32{1, 0, 0}, "model-a"); err != nil {
+		t.Fatalf("upsert model-a embedding: %v", err)
+	}
+	if err := database.UpsertEmbedding("hybrid-model-b", []float32{0.99, 0.01, 0}, "model-b"); err != nil {
+		t.Fatalf("upsert model-b embedding: %v", err)
+	}
+
+	results, err := database.SearchHybrid("noftsquerytoken", []float32{1, 0, 0}, "model-a", 10)
+	if err != nil {
+		t.Fatalf("hybrid search with model filter: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for model-a, got %d", len(results))
+	}
+	if results[0].ID != "hybrid-model-a" {
+		t.Fatalf("expected hybrid-model-a, got %s", results[0].ID)
 	}
 }

@@ -288,6 +288,20 @@ func TestPersistTriageResult(t *testing.T) {
 	if stored == nil {
 		t.Fatal("expected stored memory")
 	}
+
+	jobs, err := database.DequeueEmbeddingJobs(10)
+	if err != nil {
+		t.Fatalf("dequeue embedding jobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 embedding job, got %d", len(jobs))
+	}
+	if jobs[0].MemoryID != "mem-persist" {
+		t.Fatalf("expected embedding job for mem-persist, got %q", jobs[0].MemoryID)
+	}
+	if jobs[0].Reason != "triage" {
+		t.Fatalf("expected embedding job reason triage, got %q", jobs[0].Reason)
+	}
 }
 
 func TestPersistTriageResultRollsBackWhenCaptureMissing(t *testing.T) {
@@ -313,6 +327,14 @@ func TestPersistTriageResultRollsBackWhenCaptureMissing(t *testing.T) {
 	}
 	if stored != nil {
 		t.Fatal("expected memory insert rollback")
+	}
+
+	jobs, err := database.DequeueEmbeddingJobs(10)
+	if err != nil {
+		t.Fatalf("dequeue embedding jobs after rollback: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("expected 0 embedding jobs after rollback, got %d", len(jobs))
 	}
 }
 

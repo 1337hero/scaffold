@@ -601,10 +601,15 @@ func (c *Cortex) runConsolidation(ctx context.Context) error {
 		log.Printf("cortex: consolidation semantic path skipped (embedder unavailable)")
 		return nil
 	}
+	embeddingModel := strings.TrimSpace(c.embedder.ModelName())
+	if embeddingModel == "" {
+		log.Printf("cortex: consolidation semantic path skipped (embedder model unavailable)")
+		return nil
+	}
 
 	const similarityThreshold = 0.85
 	const maxLLMCalls = 20
-	candidates, err := c.db.FindConsolidationCandidates(similarityThreshold, maxLLMCalls*2)
+	candidates, err := c.db.FindConsolidationCandidates(similarityThreshold, maxLLMCalls*2, embeddingModel)
 	if err != nil {
 		log.Printf("cortex: find consolidation candidates: %v", err)
 		return nil
@@ -625,9 +630,20 @@ func (c *Cortex) runConsolidation(ctx context.Context) error {
 
 		switch decision.Action {
 		case "merge":
+			keepID := strings.TrimSpace(decision.KeepID)
+			if keepID != candidate.MemoryA.ID && keepID != candidate.MemoryB.ID {
+				log.Printf(
+					"cortex: consolidation merge skipped (invalid keep_id=%q for pair %s,%s)",
+					decision.KeepID,
+					candidate.MemoryA.ID,
+					candidate.MemoryB.ID,
+				)
+				continue
+			}
+
 			loserID := candidate.MemoryA.ID
 			winnerID := candidate.MemoryB.ID
-			if decision.KeepID == candidate.MemoryA.ID {
+			if keepID == candidate.MemoryA.ID {
 				loserID = candidate.MemoryB.ID
 				winnerID = candidate.MemoryA.ID
 			}
@@ -649,6 +665,16 @@ func (c *Cortex) runConsolidation(ctx context.Context) error {
 			} else {
 				report.EdgesCreated++
 			}
+		case "keep_separate":
+			// Explicit no-op: this pair is distinct but was worth evaluating.
+		default:
+			log.Printf(
+				"cortex: consolidation skipped unknown decision action %q for pair %s,%s",
+				decision.Action,
+				candidate.MemoryA.ID,
+				candidate.MemoryB.ID,
+			)
+			continue
 		}
 		report.PairsEvaluated++
 		report.LLMDecisions++
@@ -697,7 +723,7 @@ Respond with JSON: {"decision": "merge|relate|keep_separate", "keep_id": "%s or 
 		candidate.MemoryA.ID, candidate.MemoryB.ID,
 	)
 
-	raw, err := c.llm.CompletionJSON(ctx, "claude-haiku-4-5", system, user, 150)
+	raw, err := c.llm.CompletionJSON(ctx, c.semanticModel(), system, user, 150)
 	if err != nil {
 		return consolidationDecision{}, err
 	}
@@ -712,10 +738,21 @@ Respond with JSON: {"decision": "merge|relate|keep_separate", "keep_id": "%s or 
 	}
 
 	return consolidationDecision{
-		Action: result.Decision,
-		KeepID: result.KeepID,
-		Reason: result.Reason,
+		Action: strings.ToLower(strings.TrimSpace(result.Decision)),
+		KeepID: strings.TrimSpace(result.KeepID),
+		Reason: strings.TrimSpace(result.Reason),
 	}, nil
+}
+
+func (c *Cortex) semanticModel() string {
+	if c == nil {
+		return "claude-haiku-4-5"
+	}
+	model := strings.TrimSpace(c.cfg.Bulletin.Model)
+	if model == "" {
+		return "claude-haiku-4-5"
+	}
+	return model
 }
 
 func (c *Cortex) runReindex(ctx context.Context) error {

@@ -47,24 +47,29 @@ func (db *DB) SearchFTS(query string, topK int) ([]ScoredMemory, error) {
 	return results, rows.Err()
 }
 
-func (db *DB) SearchHybrid(query string, embedding []float32, topK int) ([]ScoredMemory, error) {
+func (db *DB) SearchHybrid(query string, embedding []float32, embeddingModel string, topK int) ([]ScoredMemory, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, fmt.Errorf("search query must not be empty")
 	}
+	embeddingModel = strings.TrimSpace(embeddingModel)
 
 	ftsResults, ftsErr := db.SearchFTS(query, topK*3)
 
+	vecEnabled := len(embedding) > 0 && embeddingModel != ""
 	var vecResults []ScoredMemory
 	var vecErr error
-	if len(embedding) > 0 {
-		vecResults, vecErr = db.NearestNeighbors(embedding, topK*3, nil)
+	if vecEnabled {
+		vecResults, vecErr = db.NearestNeighbors(embedding, topK*3, nil, embeddingModel)
 	}
 
-	if ftsErr != nil && (len(embedding) == 0 || vecErr != nil) {
+	if ftsErr != nil && (!vecEnabled || vecErr != nil) {
 		if ftsErr != nil {
 			return nil, ftsErr
 		}
 		return nil, vecErr
+	}
+	if ftsErr != nil && len(vecResults) == 0 {
+		return nil, ftsErr
 	}
 
 	if len(vecResults) == 0 {

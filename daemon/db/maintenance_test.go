@@ -20,7 +20,7 @@ func TestFindConsolidationCandidatesReturnsSimilarPairs(t *testing.T) {
 	database.UpsertEmbedding("fc-a", []float32{0.9, 0.1, 0.0}, "m")
 	database.UpsertEmbedding("fc-b", []float32{0.89, 0.12, 0.01}, "m")
 
-	candidates, err := database.FindConsolidationCandidates(0.5, 10)
+	candidates, err := database.FindConsolidationCandidates(0.5, 10, "m")
 	if err != nil {
 		t.Fatalf("find candidates: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestFindConsolidationCandidatesDeduplicatesPairs(t *testing.T) {
 	database.UpsertEmbedding("dd-a", []float32{1, 0, 0}, "m")
 	database.UpsertEmbedding("dd-b", []float32{0.99, 0.01, 0}, "m")
 
-	candidates, err := database.FindConsolidationCandidates(0.5, 10)
+	candidates, err := database.FindConsolidationCandidates(0.5, 10, "m")
 	if err != nil {
 		t.Fatalf("find candidates: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestFindConsolidationCandidatesSkipsSuppressed(t *testing.T) {
 	database.UpsertEmbedding("ss-a", []float32{1, 0, 0}, "m")
 	database.UpsertEmbedding("ss-b", []float32{0.99, 0.01, 0}, "m")
 
-	candidates, err := database.FindConsolidationCandidates(0.5, 10)
+	candidates, err := database.FindConsolidationCandidates(0.5, 10, "m")
 	if err != nil {
 		t.Fatalf("find candidates: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestFindConsolidationCandidatesSkipsIdentityType(t *testing.T) {
 	database.UpsertEmbedding("id-a", []float32{1, 0, 0}, "m")
 	database.UpsertEmbedding("id-b", []float32{0.99, 0.01, 0}, "m")
 
-	candidates, err := database.FindConsolidationCandidates(0.5, 10)
+	candidates, err := database.FindConsolidationCandidates(0.5, 10, "m")
 	if err != nil {
 		t.Fatalf("find candidates: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestFindConsolidationCandidatesSkipsIdentityType(t *testing.T) {
 func TestFindConsolidationCandidatesEmptyEmbeddings(t *testing.T) {
 	database := newTestDB(t)
 
-	candidates, err := database.FindConsolidationCandidates(0.85, 10)
+	candidates, err := database.FindConsolidationCandidates(0.85, 10, "m")
 	if err != nil {
 		t.Fatalf("find candidates: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestFindConsolidationCandidatesRespectsMaxPairs(t *testing.T) {
 	database.UpsertEmbedding("mp-b", []float32{0.99, 0.01, 0}, "m")
 	database.UpsertEmbedding("mp-c", []float32{0.98, 0.02, 0}, "m")
 
-	candidates, err := database.FindConsolidationCandidates(0.5, 1)
+	candidates, err := database.FindConsolidationCandidates(0.5, 1, "m")
 	if err != nil {
 		t.Fatalf("find candidates: %v", err)
 	}
@@ -182,5 +182,33 @@ func TestCountMemoryReferencesExported(t *testing.T) {
 	}
 	if refs != 0 {
 		t.Fatalf("expected 0 refs, got %d", refs)
+	}
+}
+
+func TestFindConsolidationCandidatesFiltersByEmbeddingModel(t *testing.T) {
+	database := newTestDB(t)
+
+	for _, mem := range []Memory{
+		{ID: "fm-a", Type: "Fact", Title: "A", Content: "content a", Importance: 0.5, Source: "test"},
+		{ID: "fm-b", Type: "Fact", Title: "B", Content: "content b", Importance: 0.5, Source: "test"},
+	} {
+		if err := database.InsertMemory(mem); err != nil {
+			t.Fatalf("insert %s: %v", mem.ID, err)
+		}
+	}
+
+	if err := database.UpsertEmbedding("fm-a", []float32{1, 0, 0}, "model-a"); err != nil {
+		t.Fatalf("upsert model-a: %v", err)
+	}
+	if err := database.UpsertEmbedding("fm-b", []float32{0.99, 0.01, 0}, "model-b"); err != nil {
+		t.Fatalf("upsert model-b: %v", err)
+	}
+
+	candidates, err := database.FindConsolidationCandidates(0.5, 10, "model-a")
+	if err != nil {
+		t.Fatalf("find candidates: %v", err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("expected 0 candidates when only one embedding in active model, got %d", len(candidates))
 	}
 }

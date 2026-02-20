@@ -715,13 +715,17 @@ func TestRunConsolidationSemanticPathMerge(t *testing.T) {
 	stub := &stubLLM{
 		completionJSON: `{"decision": "merge", "keep_id": "sem-a", "reason": "duplicate"}`,
 	}
-	emb := &stubEmbedder{available: true}
+	emb := &stubEmbedder{available: true, model: "m"}
 
 	c := &Cortex{
 		db:       database,
 		llm:      stub,
 		embedder: emb,
-		cfg:      appconfig.CortexConfig{},
+		cfg: appconfig.CortexConfig{
+			Bulletin: appconfig.BulletinConfig{
+				Model: "test-semantic-model",
+			},
+		},
 	}
 
 	if err := c.runConsolidation(context.Background()); err != nil {
@@ -738,6 +742,9 @@ func TestRunConsolidationSemanticPathMerge(t *testing.T) {
 
 	if stub.completionCalls == 0 {
 		t.Fatal("expected at least one LLM completion call")
+	}
+	if stub.lastCompletionModel != "test-semantic-model" {
+		t.Fatalf("expected configured semantic model, got %q", stub.lastCompletionModel)
 	}
 }
 
@@ -787,7 +794,7 @@ func TestRunConsolidationSemanticPathRelate(t *testing.T) {
 	stub := &stubLLM{
 		completionJSON: `{"decision": "relate", "keep_id": "", "reason": "related frameworks"}`,
 	}
-	emb := &stubEmbedder{available: true}
+	emb := &stubEmbedder{available: true, model: "m"}
 
 	c := &Cortex{
 		db:       database,
@@ -807,5 +814,56 @@ func TestRunConsolidationSemanticPathRelate(t *testing.T) {
 	}
 	if memB == nil || memB.SuppressedAt.Valid {
 		t.Fatal("expected rel-b to remain unsuppressed")
+	}
+}
+
+func TestRunConsolidationSemanticPathMergeSkipsInvalidKeepID(t *testing.T) {
+	database := openTestDB(t)
+
+	for _, mem := range []db.Memory{
+		{ID: "badkeep-a", Type: "Fact", Title: "Node A", Content: "content a", Importance: 0.7, Source: "test"},
+		{ID: "badkeep-b", Type: "Fact", Title: "Node B", Content: "content b", Importance: 0.7, Source: "test"},
+	} {
+		if err := database.InsertMemory(mem); err != nil {
+			t.Fatalf("insert %s: %v", mem.ID, err)
+		}
+	}
+
+	if err := database.UpsertEmbedding("badkeep-a", []float32{0.9, 0.1, 0}, "m"); err != nil {
+		t.Fatalf("upsert embedding badkeep-a: %v", err)
+	}
+	if err := database.UpsertEmbedding("badkeep-b", []float32{0.89, 0.11, 0}, "m"); err != nil {
+		t.Fatalf("upsert embedding badkeep-b: %v", err)
+	}
+
+	stub := &stubLLM{
+		completionJSON: `{"decision": "merge", "keep_id": "not-a-real-memory", "reason": "bad keep id"}`,
+	}
+	emb := &stubEmbedder{available: true, model: "m"}
+
+	c := &Cortex{
+		db:       database,
+		llm:      stub,
+		embedder: emb,
+		cfg:      appconfig.CortexConfig{},
+	}
+
+	if err := c.runConsolidation(context.Background()); err != nil {
+		t.Fatalf("run consolidation: %v", err)
+	}
+
+	memA, err := database.GetMemory("badkeep-a")
+	if err != nil {
+		t.Fatalf("get badkeep-a: %v", err)
+	}
+	memB, err := database.GetMemory("badkeep-b")
+	if err != nil {
+		t.Fatalf("get badkeep-b: %v", err)
+	}
+	if memA == nil || memA.SuppressedAt.Valid {
+		t.Fatalf("expected badkeep-a unsuppressed, got %+v", memA)
+	}
+	if memB == nil || memB.SuppressedAt.Valid {
+		t.Fatalf("expected badkeep-b unsuppressed, got %+v", memB)
 	}
 }

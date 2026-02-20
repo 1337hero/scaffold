@@ -59,6 +59,23 @@ func TestRunObservations_PromptIncludesMemoryIDs(t *testing.T) {
 	}
 }
 
+func TestRunObservations_UsesConfiguredModel(t *testing.T) {
+	stub := &stubLLM{
+		completionJSON: `[]`,
+	}
+	c, database := newObservationsCortex(t, stub)
+	c.cfg.Bulletin.Model = "custom-observations-model"
+
+	seedConversationEntries(t, database, 15)
+
+	if err := c.runObservations(context.Background()); err != nil {
+		t.Fatalf("runObservations: %v", err)
+	}
+	if stub.lastCompletionModel != "custom-observations-model" {
+		t.Fatalf("expected custom model, got %q", stub.lastCompletionModel)
+	}
+}
+
 func seedConversationEntries(t *testing.T, database *db.DB, count int) {
 	t.Helper()
 	for i := 0; i < count; i++ {

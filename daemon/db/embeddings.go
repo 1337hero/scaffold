@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"math"
 	"sort"
+	"strings"
 )
 
 type ScoredMemory struct {
@@ -35,8 +36,17 @@ func (db *DB) GetEmbedding(memoryID string) ([]float32, error) {
 	return bytesToFloat32(blob), nil
 }
 
-func (db *DB) ListEmbeddings() (map[string][]float32, error) {
-	rows, err := db.conn.Query(`SELECT memory_id, embedding FROM memory_embeddings`)
+func (db *DB) ListEmbeddings(model string) (map[string][]float32, error) {
+	model = strings.TrimSpace(model)
+
+	query := `SELECT memory_id, embedding FROM memory_embeddings`
+	var args []any
+	if model != "" {
+		query += ` WHERE model = ?`
+		args = append(args, model)
+	}
+
+	rows, err := db.conn.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -54,8 +64,8 @@ func (db *DB) ListEmbeddings() (map[string][]float32, error) {
 	return out, rows.Err()
 }
 
-func (db *DB) NearestNeighbors(target []float32, topK int, excludeIDs []string) ([]ScoredMemory, error) {
-	embeddings, err := db.ListEmbeddings()
+func (db *DB) NearestNeighbors(target []float32, topK int, excludeIDs []string, model string) ([]ScoredMemory, error) {
+	embeddings, err := db.ListEmbeddings(model)
 	if err != nil {
 		return nil, err
 	}

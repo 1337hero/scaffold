@@ -139,6 +139,14 @@ func (db *DB) PersistTriageResult(captureID string, mem Memory, action string) e
 	); err != nil {
 		return fmt.Errorf("insert memory in triage tx: %w", err)
 	}
+	if _, err := tx.Exec(
+		`INSERT INTO embedding_jobs (memory_id, reason, enqueued_at, attempts)
+		 VALUES (?, ?, ?, 0)
+		 ON CONFLICT(memory_id) DO UPDATE SET reason = excluded.reason, enqueued_at = excluded.enqueued_at`,
+		mem.ID, "triage", ts,
+	); err != nil {
+		return fmt.Errorf("enqueue embedding job in triage tx: %w", err)
+	}
 
 	result, err := tx.Exec(
 		`UPDATE captures SET processed = 1, triage_action = ?, memory_id = ? WHERE id = ?`,
