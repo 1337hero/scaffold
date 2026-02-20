@@ -1,0 +1,38 @@
+# Agent tool definitions — what tools the agent can call during conversation
+# These map to Go functions in the brain/tools package (Phase 2B)
+
+tools:
+  - name: save_to_inbox
+    description: |
+      Synthesize a capture from the conversation. Use when something worth
+      saving emerges — an idea, task, decision, or reference. Don't save
+      raw conversation text. Distill.
+    parameters:
+      title: { type: string, required: true }
+      content: { type: string, required: true }
+      type: { type: string, enum: [Todo, Goal, Decision, Idea, Fact, Preference, Event, Observation] }
+      importance: { type: number, min: 0, max: 1 }
+      tags: { type: array, items: string }
+
+  - name: get_desk
+    description: Read today's desk items. THE ONE + up to 2 more.
+
+  - name: search_memories
+    description: Search the knowledge graph for memories matching a query.
+    parameters:
+      query: { type: string, required: true }
+
+  - name: update_desk_item
+    description: Update a desk item — mark done, defer, reprioritize.
+    parameters:
+      id: { type: string, required: true }
+      status: { type: string, enum: [done, deferred, active] }
+
+  - name: get_inbox
+    description: Read pending inbox items waiting for review.
+
+  - name: add_to_notebook
+    description: Append content to a notebook thread.
+    parameters:
+      notebook: { type: string, required: true }
+      content: { type: string, required: true }

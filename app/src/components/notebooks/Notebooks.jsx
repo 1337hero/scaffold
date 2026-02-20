@@ -8,9 +8,9 @@ export function Notebooks({ onOpen }) {
   if (isLoading) return null
 
   return (
-    <div class="max-w-[760px] mx-auto px-8 py-8 pb-[100px] max-md:px-4 max-md:py-5">
-      <div class="flex justify-between items-center mb-6">
-        <h2 class="text-[1.4rem] font-bold tracking-tight">Notebooks</h2>
+    <div class="panel-shell">
+      <div class="flex justify-between items-center mb-7">
+        <h2 class="panel-title">Notebooks</h2>
       </div>
 
       {notebooks.map((nb) => (

@@ -13,14 +13,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
 	"scaffold/api"
 	"scaffold/brain"
+	appconfig "scaffold/config"
+	"scaffold/cron"
 	"scaffold/db"
 	signalcli "scaffold/signal"
 )
+
+func parseInt(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
 
 const maxInFlightMessages = 4
 const conversationHistoryLimit = 12
@@ -46,13 +55,39 @@ func main() {
 	}
 	log.Println("database open")
 
+	appCfg, err := appconfig.Load(cfg.configDir, cfg.userName)
+	if err != nil {
+		log.Fatalf("failed to load config from %s: %v", cfg.configDir, err)
+	}
+	log.Printf("config loaded: agent=%s, %d tools, cortex bulletin every %dm",
+		appCfg.Agent.Name, len(appCfg.Tools.Tools), appCfg.Cortex.Bulletin.IntervalMinutes)
+
+	assistantName := cfg.assistantName
+	if strings.TrimSpace(appCfg.Agent.Name) != "" {
+		assistantName = appCfg.Agent.Name
+	}
+
 	b := brain.New(cfg.anthropicKey, brain.Config{
-		AssistantName: cfg.assistantName,
-		UserName:      cfg.userName,
+		AssistantName:    assistantName,
+		UserName:         cfg.userName,
+		SystemPrompt:     buildAgentSystemPrompt(appCfg),
+		TriagePrompt:     appCfg.Triage.Prompt,
+		RespondModel:     appCfg.Agent.Model,
+		TriageModel:      appCfg.Triage.Model,
+		RespondMaxTokens: appCfg.Agent.MaxResponseTokens,
+		TriageMaxTokens:  appCfg.Triage.MaxTokens,
 	})
 	client := signalcli.NewClient(cfg.signalURL, cfg.agentNumber)
 
-	srv := api.New(database, cfg.apiToken)
+	srv := api.New(database, b, cfg.apiToken, api.AuthConfig{
+		AppUsername:          cfg.appUsername,
+		AppPasswordHash:      cfg.appPasswordHash,
+		SessionTTL:           time.Duration(cfg.sessionTTLHours) * time.Hour,
+		CookieSecure:         cfg.cookieSecure,
+		CookieDomain:         cfg.cookieDomain,
+		LoginRateLimitWindow: time.Duration(cfg.loginRateLimitWindowSecs) * time.Second,
+		LoginRateLimitMax:    cfg.loginRateLimitMax,
+	})
 	apiAddr := net.JoinHostPort(cfg.apiHost, cfg.apiPort)
 	httpServer := srv.NewHTTPServer(apiAddr)
 	go func() {
@@ -62,18 +97,20 @@ func main() {
 		}
 	}()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cron.Start(ctx, database, b)
+
 	if err := waitForSignal(client); err != nil {
 		log.Fatalf("signal-cli not ready: %v", err)
 	}
 	log.Println("signal-cli connected")
 
-	startupMsg := fmt.Sprintf("%s online. Brain active.", cfg.assistantName)
+	startupMsg := fmt.Sprintf("%s online. Brain active.", assistantName)
 	if err := client.Send(context.Background(), cfg.userNumber, startupMsg); err != nil {
 		log.Printf("warn: startup message failed: %v", err)
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -124,44 +161,19 @@ func handleMessage(client *signalcli.Client, b *brain.Brain, database *db.DB, ms
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	captureID, err := database.InsertCapture(msg.Message, "signal:user:"+msg.Sender)
-	if err != nil {
-		log.Printf("capture insert error: %v", err)
+	if _, err := database.InsertConversationEntry(msg.Sender, "user", msg.Message); err != nil {
+		log.Printf("conversation insert error (user): %v", err)
 	}
 
-	triage, err := b.Triage(ctx, msg.Message)
-	if err != nil {
-		log.Printf("triage error: %v", err)
-	}
-
-	if triage != nil && captureID != "" {
-		log.Printf("triage: type=%s action=%s importance=%.1f", triage.Type, triage.Action, triage.Importance)
-
-		memID := uuid.New().String()
-		mem := db.Memory{
-			ID:         memID,
-			Type:       triage.Type,
-			Content:    msg.Message,
-			Title:      triage.Title,
-			Importance: triage.Importance,
-			Source:     "signal",
-			Tags:       strings.Join(triage.Tags, ","),
-		}
-		if err := database.InsertMemory(mem); err != nil {
-			log.Printf("memory insert error: %v", err)
-		}
-
-		if err := database.UpdateTriage(captureID, triage.Action, memID); err != nil {
-			log.Printf("triage update error: %v", err)
-		}
-	}
-
-	history, err := database.ListRecentBySender(msg.Sender, conversationHistoryLimit)
+	history, err := database.ListRecentConversation(msg.Sender, conversationHistoryLimit)
 	if err != nil {
 		log.Printf("history query error: %v", err)
 	}
 
-	response, err := b.Respond(ctx, msg.Message, historyToThread(history))
+	thread := historyToThread(history)
+	thread = ensureCurrentUserMessage(thread, msg.Message)
+
+	response, err := b.Respond(ctx, msg.Message, thread)
 	if err != nil {
 		log.Printf("brain error: %v", err)
 		response = "Something went wrong on my end. Try again?"
@@ -171,23 +183,31 @@ func handleMessage(client *signalcli.Client, b *brain.Brain, database *db.DB, ms
 		log.Printf("failed to send response: %v", err)
 	} else {
 		log.Printf("-> %s (len=%d)", msg.Sender, len(response))
-		if _, err := database.InsertProcessedCapture(response, "signal:assistant:"+msg.Sender, "responded"); err != nil {
-			log.Printf("assistant capture insert error: %v", err)
+		if _, err := database.InsertConversationEntry(msg.Sender, "assistant", response); err != nil {
+			log.Printf("conversation insert error (assistant): %v", err)
 		}
 	}
 }
 
 type config struct {
-	anthropicKey  string
-	signalURL     string
-	agentNumber   string
-	userNumber    string
-	assistantName string
-	userName      string
-	dbPath        string
-	apiHost       string
-	apiPort       string
-	apiToken      string
+	configDir                string
+	anthropicKey             string
+	signalURL                string
+	agentNumber              string
+	userNumber               string
+	assistantName            string
+	userName                 string
+	dbPath                   string
+	apiHost                  string
+	apiPort                  string
+	apiToken                 string
+	appUsername              string
+	appPasswordHash          string
+	sessionTTLHours          int
+	cookieSecure             bool
+	cookieDomain             string
+	loginRateLimitWindowSecs int
+	loginRateLimitMax        int
 }
 
 func loadConfig() config {
@@ -210,16 +230,24 @@ func loadConfig() config {
 	}
 
 	return config{
-		anthropicKey:  required("ANTHROPIC_API_KEY"),
-		agentNumber:   required("AGENT_NUMBER"),
-		userNumber:    required("USER_NUMBER"),
-		signalURL:     required("SIGNAL_URL"),
-		assistantName: withDefault("ASSISTANT_NAME", "Scaffold"),
-		userName:      withDefault("USER_NAME", "User"),
-		dbPath:        withDefault("DB_PATH", "./scaffold.db"),
-		apiHost:       withDefault("API_HOST", "127.0.0.1"),
-		apiPort:       apiPort,
-		apiToken:      required("API_TOKEN"),
+		configDir:                withDefault("CONFIG_DIR", "./config"),
+		anthropicKey:             required("ANTHROPIC_API_KEY"),
+		agentNumber:              required("AGENT_NUMBER"),
+		userNumber:               required("USER_NUMBER"),
+		signalURL:                required("SIGNAL_URL"),
+		assistantName:            withDefault("ASSISTANT_NAME", "Scaffold"),
+		userName:                 withDefault("USER_NAME", "User"),
+		dbPath:                   withDefault("DB_PATH", "./scaffold.db"),
+		apiHost:                  withDefault("API_HOST", "127.0.0.1"),
+		apiPort:                  apiPort,
+		apiToken:                 required("API_TOKEN"),
+		appUsername:              required("APP_USERNAME"),
+		appPasswordHash:          required("APP_PASSWORD_HASH"),
+		sessionTTLHours:          parseInt(withDefault("SESSION_TTL_HOURS", "168")),
+		cookieSecure:             withDefault("COOKIE_SECURE", "true") == "true",
+		cookieDomain:             withDefault("COOKIE_DOMAIN", ""),
+		loginRateLimitWindowSecs: parseInt(withDefault("LOGIN_RATE_LIMIT_WINDOW_SECS", "300")),
+		loginRateLimitMax:        parseInt(withDefault("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", "5")),
 	}
 }
 
@@ -258,21 +286,21 @@ func secureFileIfExists(path string) error {
 	return os.Chmod(path, 0o600)
 }
 
-func historyToThread(history []db.Capture) []brain.ConversationTurn {
+func historyToThread(history []db.ConversationEntry) []brain.ConversationTurn {
 	if len(history) == 0 {
 		return nil
 	}
 
-	// DB query returns newest-first; Anthropic expects chronological order.
+	// conversation_log query already returns chronological order.
 	out := make([]brain.ConversationTurn, 0, len(history))
-	for i := len(history) - 1; i >= 0; i-- {
-		text := strings.TrimSpace(history[i].Raw)
+	for i := 0; i < len(history); i++ {
+		text := strings.TrimSpace(history[i].Content)
 		if text == "" {
 			continue
 		}
 
 		role := "user"
-		if strings.HasPrefix(history[i].Source, "signal:assistant:") {
+		if strings.EqualFold(strings.TrimSpace(history[i].Role), "assistant") {
 			role = "assistant"
 		}
 
@@ -282,4 +310,48 @@ func historyToThread(history []db.Capture) []brain.ConversationTurn {
 		})
 	}
 	return out
+}
+
+func ensureCurrentUserMessage(thread []brain.ConversationTurn, message string) []brain.ConversationTurn {
+	text := strings.TrimSpace(message)
+	if text == "" {
+		return thread
+	}
+	if len(thread) > 0 {
+		last := thread[len(thread)-1]
+		if last.Role == "user" && strings.TrimSpace(last.Content) == text {
+			return thread
+		}
+	}
+	return append(thread, brain.ConversationTurn{Role: "user", Content: text})
+}
+
+func buildAgentSystemPrompt(cfg *appconfig.Config) string {
+	if cfg == nil {
+		return ""
+	}
+
+	base := strings.TrimSpace(cfg.Agent.Personality)
+	rules := make([]string, 0, len(cfg.Agent.Rules))
+	for _, rule := range cfg.Agent.Rules {
+		rule = strings.TrimSpace(rule)
+		if rule != "" {
+			rules = append(rules, rule)
+		}
+	}
+	if len(rules) == 0 {
+		return base
+	}
+
+	var b strings.Builder
+	if base != "" {
+		b.WriteString(base)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("Rules:")
+	for _, rule := range rules {
+		b.WriteString("\n- ")
+		b.WriteString(rule)
+	}
+	return b.String()
 }

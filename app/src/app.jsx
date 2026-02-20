@@ -7,6 +7,7 @@ import { Desk } from './components/desk/Desk.jsx'
 import { Inbox } from './components/inbox/Inbox.jsx'
 import { Notebooks } from './components/notebooks/Notebooks.jsx'
 import { NotebookPage } from './components/notebooks/NotebookPage.jsx'
+import { Login } from './components/Login.jsx'
 import { inboxQuery } from '@/api/queries.js'
 
 const queryClient = new QueryClient()
@@ -45,7 +46,7 @@ function AppShell() {
   }, [captureOpen, openCapture, closeCapture])
 
   return (
-    <div class="flex min-h-screen">
+    <div class="flex min-h-screen bg-bg text-text">
       <Sidebar
         activePanel={activePanel}
         onNavigate={navigateTo}
@@ -77,6 +78,26 @@ function AppShell() {
 }
 
 export function App() {
+  const [authed, setAuthed] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/auth/check', { credentials: 'include' })
+      .then((res) => setAuthed(res.ok))
+      .catch(() => setAuthed(false))
+  }, [])
+
+  useEffect(() => {
+    const onExpired = () => setAuthed(false)
+    window.addEventListener('auth:expired', onExpired)
+    return () => window.removeEventListener('auth:expired', onExpired)
+  }, [])
+
+  if (authed === null) return null
+
+  if (!authed) {
+    return <Login onSuccess={() => setAuthed(true)} />
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <AppShell />

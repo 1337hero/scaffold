@@ -1,0 +1,25 @@
+# Cortex configuration — background maintenance intervals and thresholds
+
+bulletin:
+  interval_minutes: 60
+  max_words: 500
+  max_stale_multiplier: 3
+  model: claude-haiku-4-5
+
+tasks:
+  consolidation:
+    interval_hours: 6
+    timeout_seconds: 60
+  decay:
+    interval_hours: 24
+    timeout_seconds: 15
+    factor: 0.95
+    exempt_types: [Identity, Permanent]
+  prune:
+    interval_hours: 24
+    timeout_seconds: 15
+    suppressed_days: 30
+    importance_floor: 0.1
+  reindex:
+    interval_hours: 12
+    timeout_seconds: 30

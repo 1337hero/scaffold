@@ -3,15 +3,16 @@ package main
 import (
 	"testing"
 
+	"scaffold/brain"
 	"scaffold/db"
 )
 
 func TestHistoryToThreadChronologicalAndRoleMapping(t *testing.T) {
-	// Input is newest-first (as returned from DB query).
-	history := []db.Capture{
-		{Raw: "latest user", Source: "signal:user:+15550001111"},
-		{Raw: "assistant reply", Source: "signal:assistant:+15550001111"},
-		{Raw: "first user", Source: "signal:user:+15550001111"},
+	// Input is chronological (as returned from conversation_log query).
+	history := []db.ConversationEntry{
+		{Role: "user", Content: "first user"},
+		{Role: "assistant", Content: "assistant reply"},
+		{Role: "user", Content: "latest user"},
 	}
 
 	thread := historyToThread(history)
@@ -31,9 +32,9 @@ func TestHistoryToThreadChronologicalAndRoleMapping(t *testing.T) {
 }
 
 func TestHistoryToThreadSkipsEmptyMessages(t *testing.T) {
-	history := []db.Capture{
-		{Raw: "  ", Source: "signal:user:+15550001111"},
-		{Raw: "ok", Source: "signal:user:+15550001111"},
+	history := []db.ConversationEntry{
+		{Role: "assistant", Content: "  "},
+		{Role: "not-a-role", Content: "ok"},
 	}
 
 	thread := historyToThread(history)
@@ -42,5 +43,28 @@ func TestHistoryToThreadSkipsEmptyMessages(t *testing.T) {
 	}
 	if thread[0].Content != "ok" {
 		t.Fatalf("unexpected content: %+v", thread[0])
+	}
+	if thread[0].Role != "user" {
+		t.Fatalf("expected fallback user role, got %s", thread[0].Role)
+	}
+}
+
+func TestEnsureCurrentUserMessage(t *testing.T) {
+	thread := []brain.ConversationTurn{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi"},
+	}
+
+	updated := ensureCurrentUserMessage(thread, "new message")
+	if len(updated) != 3 {
+		t.Fatalf("expected 3 turns, got %d", len(updated))
+	}
+	if updated[2].Role != "user" || updated[2].Content != "new message" {
+		t.Fatalf("unexpected final turn: %+v", updated[2])
+	}
+
+	deduped := ensureCurrentUserMessage(updated, "new message")
+	if len(deduped) != 3 {
+		t.Fatalf("expected no duplicate append, got %d turns", len(deduped))
 	}
 }

@@ -40,6 +40,13 @@ func (db *DB) TodaysDesk() ([]DeskItem, error) {
 	)
 }
 
+func (db *DB) YesterdaysDesk() ([]DeskItem, error) {
+	return db.queryDesk(
+		`SELECT id, memory_id, title, position, status, micro_steps, date, created_at, completed_at
+		 FROM desk WHERE date = date('now', '-1 day') ORDER BY position ASC`,
+	)
+}
+
 func (db *DB) UpdateDeskStatus(id, status string) error {
 	q := `UPDATE desk SET status = ?`
 	args := []any{status}
@@ -78,7 +85,7 @@ func (db *DB) queryDesk(query string, args ...any) ([]DeskItem, error) {
 	}
 	defer rows.Close()
 
-	var out []DeskItem
+	out := make([]DeskItem, 0)
 	for rows.Next() {
 		var d DeskItem
 		if err := rows.Scan(

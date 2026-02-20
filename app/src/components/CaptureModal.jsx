@@ -30,7 +30,7 @@ export function CaptureModal({ open, onClose }) {
       aria-modal="true"
       aria-label="Capture modal"
     >
-      <div class="bg-surface border border-border rounded-xl p-6 w-[90%] max-w-[560px]">
+      <div class="bg-surface border border-border rounded-[16px] p-6 w-[90%] max-w-[560px] shadow-[0_18px_50px_rgba(0,0,0,0.45)]">
         <input
           ref={inputRef}
           type="text"

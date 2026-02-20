@@ -118,7 +118,7 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 		_ = database.Close()
 	})
 
-	return New(database, testAPIToken), database
+	return New(database, nil, testAPIToken, AuthConfig{}), database
 }
 
 func insertTodayDeskItem(t *testing.T, database *db.DB, id, title string) {

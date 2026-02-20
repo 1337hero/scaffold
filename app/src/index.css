@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
 
 @theme {
@@ -35,6 +36,10 @@
   --radius-xl: 16px;
 }
 
+:root {
+  color-scheme: dark;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -45,6 +50,14 @@ body {
   font-family: var(--font-sans);
   background: var(--color-bg);
   color: var(--color-text);
+  min-height: 100vh;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
   min-height: 100vh;
 }
 
@@ -67,4 +80,42 @@ body {
 
 input:focus {
   outline: none;
+}
+
+::selection {
+  background: rgba(245, 158, 11, 0.25);
+  color: var(--color-text);
+}
+
+.panel-shell {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 32px 100px;
+}
+
+.panel-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.surface-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.surface-card:hover {
+  border-color: var(--color-border-light);
+}
+
+@media (max-width: 768px) {
+  .panel-shell {
+    padding: 20px 16px 100px;
+  }
+
+  .panel-title {
+    font-size: 1.25rem;
+  }
 }

@@ -11,22 +11,63 @@ import (
 )
 
 type Config struct {
-	AssistantName string
-	UserName      string
+	AssistantName    string
+	UserName         string
+	SystemPrompt     string
+	TriagePrompt     string
+	RespondModel     string
+	TriageModel      string
+	RespondMaxTokens int
+	TriageMaxTokens  int
 }
 
 type Brain struct {
-	client        anthropic.Client
-	systemPrompt  string
-	triagePrompt  string
+	client           anthropic.Client
+	systemPrompt     string
+	triagePrompt     string
+	respondModel     anthropic.Model
+	triageModel      anthropic.Model
+	respondMaxTokens int
+	triageMaxTokens  int
 }
 
 func New(apiKey string, cfg Config) *Brain {
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
+	systemPrompt := strings.TrimSpace(cfg.SystemPrompt)
+	if systemPrompt == "" {
+		systemPrompt = buildSystemPrompt(cfg)
+	}
+	triagePrompt := strings.TrimSpace(cfg.TriagePrompt)
+	if triagePrompt == "" {
+		triagePrompt = buildTriagePrompt(cfg)
+	}
+
+	respondModel := anthropic.ModelClaudeHaiku4_5
+	if cfg.RespondModel != "" {
+		respondModel = anthropic.Model(cfg.RespondModel)
+	}
+	triageModel := anthropic.ModelClaudeHaiku4_5
+	if cfg.TriageModel != "" {
+		triageModel = anthropic.Model(cfg.TriageModel)
+	}
+
+	respondMaxTokens := cfg.RespondMaxTokens
+	if respondMaxTokens <= 0 {
+		respondMaxTokens = 300
+	}
+	triageMaxTokens := cfg.TriageMaxTokens
+	if triageMaxTokens <= 0 {
+		triageMaxTokens = 300
+	}
+
 	return &Brain{
-		client:       client,
-		systemPrompt: buildSystemPrompt(cfg),
-		triagePrompt: buildTriagePrompt(cfg),
+		client:           client,
+		systemPrompt:     systemPrompt,
+		triagePrompt:     triagePrompt,
+		respondModel:     respondModel,
+		triageModel:      triageModel,
+		respondMaxTokens: respondMaxTokens,
+		triageMaxTokens:  triageMaxTokens,
 	}
 }
 
@@ -98,8 +139,8 @@ Respond ONLY with valid JSON, no other text:
 func (b *Brain) Triage(ctx context.Context, raw string) (*TriageResult, error) {
 	prompt := b.triagePrompt + "\n\nCapture: " + raw
 	resp, err := b.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeHaiku4_5,
-		MaxTokens: 300,
+		Model:     b.triageModel,
+		MaxTokens: int64(b.triageMaxTokens),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 		},
@@ -171,8 +212,8 @@ func (b *Brain) Respond(ctx context.Context, message string, history []Conversat
 	}
 
 	resp, err := b.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeHaiku4_5,
-		MaxTokens: 300,
+		Model:     b.respondModel,
+		MaxTokens: int64(b.respondMaxTokens),
 		System: []anthropic.TextBlockParam{
 			{Text: b.systemPrompt},
 		},

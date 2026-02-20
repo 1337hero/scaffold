@@ -50,7 +50,76 @@ func tomorrow() string {
 
 func (db *DB) migrate() error {
 	_, err := db.conn.Exec(schema)
-	return err
+	if err != nil {
+		return fmt.Errorf("apply schema: %w", err)
+	}
+
+	if err := db.migrateAddColumn("memories", "suppressed_at", "TEXT"); err != nil {
+		return err
+	}
+	if err := db.migrateAddColumn("captures", "confirmed", "INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+
+	_, err = db.conn.Exec(`
+		CREATE TABLE IF NOT EXISTS conversation_log (
+		  id         TEXT PRIMARY KEY,
+		  sender     TEXT NOT NULL,
+		  role       TEXT NOT NULL,
+		  content    TEXT NOT NULL,
+		  created_at TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_memories_suppressed ON memories(suppressed_at);
+		CREATE INDEX IF NOT EXISTS idx_conversation_log_created ON conversation_log(created_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_conversation_log_sender ON conversation_log(sender);
+	`)
+	if err != nil {
+		return fmt.Errorf("apply extended schema: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) migrateAddColumn(table, column, colDef string) error {
+	exists, err := db.columnExists(table, column)
+	if err != nil {
+		return fmt.Errorf("check column %s.%s: %w", table, column, err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.conn.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colDef)); err != nil {
+		return fmt.Errorf("add column %s.%s: %w", table, column, err)
+	}
+	return nil
+}
+
+func (db *DB) columnExists(table, column string) (bool, error) {
+	rows, err := db.conn.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			colType    string
+			notNull    int
+			defaultV   sql.NullString
+			primaryKey int
+		)
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultV, &primaryKey); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 const schema = `
@@ -109,4 +178,13 @@ CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);
 CREATE INDEX IF NOT EXISTS idx_captures_processed ON captures(processed);
 CREATE INDEX IF NOT EXISTS idx_desk_date ON desk(date);
 CREATE INDEX IF NOT EXISTS idx_desk_status ON desk(status);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash   TEXT PRIMARY KEY,
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL,
+  last_seen_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 `

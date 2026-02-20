@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import { TheOne } from './TheOne.jsx'
 import { TaskRow } from './TaskRow.jsx'
 import { deskQuery } from '@/api/queries.js'
-import { deskData } from '@/data/mock.js'
 
 function formatDate() {
   const now = new Date()
@@ -29,20 +28,24 @@ export function Desk() {
   const [clock, setClock] = useState(formatTime)
   const [{ dayName, dateFull }] = useState(formatDate)
 
+  const loaded = !isLoading && data
   // Seed local state once from query — intentionally one-way
-  if (data && theOne === null) setTheOne(data.theOne)
-  if (data && tasks === null) setTasks(data.tasks)
+  // Use sentinel `false` to distinguish "seeded as null" from "not yet seeded"
+  if (loaded && theOne === null) setTheOne(data.theOne ?? false)
+  if (loaded && tasks === null) setTasks(data.tasks ?? [])
 
   useEffect(() => {
     const interval = setInterval(() => setClock(formatTime()), 60000)
     return () => clearInterval(interval)
   }, [])
 
-  if (isLoading || !theOne || !tasks) return null
+  if (!loaded || tasks === null) return null
 
-  const doneCount = [theOne, ...tasks].filter(t => t.done).length
-  const totalCount = 1 + tasks.length
-  const progressPct = Math.round((doneCount / totalCount) * 100)
+  const hasItems = theOne && tasks
+  const allItems = hasItems ? [theOne, ...tasks] : []
+  const doneCount = allItems.filter(t => t.done).length
+  const totalCount = allItems.length
+  const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
 
   function toggleTheOne() {
     setTheOne(prev => ({ ...prev, done: !prev.done }))
@@ -64,43 +67,52 @@ export function Desk() {
   }
 
   return (
-    <div class="max-w-[760px] mx-auto px-8 py-8 pb-[100px] max-md:px-4 max-md:py-5">
+    <div class="panel-shell">
       <div class="flex justify-between items-baseline mb-7">
         <div class="flex items-baseline gap-3">
-          <span class="text-2xl font-bold tracking-tight">{dayName}</span>
+          <span class="text-[1.5rem] font-bold tracking-[-0.03em]">{dayName}</span>
           <span class="text-[0.85rem] text-text-dim">{dateFull}</span>
         </div>
         <span class="font-mono text-[0.95rem] text-text-muted">{clock}</span>
       </div>
 
       <div class="flex items-center gap-2 mb-6">
-        <div class="flex-1 h-1 bg-surface-2 rounded-sm overflow-hidden">
+        <div class="flex-1 h-1 bg-surface-2 rounded-[2px] overflow-hidden">
           <div
-            class="h-full rounded-sm transition-[width] duration-500 motion-reduce:transition-none"
+            class="h-full rounded-[2px] transition-[width] duration-500 motion-reduce:transition-none"
             style={{ width: `${progressPct}%`, background: 'linear-gradient(90deg, var(--color-green), var(--color-amber))' }}
           />
         </div>
         <span class="font-mono text-[0.72rem] text-text-muted">{doneCount} / {totalCount}</span>
       </div>
 
-      <TheOne
-        task={theOne}
-        onToggle={toggleTheOne}
-        onToggleStep={toggleMicroStep}
-      />
+      {!hasItems ? (
+        <div class="bg-surface border border-border rounded-lg p-8 mb-2 text-center">
+          <div class="text-text-muted text-[0.9rem] mb-1">No tasks on the desk yet.</div>
+          <div class="text-text-dim text-[0.75rem]">The morning prioritize will populate this, or capture something via Signal.</div>
+        </div>
+      ) : (
+        <>
+          <TheOne
+            task={theOne}
+            onToggle={toggleTheOne}
+            onToggleStep={toggleMicroStep}
+          />
 
-      {tasks.map((task) => (
-        <TaskRow key={task.id} task={task} onToggle={() => toggleTask(task.id)} />
-      ))}
+          {tasks.map((task) => (
+            <TaskRow key={task.id} task={task} onToggle={() => toggleTask(task.id)} />
+          ))}
+        </>
+      )}
 
-      {deskData.doneToday.length > 0 && (
+      {(data?.doneToday?.length > 0) && (
         <>
           <div class="flex items-center gap-3 mt-6 mb-3.5">
             <span class="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-text-muted">Done today</span>
             <span class="flex-1 h-px bg-border" />
           </div>
           <div class="opacity-45">
-            {deskData.doneToday.map((item) => (
+            {data.doneToday.map((item) => (
               <div key={item.id} class="flex items-center gap-3 py-2">
                 <div class="w-[22px] h-[22px] rounded-md border-2 border-green bg-green-dim shrink-0 flex items-center justify-center text-green text-[0.75rem] font-bold">
                   {'\u2713'}

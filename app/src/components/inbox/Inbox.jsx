@@ -12,12 +12,13 @@ export function Inbox() {
   if (isLoading) return null
 
   return (
-    <div class="max-w-[760px] mx-auto px-8 py-8 pb-[100px] max-md:px-4 max-md:py-5">
+    <div class="panel-shell">
       <div class="flex justify-between items-center mb-6">
-        <h2 class="text-[1.4rem] font-bold tracking-tight">Inbox</h2>
+        <h2 class="panel-title">Inbox</h2>
         <div class="flex gap-1">
           {views.map((v) => (
             <button
+              type="button"
               key={v}
               onClick={() => setActiveView(v)}
               class={`text-[0.72rem] font-medium py-1.5 px-3.5 rounded-md border font-sans cursor-pointer transition-all
