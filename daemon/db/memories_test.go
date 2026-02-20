@@ -380,3 +380,387 @@ func TestListRecentMemoriesFiltersSuppressedAndOrdersNewestFirst(t *testing.T) {
 		t.Fatalf("expected older memory second, got %s", memories[1].ID)
 	}
 }
+
+func TestPruneSuppressedMemoriesAppliesGuards(t *testing.T) {
+	database := newTestDB(t)
+	oldSuppressedAt := time.Now().UTC().AddDate(0, 0, -40).Format(time.RFC3339)
+
+	if err := database.InsertMemory(Memory{
+		ID:         "mem-active",
+		Type:       "Fact",
+		Content:    "active memory",
+		Title:      "Active",
+		Importance: 0.6,
+		Source:     "test",
+	}); err != nil {
+		t.Fatalf("insert active memory: %v", err)
+	}
+
+	if err := database.InsertMemory(Memory{
+		ID:         "mem-edge-guard",
+		Type:       "Fact",
+		Content:    "has active edge",
+		Title:      "Edge Guard",
+		Importance: 0.5,
+		Source:     "test",
+		SuppressedAt: sql.NullString{
+			String: oldSuppressedAt,
+			Valid:  true,
+		},
+	}); err != nil {
+		t.Fatalf("insert edge-guard memory: %v", err)
+	}
+	if err := database.InsertEdge(Edge{
+		FromID:   "mem-edge-guard",
+		ToID:     "mem-active",
+		Relation: "RelatedTo",
+	}); err != nil {
+		t.Fatalf("insert active edge: %v", err)
+	}
+
+	if err := database.InsertMemory(Memory{
+		ID:         "mem-desk-ref",
+		Type:       "Todo",
+		Content:    "used by desk",
+		Title:      "Desk Ref",
+		Importance: 0.5,
+		Source:     "test",
+		SuppressedAt: sql.NullString{
+			String: oldSuppressedAt,
+			Valid:  true,
+		},
+	}); err != nil {
+		t.Fatalf("insert desk-ref memory: %v", err)
+	}
+	if err := database.InsertDeskItem(DeskItem{
+		ID: "desk-ref-item",
+		MemoryID: sql.NullString{
+			String: "mem-desk-ref",
+			Valid:  true,
+		},
+		Title:    "Desk item",
+		Position: 1,
+		Status:   "active",
+		Date:     today(),
+	}); err != nil {
+		t.Fatalf("insert desk item ref: %v", err)
+	}
+
+	if err := database.InsertMemory(Memory{
+		ID:         "mem-capture-ref",
+		Type:       "Fact",
+		Content:    "used by capture",
+		Title:      "Capture Ref",
+		Importance: 0.5,
+		Source:     "test",
+		SuppressedAt: sql.NullString{
+			String: oldSuppressedAt,
+			Valid:  true,
+		},
+	}); err != nil {
+		t.Fatalf("insert capture-ref memory: %v", err)
+	}
+	captureID, err := database.InsertCapture("capture for ref", "test")
+	if err != nil {
+		t.Fatalf("insert capture: %v", err)
+	}
+	if err := database.UpdateTriage(captureID, "reference", "mem-capture-ref"); err != nil {
+		t.Fatalf("link capture ref: %v", err)
+	}
+
+	for _, id := range []string{"mem-prune-a", "mem-prune-b"} {
+		if err := database.InsertMemory(Memory{
+			ID:         id,
+			Type:       "Observation",
+			Content:    "old suppressed",
+			Title:      id,
+			Importance: 0.2,
+			Source:     "test",
+			SuppressedAt: sql.NullString{
+				String: oldSuppressedAt,
+				Valid:  true,
+			},
+		}); err != nil {
+			t.Fatalf("insert prune candidate %s: %v", id, err)
+		}
+	}
+	if err := database.InsertEdge(Edge{
+		FromID:   "mem-prune-a",
+		ToID:     "mem-prune-b",
+		Relation: "RelatedTo",
+	}); err != nil {
+		t.Fatalf("insert inactive edge: %v", err)
+	}
+
+	report, err := database.PruneSuppressedMemories(30)
+	if err != nil {
+		t.Fatalf("prune suppressed memories: %v", err)
+	}
+
+	if report.Candidates != 5 {
+		t.Fatalf("expected 5 candidates, got %d", report.Candidates)
+	}
+	if report.Deleted != 2 {
+		t.Fatalf("expected 2 deleted, got %d", report.Deleted)
+	}
+	if report.SkippedActiveEdges != 1 {
+		t.Fatalf("expected 1 skipped active edge, got %d", report.SkippedActiveEdges)
+	}
+	if report.SkippedReferences != 2 {
+		t.Fatalf("expected 2 skipped references, got %d", report.SkippedReferences)
+	}
+	if report.EdgeRowsDeleted < 1 {
+		t.Fatalf("expected at least 1 edge row deleted, got %d", report.EdgeRowsDeleted)
+	}
+
+	for _, keepID := range []string{"mem-edge-guard", "mem-desk-ref", "mem-capture-ref"} {
+		mem, err := database.GetMemory(keepID)
+		if err != nil {
+			t.Fatalf("get memory %s: %v", keepID, err)
+		}
+		if mem == nil {
+			t.Fatalf("expected memory %s to remain after prune", keepID)
+		}
+	}
+
+	for _, deletedID := range []string{"mem-prune-a", "mem-prune-b"} {
+		mem, err := database.GetMemory(deletedID)
+		if err != nil {
+			t.Fatalf("get memory %s: %v", deletedID, err)
+		}
+		if mem != nil {
+			t.Fatalf("expected memory %s to be pruned", deletedID)
+		}
+	}
+}
+
+func TestPruneSuppressedMemoriesHonorsSuppressedAge(t *testing.T) {
+	database := newTestDB(t)
+
+	if err := database.InsertMemory(Memory{
+		ID:         "mem-fresh-suppressed",
+		Type:       "Observation",
+		Content:    "recently suppressed",
+		Title:      "Fresh Suppressed",
+		Importance: 0.2,
+		Source:     "test",
+		SuppressedAt: sql.NullString{
+			String: time.Now().UTC().AddDate(0, 0, -5).Format(time.RFC3339),
+			Valid:  true,
+		},
+	}); err != nil {
+		t.Fatalf("insert memory: %v", err)
+	}
+
+	report, err := database.PruneSuppressedMemories(30)
+	if err != nil {
+		t.Fatalf("prune suppressed memories: %v", err)
+	}
+	if report.Candidates != 0 || report.Deleted != 0 {
+		t.Fatalf("expected no candidates/deletes, got %+v", report)
+	}
+
+	mem, err := database.GetMemory("mem-fresh-suppressed")
+	if err != nil {
+		t.Fatalf("get memory: %v", err)
+	}
+	if mem == nil {
+		t.Fatal("expected fresh suppressed memory to remain")
+	}
+}
+
+func TestDecayMemoriesRespectsExemptTypesAndAge(t *testing.T) {
+	database := newTestDB(t)
+	oldAccessed := time.Now().UTC().AddDate(0, 0, -45).Format(time.RFC3339)
+	recentAccessed := time.Now().UTC().AddDate(0, 0, -2).Format(time.RFC3339)
+
+	if err := database.InsertMemory(Memory{
+		ID:         "decay-old",
+		Type:       "Fact",
+		Content:    "old accessed",
+		Title:      "Old",
+		Importance: 0.8,
+		Source:     "test",
+		AccessedAt: oldAccessed,
+	}); err != nil {
+		t.Fatalf("insert decay-old: %v", err)
+	}
+	if err := database.InsertMemory(Memory{
+		ID:         "decay-recent",
+		Type:       "Fact",
+		Content:    "recent accessed",
+		Title:      "Recent",
+		Importance: 0.8,
+		Source:     "test",
+		AccessedAt: recentAccessed,
+	}); err != nil {
+		t.Fatalf("insert decay-recent: %v", err)
+	}
+	if err := database.InsertMemory(Memory{
+		ID:         "decay-exempt",
+		Type:       "Identity",
+		Content:    "identity",
+		Title:      "Identity",
+		Importance: 0.8,
+		Source:     "test",
+		AccessedAt: oldAccessed,
+	}); err != nil {
+		t.Fatalf("insert decay-exempt: %v", err)
+	}
+
+	report, err := database.DecayMemories(0.5, []string{"Identity"}, 0.1, 30)
+	if err != nil {
+		t.Fatalf("decay memories: %v", err)
+	}
+	if report.Updated != 1 {
+		t.Fatalf("expected 1 updated memory, got %d", report.Updated)
+	}
+
+	oldMem, err := database.GetMemory("decay-old")
+	if err != nil {
+		t.Fatalf("get decay-old: %v", err)
+	}
+	if oldMem == nil || oldMem.Importance != 0.4 {
+		t.Fatalf("expected decay-old importance 0.4, got %+v", oldMem)
+	}
+
+	recentMem, err := database.GetMemory("decay-recent")
+	if err != nil {
+		t.Fatalf("get decay-recent: %v", err)
+	}
+	if recentMem == nil || recentMem.Importance != 0.8 {
+		t.Fatalf("expected decay-recent unchanged at 0.8, got %+v", recentMem)
+	}
+
+	exemptMem, err := database.GetMemory("decay-exempt")
+	if err != nil {
+		t.Fatalf("get decay-exempt: %v", err)
+	}
+	if exemptMem == nil || exemptMem.Importance != 0.8 {
+		t.Fatalf("expected decay-exempt unchanged at 0.8, got %+v", exemptMem)
+	}
+}
+
+func TestConsolidateMemoriesCreatesEdgeAndSuppressesUnreferencedDuplicate(t *testing.T) {
+	database := newTestDB(t)
+
+	canonical := Memory{
+		ID:         "consolidate-canonical",
+		Type:       "Fact",
+		Title:      "Same thought",
+		Content:    "Same thought content",
+		Importance: 0.9,
+		Source:     "test",
+		CreatedAt:  "2026-01-01T00:00:00Z",
+		UpdatedAt:  "2026-01-01T00:00:00Z",
+	}
+	duplicate := Memory{
+		ID:         "consolidate-dup",
+		Type:       "Fact",
+		Title:      "Same thought",
+		Content:    "Same thought content",
+		Importance: 0.5,
+		Source:     "test",
+		CreatedAt:  "2026-01-02T00:00:00Z",
+		UpdatedAt:  "2026-01-02T00:00:00Z",
+	}
+	referencedDup := Memory{
+		ID:         "consolidate-ref",
+		Type:       "Fact",
+		Title:      "Same thought",
+		Content:    "Same thought content",
+		Importance: 0.4,
+		Source:     "test",
+		CreatedAt:  "2026-01-03T00:00:00Z",
+		UpdatedAt:  "2026-01-03T00:00:00Z",
+	}
+	for _, mem := range []Memory{canonical, duplicate, referencedDup} {
+		if err := database.InsertMemory(mem); err != nil {
+			t.Fatalf("insert memory %s: %v", mem.ID, err)
+		}
+	}
+
+	captureID, err := database.InsertCapture("capture", "test")
+	if err != nil {
+		t.Fatalf("insert capture: %v", err)
+	}
+	if err := database.UpdateTriage(captureID, "reference", "consolidate-ref"); err != nil {
+		t.Fatalf("update capture triage ref: %v", err)
+	}
+
+	report, err := database.ConsolidateMemories()
+	if err != nil {
+		t.Fatalf("consolidate memories: %v", err)
+	}
+	if report.GroupsFound != 1 {
+		t.Fatalf("expected 1 group, got %d", report.GroupsFound)
+	}
+	if report.DuplicatesFound != 2 {
+		t.Fatalf("expected 2 duplicates, got %d", report.DuplicatesFound)
+	}
+	if report.EdgesCreated < 2 {
+		t.Fatalf("expected at least 2 edges created, got %d", report.EdgesCreated)
+	}
+	if report.MemoriesSuppressed != 1 {
+		t.Fatalf("expected 1 suppressed duplicate, got %d", report.MemoriesSuppressed)
+	}
+	if report.SkippedReferenced != 1 {
+		t.Fatalf("expected 1 referenced duplicate skipped, got %d", report.SkippedReferenced)
+	}
+
+	dupMem, err := database.GetMemory("consolidate-dup")
+	if err != nil {
+		t.Fatalf("get consolidate-dup: %v", err)
+	}
+	if dupMem == nil || !dupMem.SuppressedAt.Valid {
+		t.Fatalf("expected consolidate-dup suppressed, got %+v", dupMem)
+	}
+
+	refMem, err := database.GetMemory("consolidate-ref")
+	if err != nil {
+		t.Fatalf("get consolidate-ref: %v", err)
+	}
+	if refMem == nil || refMem.SuppressedAt.Valid {
+		t.Fatalf("expected consolidate-ref to remain unsuppressed, got %+v", refMem)
+	}
+}
+
+func TestReindexMemoryCentralityCreatesScores(t *testing.T) {
+	database := newTestDB(t)
+
+	for _, mem := range []Memory{
+		{ID: "central-a", Type: "Fact", Title: "A", Content: "A", Importance: 0.5, Source: "test"},
+		{ID: "central-b", Type: "Fact", Title: "B", Content: "B", Importance: 0.5, Source: "test"},
+		{ID: "central-c", Type: "Fact", Title: "C", Content: "C", Importance: 0.5, Source: "test"},
+	} {
+		if err := database.InsertMemory(mem); err != nil {
+			t.Fatalf("insert %s: %v", mem.ID, err)
+		}
+	}
+	if err := database.InsertEdge(Edge{FromID: "central-a", ToID: "central-b", Relation: "RelatedTo"}); err != nil {
+		t.Fatalf("insert edge ab: %v", err)
+	}
+	if err := database.InsertEdge(Edge{FromID: "central-b", ToID: "central-c", Relation: "RelatedTo"}); err != nil {
+		t.Fatalf("insert edge bc: %v", err)
+	}
+
+	report, err := database.ReindexMemoryCentrality()
+	if err != nil {
+		t.Fatalf("reindex memory centrality: %v", err)
+	}
+	if report.MemoriesIndexed != 3 {
+		t.Fatalf("expected 3 indexed memories, got %d", report.MemoriesIndexed)
+	}
+	if report.MaxDegree != 2 {
+		t.Fatalf("expected max degree 2, got %d", report.MaxDegree)
+	}
+
+	row := database.conn.QueryRow(`SELECT score FROM memory_centrality WHERE memory_id = ?`, "central-b")
+	var score float64
+	if err := row.Scan(&score); err != nil {
+		t.Fatalf("scan centrality score: %v", err)
+	}
+	if score != 1 {
+		t.Fatalf("expected central-b score 1, got %.4f", score)
+	}
+}

@@ -329,8 +329,16 @@ func (c *Cortex) buildTasks() []*CortexTask {
 
 func (c *Cortex) taskFnForName(name string) func(context.Context) error {
 	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "consolidation":
+		return c.runConsolidation
+	case "decay":
+		return c.runDecay
 	case "prioritize":
 		return c.runPrioritization
+	case "prune":
+		return c.runPrune
+	case "reindex":
+		return c.runReindex
 	case "session_cleanup":
 		return c.runSessionCleanup
 	default:
@@ -475,9 +483,17 @@ func (c *Cortex) runPrioritization(ctx context.Context) error {
 			Date: todayDate,
 		}
 		if task.SourceMemoryID != "" {
-			item.MemoryID = sql.NullString{
-				String: task.SourceMemoryID,
-				Valid:  true,
+			mem, err := c.db.GetMemory(task.SourceMemoryID)
+			if err != nil {
+				return fmt.Errorf("load source memory %q: %w", task.SourceMemoryID, err)
+			}
+			if mem != nil {
+				item.MemoryID = sql.NullString{
+					String: task.SourceMemoryID,
+					Valid:  true,
+				}
+			} else {
+				log.Printf("cortex: prioritize source memory %q missing; inserting desk item without memory_id", task.SourceMemoryID)
 			}
 		}
 
@@ -486,6 +502,95 @@ func (c *Cortex) runPrioritization(ctx context.Context) error {
 		}
 	}
 
+	return nil
+}
+
+func (c *Cortex) runPrune(ctx context.Context) error {
+	_ = ctx
+	if c.db == nil {
+		return fmt.Errorf("database is nil")
+	}
+
+	suppressedDays := 30
+	if pruneCfg, ok := c.cfg.Tasks["prune"]; ok && pruneCfg.SuppressedDays > 0 {
+		suppressedDays = pruneCfg.SuppressedDays
+	}
+
+	report, err := c.db.PruneSuppressedMemories(suppressedDays)
+	if err != nil {
+		return fmt.Errorf("prune suppressed memories: %w", err)
+	}
+
+	log.Printf(
+		"cortex: prune candidates=%d deleted=%d skipped_active_edges=%d skipped_references=%d edge_rows_deleted=%d",
+		report.Candidates,
+		report.Deleted,
+		report.SkippedActiveEdges,
+		report.SkippedReferences,
+		report.EdgeRowsDeleted,
+	)
+	return nil
+}
+
+func (c *Cortex) runDecay(ctx context.Context) error {
+	_ = ctx
+	if c.db == nil {
+		return fmt.Errorf("database is nil")
+	}
+
+	taskCfg, ok := c.cfg.Tasks["decay"]
+	if !ok {
+		return fmt.Errorf("decay task config missing")
+	}
+	factor := taskCfg.Factor
+	if factor <= 0 || factor >= 1 {
+		factor = 0.95
+	}
+	floor := taskCfg.ImportanceFloor
+	if floor <= 0 {
+		floor = 0.1
+	}
+
+	report, err := c.db.DecayMemories(factor, taskCfg.ExemptTypes, floor, 30)
+	if err != nil {
+		return fmt.Errorf("decay memories: %w", err)
+	}
+	log.Printf("cortex: decay updated=%d factor=%.4f floor=%.2f", report.Updated, factor, floor)
+	return nil
+}
+
+func (c *Cortex) runConsolidation(ctx context.Context) error {
+	_ = ctx
+	if c.db == nil {
+		return fmt.Errorf("database is nil")
+	}
+
+	report, err := c.db.ConsolidateMemories()
+	if err != nil {
+		return fmt.Errorf("consolidate memories: %w", err)
+	}
+	log.Printf(
+		"cortex: consolidation groups=%d duplicates=%d edges_created=%d suppressed=%d skipped_referenced=%d",
+		report.GroupsFound,
+		report.DuplicatesFound,
+		report.EdgesCreated,
+		report.MemoriesSuppressed,
+		report.SkippedReferenced,
+	)
+	return nil
+}
+
+func (c *Cortex) runReindex(ctx context.Context) error {
+	_ = ctx
+	if c.db == nil {
+		return fmt.Errorf("database is nil")
+	}
+
+	report, err := c.db.ReindexMemoryCentrality()
+	if err != nil {
+		return fmt.Errorf("reindex centrality: %w", err)
+	}
+	log.Printf("cortex: reindex indexed=%d max_degree=%d", report.MemoriesIndexed, report.MaxDegree)
 	return nil
 }
 

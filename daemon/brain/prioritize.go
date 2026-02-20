@@ -45,8 +45,13 @@ Active todos (by importance):
 Respond as JSON array: [{"title": "...", "micro_steps": ["step 1", "step 2"], "source_memory_id": "...", "why": "one sentence"}]
 Maximum 3 items.`, string(yesterdayJSON), string(todosJSON))
 
+	model := b.respondModel
+	if strings.TrimSpace(string(model)) == "" {
+		model = anthropic.ModelClaudeHaiku4_5
+	}
+
 	resp, err := b.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaude3_7SonnetLatest,
+		Model:     model,
 		MaxTokens: 1024,
 		System: []anthropic.TextBlockParam{
 			{Text: system},
@@ -64,10 +69,40 @@ Maximum 3 items.`, string(yesterdayJSON), string(todosJSON))
 	}
 
 	text := strings.TrimSpace(resp.Content[0].Text)
-	var tasks []PrioritizedTask
-	if err := json.Unmarshal([]byte(text), &tasks); err != nil {
+	tasks, err := parsePrioritizeTasks(text)
+	if err != nil {
 		return nil, fmt.Errorf("parse prioritize JSON: %w", err)
 	}
-
 	return tasks, nil
+}
+
+func parsePrioritizeTasks(raw string) ([]PrioritizedTask, error) {
+	raw = strings.TrimSpace(raw)
+	var tasks []PrioritizedTask
+
+	if err := json.Unmarshal([]byte(raw), &tasks); err == nil {
+		return tasks, nil
+	}
+
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(trimmed, "```") {
+		trimmed = strings.TrimPrefix(trimmed, "```json")
+		trimmed = strings.TrimPrefix(trimmed, "```")
+		trimmed = strings.TrimSuffix(trimmed, "```")
+		trimmed = strings.TrimSpace(trimmed)
+		if err := json.Unmarshal([]byte(trimmed), &tasks); err == nil {
+			return tasks, nil
+		}
+	}
+
+	start := strings.Index(trimmed, "[")
+	end := strings.LastIndex(trimmed, "]")
+	if start >= 0 && end > start {
+		candidate := strings.TrimSpace(trimmed[start : end+1])
+		if err := json.Unmarshal([]byte(candidate), &tasks); err == nil {
+			return tasks, nil
+		}
+	}
+
+	return nil, fmt.Errorf("invalid prioritize payload")
 }
