@@ -51,7 +51,6 @@ next-env.d.ts
 #misc
 /_backup
 /.idea
-/docs/plans/
 
 # Editor directories and files
 ._*
@@ -70,7 +69,9 @@ uploads/
 logs/
 *.log
 specs/
-docs/
+docs/*
+!docs/plans/
+!docs/plans/**
 archive/
 
 # Custom extensions (private per-deployment features)
