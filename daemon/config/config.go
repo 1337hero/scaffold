@@ -15,6 +15,14 @@ type Config struct {
 	Triage    TriageConfig
 	Cortex    CortexConfig
 	Embedding EmbeddingConfig
+	Google    GoogleConfig
+}
+
+type GoogleConfig struct {
+	ClientID     string   `yaml:"client_id"`
+	ClientSecret string   `yaml:"client_secret"`
+	CalendarID   string   `yaml:"calendar_id"`
+	Scopes       []string `yaml:"scopes"`
 }
 
 type EmbeddingConfig struct {
@@ -87,6 +95,9 @@ func Load(configDir string, userName string) (*Config, error) {
 	if err := loadFile(filepath.Join(configDir, "embedding.yaml"), &cfg.Embedding); err != nil {
 		return nil, fmt.Errorf("load embedding.yaml: %w", err)
 	}
+	if err := loadFileOptional(filepath.Join(configDir, "google.yaml"), &cfg.Google); err != nil {
+		return nil, fmt.Errorf("load google.yaml: %w", err)
+	}
 
 	applyDefaults(cfg)
 	substituteVars(cfg, userName)
@@ -100,6 +111,17 @@ func Load(configDir string, userName string) (*Config, error) {
 func loadFile(path string, target interface{}) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
+		return err
+	}
+	return yaml.Unmarshal(data, target)
+}
+
+func loadFileOptional(path string, target interface{}) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 	return yaml.Unmarshal(data, target)
@@ -147,6 +169,13 @@ func applyDefaults(cfg *Config) {
 			IntervalHours:  24,
 			TimeoutSeconds: 15,
 		}
+	}
+
+	if cfg.Google.CalendarID == "" {
+		cfg.Google.CalendarID = "primary"
+	}
+	if len(cfg.Google.Scopes) == 0 {
+		cfg.Google.Scopes = []string{"https://www.googleapis.com/auth/calendar.events.readonly"}
 	}
 
 	if cfg.Embedding.Provider == "" {

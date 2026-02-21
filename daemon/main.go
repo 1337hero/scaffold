@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
+	"gopkg.in/yaml.v3"
 
 	"scaffold/api"
 	"scaffold/brain"
@@ -21,6 +23,7 @@ import (
 	"scaffold/cortex"
 	"scaffold/db"
 	"scaffold/embedding"
+	googleauth "scaffold/google"
 	signalcli "scaffold/signal"
 )
 
@@ -28,6 +31,11 @@ const maxInFlightMessages = 4
 const conversationHistoryLimit = 12
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "auth" {
+		handleAuthSubcommand(os.Args[2:])
+		return
+	}
+
 	log.SetFlags(log.Ltime | log.Lshortfile)
 	log.Println("scaffold daemon starting")
 
@@ -93,6 +101,29 @@ func main() {
 		log.Fatalf("unsupported embedding provider %q", appCfg.Embedding.Provider)
 	}
 	b.SetEmbedder(embedder)
+
+	if gcfg := appCfg.Google; gcfg.ClientID != "" {
+		store := &googleauth.DBTokenStore{DB: database, Provider: "google"}
+		existing, err := store.Get()
+		if err != nil {
+			log.Printf("warn: failed to check Google token: %v", err)
+		} else if existing == nil {
+			log.Println("Google Calendar configured but not authenticated. Run: scaffold-daemon auth google")
+		} else {
+			oauthCfg := googleauth.NewOAuth2Config(gcfg)
+			tokenSource := googleauth.TokenSource(oauthCfg, store)
+			calClient, err := googleauth.NewCalendarClient(context.Background(), tokenSource, gcfg.CalendarID)
+			if err != nil {
+				log.Printf("warn: Google Calendar client failed: %v", err)
+			} else {
+				b.SetCalendarClient(calClient)
+				log.Printf("Google Calendar connected (calendar=%s)", gcfg.CalendarID)
+			}
+		}
+	} else {
+		log.Println("Google Calendar not configured, skipping")
+	}
+
 	cortexRuntime := cortex.New(database, b, cfg.anthropicKey, appCfg.Cortex, embedder)
 	b.SetBulletinProvider(cortexRuntime.CurrentBulletin)
 
@@ -414,4 +445,56 @@ func buildAgentSystemPrompt(cfg *appconfig.Config) string {
 	b.WriteString("\n{{cortex_bulletin}}")
 
 	return b.String()
+}
+
+func handleAuthSubcommand(args []string) {
+	if len(args) == 0 {
+		log.Fatal("usage: scaffold-daemon auth google")
+	}
+
+	switch args[0] {
+	case "google":
+		handleGoogleAuth()
+	default:
+		log.Fatalf("unknown auth provider: %s", args[0])
+	}
+}
+
+func handleGoogleAuth() {
+	_ = godotenv.Load()
+
+	configDir := os.Getenv("CONFIG_DIR")
+	if configDir == "" {
+		configDir = "./config"
+	}
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./scaffold.db"
+	}
+
+	var googleCfg appconfig.GoogleConfig
+	data, err := os.ReadFile(filepath.Join(configDir, "google.yaml"))
+	if err != nil {
+		log.Fatalf("failed to read google.yaml: %v (run from daemon/ directory or set CONFIG_DIR)", err)
+	}
+	if err := yaml.Unmarshal(data, &googleCfg); err != nil {
+		log.Fatalf("failed to parse google.yaml: %v", err)
+	}
+
+	if googleCfg.ClientID == "" || googleCfg.ClientSecret == "" {
+		log.Fatal("google.yaml: client_id and client_secret are required. See file for setup instructions.")
+	}
+
+	database, err := db.Open(dbPath)
+	if err != nil {
+		log.Fatalf("failed to open database: %v", err)
+	}
+	defer database.Close()
+
+	oauthCfg := googleauth.NewOAuth2Config(googleCfg)
+	store := &googleauth.DBTokenStore{DB: database, Provider: "google"}
+
+	if err := googleauth.RunConsentFlow(oauthCfg, store); err != nil {
+		log.Fatalf("auth flow failed: %v", err)
+	}
 }

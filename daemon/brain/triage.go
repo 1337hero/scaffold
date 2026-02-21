@@ -11,6 +11,7 @@ import (
 
 	"scaffold/db"
 	"scaffold/embedding"
+	googlecal "scaffold/google"
 )
 
 const maxToolRounds = 5
@@ -32,6 +33,7 @@ type Brain struct {
 	responder        ToolUseResponder
 	db               *db.DB
 	embedder         embedding.Embedder
+	calendarClient   *googlecal.CalendarClient
 	tools            []ToolDefinition
 	toolRegistry     map[string]ToolHandler
 	bulletinProvider func() (string, bool)
@@ -340,6 +342,10 @@ func (b *Brain) SetBulletinProvider(provider func() (string, bool)) {
 
 func (b *Brain) SetEmbedder(e embedding.Embedder) {
 	b.embedder = e
+}
+
+func (b *Brain) SetCalendarClient(c *googlecal.CalendarClient) {
+	b.calendarClient = c
 }
 
 func (b *Brain) renderSystemPrompt() string {

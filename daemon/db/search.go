@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
@@ -35,13 +36,16 @@ func (db *DB) SearchFTS(query string, topK int) ([]ScoredMemory, error) {
 	var results []ScoredMemory
 	for rows.Next() {
 		var sm ScoredMemory
+		var tags, accessedAt sql.NullString
 		if err := rows.Scan(
-			&sm.ID, &sm.Type, &sm.Content, &sm.Title, &sm.Importance, &sm.Source, &sm.Tags,
-			&sm.CreatedAt, &sm.UpdatedAt, &sm.AccessedAt, &sm.AccessCount, &sm.Archived, &sm.SuppressedAt,
+			&sm.ID, &sm.Type, &sm.Content, &sm.Title, &sm.Importance, &sm.Source, &tags,
+			&sm.CreatedAt, &sm.UpdatedAt, &accessedAt, &sm.AccessCount, &sm.Archived, &sm.SuppressedAt,
 			&sm.FTSScore,
 		); err != nil {
 			return nil, err
 		}
+		sm.Tags = tags.String
+		sm.AccessedAt = accessedAt.String
 		results = append(results, sm)
 	}
 	return results, rows.Err()

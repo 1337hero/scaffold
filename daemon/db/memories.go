@@ -101,12 +101,15 @@ func (db *DB) queryMemories(query string, args ...any) ([]Memory, error) {
 	var out []Memory
 	for rows.Next() {
 		var m Memory
+		var tags, accessedAt sql.NullString
 		if err := rows.Scan(
-			&m.ID, &m.Type, &m.Content, &m.Title, &m.Importance, &m.Source, &m.Tags,
-			&m.CreatedAt, &m.UpdatedAt, &m.AccessedAt, &m.AccessCount, &m.Archived, &m.SuppressedAt,
+			&m.ID, &m.Type, &m.Content, &m.Title, &m.Importance, &m.Source, &tags,
+			&m.CreatedAt, &m.UpdatedAt, &accessedAt, &m.AccessCount, &m.Archived, &m.SuppressedAt,
 		); err != nil {
 			return nil, err
 		}
+		m.Tags = tags.String
+		m.AccessedAt = accessedAt.String
 		out = append(out, m)
 	}
 	return out, rows.Err()
@@ -196,9 +199,10 @@ func (db *DB) GetMemory(id string) (*Memory, error) {
 		 FROM memories WHERE id = ?`, id,
 	)
 	var m Memory
+	var tags, accessedAt sql.NullString
 	err := row.Scan(
-		&m.ID, &m.Type, &m.Content, &m.Title, &m.Importance, &m.Source, &m.Tags,
-		&m.CreatedAt, &m.UpdatedAt, &m.AccessedAt, &m.AccessCount, &m.Archived, &m.SuppressedAt,
+		&m.ID, &m.Type, &m.Content, &m.Title, &m.Importance, &m.Source, &tags,
+		&m.CreatedAt, &m.UpdatedAt, &accessedAt, &m.AccessCount, &m.Archived, &m.SuppressedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -206,6 +210,8 @@ func (db *DB) GetMemory(id string) (*Memory, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.Tags = tags.String
+	m.AccessedAt = accessedAt.String
 	return &m, nil
 }
 

@@ -66,15 +66,15 @@ func TestToolsConfig(t *testing.T) {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if len(cfg.Tools.Tools) != 6 {
-		t.Errorf("expected 6 tools, got %d", len(cfg.Tools.Tools))
+	if len(cfg.Tools.Tools) != 7 {
+		t.Errorf("expected 7 tools, got %d", len(cfg.Tools.Tools))
 	}
 
 	names := make(map[string]bool)
 	for _, tool := range cfg.Tools.Tools {
 		names[tool.Name] = true
 	}
-	expected := []string{"save_to_inbox", "get_desk", "search_memories", "update_desk_item", "get_inbox", "add_to_notebook"}
+	expected := []string{"save_to_inbox", "get_desk", "search_memories", "update_desk_item", "get_inbox", "add_to_notebook", "get_calendar_events"}
 	for _, name := range expected {
 		if !names[name] {
 			t.Errorf("missing tool: %s", name)

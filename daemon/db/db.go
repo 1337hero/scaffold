@@ -130,6 +130,22 @@ func (db *DB) migrate() error {
 	if err != nil {
 		return fmt.Errorf("apply semantic schema: %w", err)
 	}
+
+	_, err = db.conn.Exec(`
+		CREATE TABLE IF NOT EXISTS oauth_tokens (
+		  provider      TEXT PRIMARY KEY,
+		  access_token  TEXT NOT NULL,
+		  refresh_token TEXT NOT NULL,
+		  token_type    TEXT NOT NULL DEFAULT 'Bearer',
+		  expiry        TEXT NOT NULL,
+		  created_at    TEXT NOT NULL,
+		  updated_at    TEXT NOT NULL
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("apply oauth schema: %w", err)
+	}
+
 	return nil
 }
 

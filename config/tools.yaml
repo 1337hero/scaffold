@@ -78,3 +78,21 @@ tools:
           type: string
           description: Content to append
       required: [notebook, content]
+
+  - name: get_calendar_events
+    description: |
+      Check the user's Google Calendar. Use to answer schedule questions,
+      check availability, or see what's coming up today.
+    input_schema:
+      type: object
+      properties:
+        scope:
+          type: string
+          enum: [today, upcoming]
+          description: "'today' for full day, 'upcoming' for next few hours"
+        hours:
+          type: integer
+          description: "Hours to look ahead when scope is 'upcoming'. Range 1-24, default 4. Ignored for 'today'."
+          minimum: 1
+          maximum: 24
+      required: [scope]

@@ -10,18 +10,20 @@ import (
 	"github.com/google/uuid"
 
 	"scaffold/db"
+	googlecal "scaffold/google"
 )
 
 type ToolHandler func(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error)
 
 func defaultToolRegistry() map[string]ToolHandler {
 	return map[string]ToolHandler{
-		"save_to_inbox":    handleSaveToInbox,
-		"get_desk":         handleGetDesk,
-		"search_memories":  handleSearchMemories,
-		"update_desk_item": handleUpdateDeskItem,
-		"get_inbox":        handleGetInbox,
-		"add_to_notebook":  handleAddToNotebook,
+		"save_to_inbox":         handleSaveToInbox,
+		"get_desk":              handleGetDesk,
+		"search_memories":       handleSearchMemories,
+		"update_desk_item":      handleUpdateDeskItem,
+		"get_inbox":             handleGetInbox,
+		"add_to_notebook":       handleAddToNotebook,
+		"get_calendar_events":   handleGetCalendarEvents,
 	}
 }
 
@@ -345,4 +347,44 @@ func markSearchAccess(database *db.DB, results []db.ScoredMemory) {
 
 func handleAddToNotebook(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
 	return "Notebooks are not yet available. This feature is coming in a future update.", nil
+}
+
+func handleGetCalendarEvents(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if b == nil || b.calendarClient == nil {
+		return "Google Calendar is not configured. Ask Mike to run: scaffold-daemon auth google", nil
+	}
+
+	var p struct {
+		Scope string `json:"scope"`
+		Hours int    `json:"hours"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("get_calendar_events: bad params: %w", err)
+	}
+
+	hours := p.Hours
+	if hours <= 0 {
+		hours = 4
+	}
+	if hours > 24 {
+		hours = 24
+	}
+
+	calendarID := b.calendarClient.CalendarID
+
+	var events []googlecal.Event
+	var err error
+
+	switch p.Scope {
+	case "upcoming":
+		events, err = b.calendarClient.UpcomingEvents(ctx, calendarID, hours)
+	default:
+		events, err = b.calendarClient.TodayEvents(ctx, calendarID)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("get_calendar_events: %w", err)
+	}
+
+	return googlecal.FormatEvents(events), nil
 }
