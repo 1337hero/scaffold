@@ -27,6 +27,7 @@ daemon/bin/
 .env
 .env.local
 .env.production
+config/google.yaml
 
 # Deployment (instance-specific)
 deploy.sh
