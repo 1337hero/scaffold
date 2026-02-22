@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -15,7 +17,9 @@ import (
 	"time"
 
 	"scaffold/brain"
+	"scaffold/config"
 	"scaffold/db"
+	"scaffold/sessionbus"
 )
 
 // AuthConfig holds all auth-related configuration for the API server.
@@ -32,6 +36,8 @@ type AuthConfig struct {
 type Server struct {
 	db              *db.DB
 	brain           *brain.Brain
+	ingestor        Ingestor
+	sessionBus      *sessionbus.Bus
 	mux             *http.ServeMux
 	frontendDistDir string
 	apiToken        string
@@ -41,6 +47,14 @@ type Server struct {
 	cookieSecure    bool
 	cookieDomain    string
 	loginLimiter    *rateLimiter
+	webhookCfg      *config.WebhookConfig
+	webhookLimiter  *rateLimiter
+}
+
+type Ingestor interface {
+	Upload(ctx context.Context, filename string, r io.Reader) (string, error)
+	IngestNow(ctx context.Context) error
+	Directory() string
 }
 
 func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *Server {
@@ -83,7 +97,26 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	s.mux.HandleFunc("PATCH /api/desk/{id}", s.protected(s.handleDeskPatch))
 	s.mux.HandleFunc("POST /api/desk/{id}/defer", s.protected(s.handleDeskDefer))
 	s.mux.HandleFunc("POST /api/capture", s.protected(s.handleCapture))
+	s.mux.HandleFunc("POST /api/webhook", s.handleWebhook)
+	s.mux.HandleFunc("POST /api/ingest", s.protected(s.handleIngestUpload))
+	s.mux.HandleFunc("GET /api/domains", s.protected(s.handleDomains))
+	s.mux.HandleFunc("GET /api/domains/dump", s.protected(s.handleDomainsDump))
+	s.mux.HandleFunc("GET /api/domains/{id}", s.protected(s.handleDomainDetail))
+	s.mux.HandleFunc("PATCH /api/domains/{id}", s.protected(s.handleDomainPatch))
+	s.mux.HandleFunc("GET /api/calendar/upcoming", s.protected(s.handleCalendarEvents))
+	s.mux.HandleFunc("POST /api/session-bus/register", s.protected(s.handleSessionBusRegister))
+	s.mux.HandleFunc("GET /api/session-bus/sessions", s.protected(s.handleSessionBusSessions))
+	s.mux.HandleFunc("POST /api/session-bus/send", s.protected(s.handleSessionBusSend))
+	s.mux.HandleFunc("POST /api/session-bus/poll", s.protected(s.handleSessionBusPoll))
 	return s
+}
+
+func (s *Server) SetIngestor(ingestor Ingestor) {
+	s.ingestor = ingestor
+}
+
+func (s *Server) SetSessionBus(bus *sessionbus.Bus) {
+	s.sessionBus = bus
 }
 
 // EnableFrontendServing configures the daemon to serve built frontend assets
