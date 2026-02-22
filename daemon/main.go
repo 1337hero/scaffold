@@ -24,11 +24,15 @@ import (
 	"scaffold/db"
 	"scaffold/embedding"
 	googleauth "scaffold/google"
+	"scaffold/ingestion"
+	"scaffold/llm"
+	"scaffold/sessionbus"
 	signalcli "scaffold/signal"
 )
 
 const maxInFlightMessages = 4
 const conversationHistoryLimit = 12
+const signalNonTextSupportMessage = "I got your Signal message, but I currently can't view images, open attachments, or transcribe audio. Please send text, or paste a transcript/description."
 
 func main() {
 	if len(os.Args) >= 2 && os.Args[1] == "auth" {
@@ -77,17 +81,74 @@ func main() {
 		})
 	}
 
-	b := brain.New(cfg.anthropicKey, database, brain.Config{
+	llmFactories := map[string]llm.ProviderFactory{
+		"anthropic": func(apiKey string) (llm.ToolUseResponder, llm.CompletionClient) {
+			return brain.NewAnthropicResponder(apiKey), brain.NewAnthropicCompletionClient(apiKey)
+		},
+	}
+	llmRuntime, err := llm.NewRuntime(appCfg.LLM, llmFactories)
+	if err != nil {
+		log.Fatalf("failed to initialize llm runtime: %v", err)
+	}
+	if err := llmRuntime.VerifyStartup(context.Background()); err != nil {
+		log.Fatalf("llm startup verification failed: %v", err)
+	}
+
+	respondResponder, respondModel, err := llmRuntime.BindResponder(appconfig.LLMRouteBrainRespond)
+	if err != nil {
+		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteBrainRespond, err)
+	}
+	triageCompletion, triageModel, err := llmRuntime.BindCompletion(appconfig.LLMRouteBrainTriage)
+	if err != nil {
+		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteBrainTriage, err)
+	}
+	prioritizeCompletion, prioritizeModel, err := llmRuntime.BindCompletion(appconfig.LLMRouteBrainPrioritize)
+	if err != nil {
+		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteBrainPrioritize, err)
+	}
+	bulletinCompletion, bulletinModel, err := llmRuntime.BindCompletion(appconfig.LLMRouteCortexBulletin)
+	if err != nil {
+		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteCortexBulletin, err)
+	}
+	semanticCompletion, semanticModel, err := llmRuntime.BindCompletion(appconfig.LLMRouteCortexSemantic)
+	if err != nil {
+		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteCortexSemantic, err)
+	}
+	observationsCompletion, observationsModel, err := llmRuntime.BindCompletion(appconfig.LLMRouteCortexObservations)
+	if err != nil {
+		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteCortexObservations, err)
+	}
+
+	b := brain.NewWithDependencies(database, brain.Config{
 		AssistantName:    assistantName,
 		UserName:         cfg.userName,
 		SystemPrompt:     buildAgentSystemPrompt(appCfg),
 		TriagePrompt:     appCfg.Triage.Prompt,
-		RespondModel:     appCfg.Agent.Model,
-		TriageModel:      appCfg.Triage.Model,
+		RespondModel:     respondModel,
+		TriageModel:      triageModel,
+		PrioritizeModel:  prioritizeModel,
 		RespondMaxTokens: appCfg.Agent.MaxResponseTokens,
 		TriageMaxTokens:  appCfg.Triage.MaxTokens,
 		Tools:            toolDefs,
+	}, brain.Dependencies{
+		Responder:            respondResponder,
+		TriageCompletion:     triageCompletion,
+		PrioritizeCompletion: prioritizeCompletion,
 	})
+
+	sessionBus := sessionbus.New(sessionbus.Config{
+		SessionTTL:      15 * time.Minute,
+		MaxQueuePerSess: 128,
+		MaxMessageBytes: 32 * 1024,
+	})
+	b.SetSessionBus(sessionBus)
+	if _, err := sessionBus.Register(context.Background(), sessionbus.RegisterRequest{
+		SessionID: "scaffold-agent",
+		Provider:  "scaffold",
+		Name:      assistantName,
+	}); err != nil {
+		log.Printf("warn: session bus register scaffold-agent failed: %v", err)
+	}
 
 	var embedder embedding.Embedder
 	switch strings.ToLower(strings.TrimSpace(appCfg.Embedding.Provider)) {
@@ -124,10 +185,30 @@ func main() {
 		log.Println("Google Calendar not configured, skipping")
 	}
 
-	cortexRuntime := cortex.New(database, b, cfg.anthropicKey, appCfg.Cortex, embedder)
+	cortexRuntime := cortex.NewWithLLM(database, b, appCfg.Cortex, embedder, cortex.LLMRoutes{
+		Bulletin: cortex.LLMRoute{
+			Client: bulletinCompletion,
+			Model:  bulletinModel,
+		},
+		Semantic: cortex.LLMRoute{
+			Client: semanticCompletion,
+			Model:  semanticModel,
+		},
+		Observations: cortex.LLMRoute{
+			Client: observationsCompletion,
+			Model:  observationsModel,
+		},
+	})
 	b.SetBulletinProvider(cortexRuntime.CurrentBulletin)
 
 	client := signalcli.NewClient(cfg.signalURL, cfg.agentNumber)
+	var ingestService *ingestion.Service
+	if svc, err := ingestion.New(database, b, cfg.ingestDir, time.Duration(cfg.ingestPollSecs)*time.Second); err != nil {
+		log.Printf("ingestion disabled: %v", err)
+	} else {
+		ingestService = svc
+		log.Printf("ingestion enabled: dir=%s poll=%ds", ingestService.Directory(), cfg.ingestPollSecs)
+	}
 
 	srv := api.New(database, b, cfg.apiToken, api.AuthConfig{
 		AppUsername:          cfg.appUsername,
@@ -138,6 +219,21 @@ func main() {
 		LoginRateLimitWindow: time.Duration(cfg.loginRateLimitWindowSecs) * time.Second,
 		LoginRateLimitMax:    cfg.loginRateLimitMax,
 	})
+	srv.SetSessionBus(sessionBus)
+	if ingestService != nil {
+		srv.SetIngestor(ingestService)
+	}
+	webhookCfgPath := filepath.Join(cfg.configDir, "webhooks.yaml")
+	webhookCfg, webhookFound, err := appconfig.LoadWebhookConfig(webhookCfgPath)
+	if err != nil {
+		log.Fatalf("webhook config: %v", err)
+	}
+	if webhookFound {
+		srv.SetWebhookConfig(webhookCfg)
+		log.Printf("webhooks: enabled (%d tokens configured)", len(webhookCfg.Tokens))
+	} else {
+		log.Printf("webhooks: disabled (config/webhooks.yaml not found)")
+	}
 	if err := srv.EnableFrontendServing(cfg.frontendDistDir); err != nil {
 		log.Printf("frontend static serving disabled: %v", err)
 	} else {
@@ -156,6 +252,9 @@ func main() {
 	defer cancel()
 
 	cortexRuntime.Start(ctx)
+	if ingestService != nil {
+		ingestService.Start(ctx)
+	}
 
 	if err := waitForSignal(client); err != nil {
 		log.Fatalf("signal-cli not ready: %v", err)
@@ -216,7 +315,33 @@ func handleMessage(client *signalcli.Client, b *brain.Brain, database *db.DB, ms
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if _, err := database.InsertConversationEntry(msg.Sender, "user", msg.Message); err != nil {
+	userText := strings.TrimSpace(msg.Message)
+	nonTextSummary := msg.NonTextContentSummary()
+
+	if userText == "" && nonTextSummary != "" {
+		userEntry := fmt.Sprintf("[Signal non-text content: %s]", nonTextSummary)
+		if _, err := database.InsertConversationEntry(msg.Sender, "user", userEntry); err != nil {
+			log.Printf("conversation insert error (user non-text): %v", err)
+		}
+
+		response := signalNonTextSupportMessage
+		if err := client.Send(ctx, msg.Sender, response); err != nil {
+			log.Printf("failed to send non-text capability response: %v", err)
+		} else {
+			log.Printf("-> %s (len=%d)", msg.Sender, len(response))
+			if _, err := database.InsertConversationEntry(msg.Sender, "assistant", response); err != nil {
+				log.Printf("conversation insert error (assistant non-text): %v", err)
+			}
+		}
+		return
+	}
+
+	if userText == "" {
+		log.Printf("ignoring empty inbound message from %s", msg.Sender)
+		return
+	}
+
+	if _, err := database.InsertConversationEntry(msg.Sender, "user", userText); err != nil {
 		log.Printf("conversation insert error (user): %v", err)
 	}
 
@@ -225,10 +350,17 @@ func handleMessage(client *signalcli.Client, b *brain.Brain, database *db.DB, ms
 		log.Printf("history query error: %v", err)
 	}
 
+	brainMessage := annotateUserMessageWithSignalMetadata(userText, nonTextSummary)
 	thread := historyToThread(history)
-	thread = ensureCurrentUserMessage(thread, msg.Message)
+	if len(thread) > 0 {
+		last := thread[len(thread)-1]
+		if last.Role == "user" && strings.TrimSpace(last.Content) == userText {
+			thread[len(thread)-1].Content = brainMessage
+		}
+	}
+	thread = ensureCurrentUserMessage(thread, brainMessage)
 
-	response, err := b.Respond(ctx, msg.Message, thread)
+	response, err := b.Respond(ctx, brainMessage, thread)
 	if err != nil {
 		log.Printf("brain error: %v", err)
 		response = "Something went wrong on my end. Try again?"
@@ -247,7 +379,8 @@ func handleMessage(client *signalcli.Client, b *brain.Brain, database *db.DB, ms
 type config struct {
 	configDir                string
 	frontendDistDir          string
-	anthropicKey             string
+	ingestDir                string
+	ingestPollSecs           int
 	signalURL                string
 	agentNumber              string
 	userNumber               string
@@ -306,6 +439,8 @@ func loadConfig() config {
 		}
 	}
 
+	configDir := withDefault("CONFIG_DIR", "./config")
+	ingestDir := withDefault("INGEST_DIR", defaultIngestDir(configDir))
 	apiPort := required("API_PORT")
 	if p, err := strconv.Atoi(apiPort); err != nil || p < 1 || p > 65535 {
 		log.Fatalf("API_PORT must be a valid port number, got %q", apiPort)
@@ -313,12 +448,14 @@ func loadConfig() config {
 	sessionTTLHours := parsePositiveInt("SESSION_TTL_HOURS", withDefault("SESSION_TTL_HOURS", "168"), 1)
 	loginRateLimitWindowSecs := parsePositiveInt("LOGIN_RATE_LIMIT_WINDOW_SECS", withDefault("LOGIN_RATE_LIMIT_WINDOW_SECS", "300"), 1)
 	loginRateLimitMax := parsePositiveInt("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", withDefault("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", "5"), 1)
+	ingestPollSecs := parsePositiveInt("INGEST_POLL_SECS", withDefault("INGEST_POLL_SECS", "30"), 1)
 	cookieSecure := parseBool("COOKIE_SECURE", withDefault("COOKIE_SECURE", "true"))
 
 	return config{
-		configDir:                withDefault("CONFIG_DIR", "./config"),
+		configDir:                configDir,
 		frontendDistDir:          withDefault("FRONTEND_DIST_DIR", "../app/dist"),
-		anthropicKey:             required("ANTHROPIC_API_KEY"),
+		ingestDir:                ingestDir,
+		ingestPollSecs:           ingestPollSecs,
 		agentNumber:              required("AGENT_NUMBER"),
 		userNumber:               required("USER_NUMBER"),
 		signalURL:                required("SIGNAL_URL"),
@@ -336,6 +473,19 @@ func loadConfig() config {
 		loginRateLimitWindowSecs: loginRateLimitWindowSecs,
 		loginRateLimitMax:        loginRateLimitMax,
 	}
+}
+
+func defaultIngestDir(configDir string) string {
+	absConfigDir, err := filepath.Abs(configDir)
+	if err != nil {
+		return "./ingest"
+	}
+
+	workspaceDir := filepath.Dir(absConfigDir)
+	if workspaceDir == "." || workspaceDir == string(filepath.Separator) || workspaceDir == "" {
+		return "./ingest"
+	}
+	return filepath.Join(workspaceDir, "ingest")
 }
 
 func waitForSignal(client *signalcli.Client) error {
@@ -411,6 +561,15 @@ func ensureCurrentUserMessage(thread []brain.ConversationTurn, message string) [
 		}
 	}
 	return append(thread, brain.ConversationTurn{Role: "user", Content: text})
+}
+
+func annotateUserMessageWithSignalMetadata(message, nonTextSummary string) string {
+	text := strings.TrimSpace(message)
+	if text == "" || strings.TrimSpace(nonTextSummary) == "" {
+		return text
+	}
+
+	return fmt.Sprintf("%s\n\n[Signal metadata: user also sent %s. You cannot access images, attachments, or audio. Ask for text description or transcript if needed.]", text, nonTextSummary)
 }
 
 func buildAgentSystemPrompt(cfg *appconfig.Config) string {
