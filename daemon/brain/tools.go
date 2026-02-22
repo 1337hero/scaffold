@@ -2,28 +2,32 @@ package brain
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
 	"scaffold/db"
 	googlecal "scaffold/google"
+	"scaffold/sessionbus"
 )
 
 type ToolHandler func(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error)
 
 func defaultToolRegistry() map[string]ToolHandler {
 	return map[string]ToolHandler{
-		"save_to_inbox":         handleSaveToInbox,
-		"get_desk":              handleGetDesk,
-		"search_memories":       handleSearchMemories,
-		"update_desk_item":      handleUpdateDeskItem,
-		"get_inbox":             handleGetInbox,
-		"add_to_notebook":       handleAddToNotebook,
-		"get_calendar_events":   handleGetCalendarEvents,
+		"save_to_inbox":       handleSaveToInbox,
+		"get_desk":            handleGetDesk,
+		"search_memories":     handleSearchMemories,
+		"update_desk_item":    handleUpdateDeskItem,
+		"get_inbox":           handleGetInbox,
+		"get_calendar_events": handleGetCalendarEvents,
+		"send_to_session":     handleSendToSession,
+		"list_sessions":       handleListSessions,
 	}
 }
 
@@ -45,6 +49,7 @@ func handleSaveToInbox(ctx context.Context, database *db.DB, b *Brain, params js
 		Type       string   `json:"type"`
 		Importance float64  `json:"importance"`
 		Tags       []string `json:"tags"`
+		Domain     string   `json:"domain"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("save_to_inbox: bad params: %w", err)
@@ -86,6 +91,24 @@ func handleSaveToInbox(ctx context.Context, database *db.DB, b *Brain, params js
 		tags = strings.Join(triage.Tags, ",")
 	}
 
+	var domainID sql.NullInt64
+	domainName := p.Domain
+	if domainName == "" && triage != nil {
+		domainName = triage.Domain
+	}
+	domainName = strings.TrimSpace(domainName)
+	if domainName == "" {
+		domainName = "Personal Development"
+	}
+	resolved, resolveErr := database.ResolveDomainID(domainName)
+	if resolveErr != nil {
+		log.Printf("save_to_inbox: resolve domain %q: %v", domainName, resolveErr)
+	} else if resolved != nil {
+		domainID = sql.NullInt64{Int64: int64(*resolved), Valid: true}
+	} else {
+		log.Printf("save_to_inbox: unknown domain %q, leaving undomained", domainName)
+	}
+
 	memoryID := uuid.New().String()
 	mem := db.Memory{
 		ID:         memoryID,
@@ -95,6 +118,7 @@ func handleSaveToInbox(ctx context.Context, database *db.DB, b *Brain, params js
 		Importance: importance,
 		Source:     "agent",
 		Tags:       tags,
+		DomainID:   domainID,
 	}
 
 	action := "reference"
@@ -345,10 +369,6 @@ func markSearchAccess(database *db.DB, results []db.ScoredMemory) {
 	}
 }
 
-func handleAddToNotebook(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	return "Notebooks are not yet available. This feature is coming in a future update.", nil
-}
-
 func handleGetCalendarEvents(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
 	if b == nil || b.calendarClient == nil {
 		return "Google Calendar is not configured. Ask Mike to run: scaffold-daemon auth google", nil
@@ -387,4 +407,109 @@ func handleGetCalendarEvents(ctx context.Context, database *db.DB, b *Brain, par
 	}
 
 	return googlecal.FormatEvents(events), nil
+}
+
+func handleListSessions(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if b == nil || b.sessionBus == nil {
+		return "", fmt.Errorf("list_sessions: session bus is not configured")
+	}
+
+	sessions := b.sessionBus.List(ctx)
+	if len(sessions) == 0 {
+		return "No active sessions in session bus.", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Active sessions:\n")
+	for _, s := range sessions {
+		sb.WriteString("- ")
+		sb.WriteString(s.SessionID)
+		sb.WriteString(" [")
+		sb.WriteString(s.Provider)
+		sb.WriteString("]")
+		if strings.TrimSpace(s.Name) != "" {
+			sb.WriteString(" ")
+			sb.WriteString(s.Name)
+		}
+		sb.WriteString(fmt.Sprintf(" queue=%d last_seen=%s\n", s.QueueDepth, s.LastSeenAt.Format(time.RFC3339)))
+	}
+	return sb.String(), nil
+}
+
+func handleSendToSession(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if b == nil || b.sessionBus == nil {
+		return "", fmt.Errorf("send_to_session: session bus is not configured")
+	}
+
+	var p struct {
+		ToSessionID   string `json:"to_session_id"`
+		Message       string `json:"message"`
+		Mode          string `json:"mode"`
+		FromSessionID string `json:"from_session_id"`
+		FromProvider  string `json:"from_provider"`
+		FromName      string `json:"from_name"`
+		WaitSeconds   int    `json:"wait_seconds"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("send_to_session: bad params: %w", err)
+	}
+
+	p.ToSessionID = strings.TrimSpace(p.ToSessionID)
+	p.Message = strings.TrimSpace(p.Message)
+	if p.ToSessionID == "" {
+		return "", fmt.Errorf("send_to_session: to_session_id is required")
+	}
+	if p.Message == "" {
+		return "", fmt.Errorf("send_to_session: message is required")
+	}
+
+	fromID := strings.TrimSpace(p.FromSessionID)
+	if fromID == "" {
+		fromID = "scaffold-agent"
+	}
+	fromProvider := strings.TrimSpace(p.FromProvider)
+	if fromProvider == "" {
+		fromProvider = "scaffold"
+	}
+	fromName := strings.TrimSpace(p.FromName)
+	if fromName == "" {
+		fromName = "Scaffold Agent"
+	}
+
+	if _, err := b.sessionBus.Register(ctx, sessionbus.RegisterRequest{
+		SessionID: fromID,
+		Provider:  fromProvider,
+		Name:      fromName,
+	}); err != nil {
+		return "", fmt.Errorf("send_to_session: register sender: %w", err)
+	}
+
+	delivered, err := b.sessionBus.Send(ctx, sessionbus.SendRequest{
+		FromSessionID: fromID,
+		ToSessionID:   p.ToSessionID,
+		Mode:          p.Mode,
+		Message:       p.Message,
+	})
+	if err != nil {
+		return "", fmt.Errorf("send_to_session: %w", err)
+	}
+
+	if p.WaitSeconds <= 0 {
+		return fmt.Sprintf("Message sent to %s (id=%s mode=%s)", p.ToSessionID, delivered.ID, delivered.Mode), nil
+	}
+
+	if p.WaitSeconds > 120 {
+		p.WaitSeconds = 120
+	}
+
+	incoming, err := b.sessionBus.Poll(ctx, fromID, 1, time.Duration(p.WaitSeconds)*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("send_to_session: waiting for reply: %w", err)
+	}
+	if len(incoming) == 0 {
+		return fmt.Sprintf("Message sent to %s (id=%s). No reply within %ds.", p.ToSessionID, delivered.ID, p.WaitSeconds), nil
+	}
+
+	reply := incoming[0]
+	return fmt.Sprintf("Message sent to %s (id=%s).\nReply from %s:\n%s", p.ToSessionID, delivered.ID, reply.FromSessionID, reply.Message), nil
 }

@@ -24,6 +24,7 @@ Systemd user units:
 Daemon responsibilities:
 - Reads Signal messages, stores `conversation_log`, generates replies via tool-use agent
 - Hosts API for web UI auth/inbox/desk/capture
+- Hosts session bus API for cross-agent coordination (`/api/session-bus/*`)
 - Runs Cortex scheduler and bulletin generation in background
 - Persists state in SQLite (`daemon/scaffold.db` by default, configurable)
 
@@ -62,6 +63,10 @@ Authenticated:
 - `PATCH /api/desk/{id}`
 - `POST /api/desk/{id}/defer`
 - `POST /api/capture`
+- `POST /api/session-bus/register`
+- `GET /api/session-bus/sessions`
+- `POST /api/session-bus/send`
+- `POST /api/session-bus/poll`
 
 ## Config
 
@@ -70,11 +75,57 @@ YAML files in `config/`:
 - `tools.yaml` (provider-agnostic tool schemas)
 - `triage.yaml` (CaptureModal triage prompt/model)
 - `cortex.yaml` (bulletin + maintenance task intervals and thresholds)
+- `llm.yaml` (provider registry + route/profile model selection for startup binding)
 
 Environment in `daemon/.env`:
-- Core runtime: `ANTHROPIC_API_KEY`, `AGENT_NUMBER`, `USER_NUMBER`, `SIGNAL_URL`, `API_PORT`, `API_TOKEN`
+- Core runtime: `AGENT_NUMBER`, `USER_NUMBER`, `SIGNAL_URL`, `API_PORT`, `API_TOKEN`
+- LLM provider keys are route-dependent from `config/llm.yaml` (for example `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)
 - Browser auth: `APP_USERNAME`, `APP_PASSWORD_HASH`, cookie/session settings
 - Paths: `DB_PATH`, `CONFIG_DIR`, `FRONTEND_DIST_DIR`
+
+## Change Providers By Subsystem
+
+Provider/model selection is controlled by `config/llm.yaml` using `providers`, `profiles`, and `routes`.
+
+Routes map to system parts:
+- `brain.respond` = Signal conversation reply loop (tool-use)
+- `brain.triage` = capture triage JSON classification
+- `brain.prioritize` = desk prioritization JSON generation
+- `cortex.bulletin` = memory bulletin synthesis
+- `cortex.semantic` = consolidation decisions
+- `cortex.observations` = observation extraction
+
+How to switch one part:
+1. Add or edit a provider in `providers` (for example `anthropic`, `openai`, `openai_compatible`).
+2. Add a `profile` that points to that provider and model.
+3. Point the target route to that profile in `routes`.
+4. Restart daemon: `systemctl --user restart scaffold-daemon.service`.
+
+Example: keep Ollama only for semantic/observations, Anthropic for respond/triage/bulletin.
+
+```yaml
+profiles:
+  respond_default:
+    provider: anthropic_main
+    model: claude-haiku-4-5
+  ollama_semantic:
+    provider: ollama_specialist
+    model: qwen2.5:14b-instruct
+
+routes:
+  brain.respond:
+    profile: respond_default
+  brain.triage:
+    profile: respond_default
+  cortex.bulletin:
+    profile: respond_default
+  cortex.semantic:
+    profile: ollama_semantic
+    lock_provider: true
+  cortex.observations:
+    profile: ollama_semantic
+    lock_provider: true
+```
 
 ## Daily Operations
 
@@ -146,3 +197,4 @@ bun run build
 - `docs/Scaffold — Build Roadmap.html`
 - `docs/three-surfaces-architecture.html`
 - `docs/ref/go-dhh-principles.md`
+- `docs/plans/2026-02-22-session-bus-agent-integration.md` (cross-agent session bus integration + usage)

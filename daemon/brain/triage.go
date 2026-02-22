@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-
 	"scaffold/db"
 	"scaffold/embedding"
 	googlecal "scaffold/google"
+	"scaffold/llm"
+	"scaffold/sessionbus"
 )
 
 const maxToolRounds = 5
@@ -23,30 +22,43 @@ type Config struct {
 	TriagePrompt     string
 	RespondModel     string
 	TriageModel      string
+	PrioritizeModel  string
 	RespondMaxTokens int
 	TriageMaxTokens  int
 	Tools            []ToolDefinition
 }
 
 type Brain struct {
-	client           anthropic.Client
 	responder        ToolUseResponder
+	triageLLM        llm.CompletionClient
+	prioritizeLLM    llm.CompletionClient
 	db               *db.DB
 	embedder         embedding.Embedder
 	calendarClient   *googlecal.CalendarClient
+	sessionBus       *sessionbus.Bus
 	tools            []ToolDefinition
 	toolRegistry     map[string]ToolHandler
 	bulletinProvider func() (string, bool)
 	systemPrompt     string
 	triagePrompt     string
-	respondModel     anthropic.Model
-	triageModel      anthropic.Model
+	respondModel     string
+	triageModel      string
+	prioritizeModel  string
 	respondMaxTokens int
 	triageMaxTokens  int
 }
 
 func New(apiKey string, database *db.DB, cfg Config) *Brain {
-	client := anthropic.NewClient(option.WithAPIKey(apiKey))
+	responder := NewAnthropicResponder(apiKey)
+	completion := NewAnthropicCompletionClient(apiKey)
+	return NewWithDependencies(database, cfg, Dependencies{
+		Responder:            responder,
+		TriageCompletion:     completion,
+		PrioritizeCompletion: completion,
+	})
+}
+
+func NewWithDependencies(database *db.DB, cfg Config, deps Dependencies) *Brain {
 	systemPrompt := strings.TrimSpace(cfg.SystemPrompt)
 	if systemPrompt == "" {
 		systemPrompt = buildSystemPrompt(cfg)
@@ -56,13 +68,17 @@ func New(apiKey string, database *db.DB, cfg Config) *Brain {
 		triagePrompt = buildTriagePrompt(cfg)
 	}
 
-	respondModel := anthropic.ModelClaudeHaiku4_5
+	respondModel := "claude-haiku-4-5"
 	if cfg.RespondModel != "" {
-		respondModel = anthropic.Model(cfg.RespondModel)
+		respondModel = strings.TrimSpace(cfg.RespondModel)
 	}
-	triageModel := anthropic.ModelClaudeHaiku4_5
+	triageModel := "claude-haiku-4-5"
 	if cfg.TriageModel != "" {
-		triageModel = anthropic.Model(cfg.TriageModel)
+		triageModel = strings.TrimSpace(cfg.TriageModel)
+	}
+	prioritizeModel := respondModel
+	if strings.TrimSpace(cfg.PrioritizeModel) != "" {
+		prioritizeModel = strings.TrimSpace(cfg.PrioritizeModel)
 	}
 
 	respondMaxTokens := cfg.RespondMaxTokens
@@ -82,9 +98,20 @@ func New(apiKey string, database *db.DB, cfg Config) *Brain {
 		tools = append(tools, tool)
 	}
 
+	if deps.Responder == nil {
+		deps.Responder = &unconfiguredResponder{}
+	}
+	if deps.TriageCompletion == nil {
+		deps.TriageCompletion = &llm.UnconfiguredCompletionClient{}
+	}
+	if deps.PrioritizeCompletion == nil {
+		deps.PrioritizeCompletion = deps.TriageCompletion
+	}
+
 	return &Brain{
-		client:           client,
-		responder:        newAnthropicResponder(client),
+		responder:        deps.Responder,
+		triageLLM:        deps.TriageCompletion,
+		prioritizeLLM:    deps.PrioritizeCompletion,
 		db:               database,
 		tools:            tools,
 		toolRegistry:     defaultToolRegistry(),
@@ -92,6 +119,7 @@ func New(apiKey string, database *db.DB, cfg Config) *Brain {
 		triagePrompt:     triagePrompt,
 		respondModel:     respondModel,
 		triageModel:      triageModel,
+		prioritizeModel:  prioritizeModel,
 		respondMaxTokens: respondMaxTokens,
 		triageMaxTokens:  triageMaxTokens,
 	}
@@ -105,8 +133,9 @@ Your job right now is to respond conversationally and helpfully.
 
 Keep responses concise — this is Signal, not a doc. 2-4 sentences max unless asked for more.
 Be direct, technical, no fluff. Match their energy.
+You cannot view images, open file attachments, or transcribe audio from Signal. Never pretend you did; ask for a text description/transcript.
 
-If they send a task or todo, acknowledge it and tell them it'll go in their inbox (even though that's not wired yet).
+If they send a task or todo, acknowledge it and tell them it'll go in their inbox.
 If they ask a question, answer it.
 If they're just thinking out loud, reflect it back and engage.`, cfg.AssistantName, cfg.UserName, cfg.UserName)
 }
@@ -116,6 +145,7 @@ type TriageResult struct {
 	Importance float64  `json:"importance"`
 	Action     string   `json:"action"`
 	Title      string   `json:"title"`
+	Domain     string   `json:"domain,omitempty"`
 	MicroSteps []string `json:"micro_steps,omitempty"`
 	Tags       []string `json:"tags,omitempty"`
 }
@@ -130,6 +160,12 @@ type ConversationTurn struct {
 type TriageDegradedError struct {
 	Reason string
 	Cause  error
+}
+
+type unconfiguredResponder struct{}
+
+func (r *unconfiguredResponder) Respond(_ context.Context, _ ToolUseRequest) (*ToolUseResponse, error) {
+	return nil, fmt.Errorf("tool responder is not configured")
 }
 
 func (e *TriageDegradedError) Error() string {
@@ -152,43 +188,37 @@ Importance defaults: Identity=1.0, Goal=0.9, Decision=0.8, Todo=0.8, Idea=0.7, P
 
 Actions:
 - "do" = this needs action, becomes a task
-- "explore" = worth thinking about, open a notebook thread
+- "explore" = worth thinking about, explore further
 - "reference" = file it, find it later
 - "waiting" = tracking something external
+
+Domains (always assign exactly one best-fit domain):
+Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies
+
+Heuristics:
+- Personal profile, working style, communication norms, and stable behavior patterns => Identity or Preference.
+- Explicit targets, outcomes, and deadlines => Goal.
 
 If it's a task (action=do), suggest micro_steps (3-5 concrete actions, each short and specific).
 
 Respond ONLY with valid JSON, no other text:
-{"type": "Todo", "importance": 0.8, "action": "do", "title": "Short title", "micro_steps": ["step 1", "step 2"], "tags": ["tag1"]}`, cfg.UserName)
+{"type": "Todo", "importance": 0.8, "action": "do", "title": "Short title", "domain": "Work/Business", "micro_steps": ["step 1", "step 2"], "tags": ["tag1"]}`, cfg.UserName)
 }
 
 func (b *Brain) Triage(ctx context.Context, raw string) (*TriageResult, error) {
 	prompt := b.triagePrompt + "\n\nCapture: " + raw
-	resp, err := b.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     b.triageModel,
-		MaxTokens: int64(b.triageMaxTokens),
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
-	})
+	resp, err := b.triageLLM.CompletionJSON(ctx, b.triageModel, "", prompt, int64(b.triageMaxTokens))
 	if err != nil {
 		return fallbackTriage(raw), &TriageDegradedError{
-			Reason: "claude request failed",
+			Reason: "triage model request failed",
 			Cause:  err,
 		}
 	}
-
-	if len(resp.Content) == 0 {
-		return fallbackTriage(raw), &TriageDegradedError{
-			Reason: "claude returned no content",
-		}
-	}
-
-	return parseTriageContent(raw, resp.Content[0].Text)
+	return parseTriageContent(raw, resp)
 }
 
 func parseTriageContent(raw, content string) (*TriageResult, error) {
-	text := strings.TrimSpace(content)
+	text := sanitizeTriageJSON(content)
 	if text == "" {
 		return fallbackTriage(raw), &TriageDegradedError{
 			Reason: "empty triage response",
@@ -216,8 +246,101 @@ func fallbackTriage(raw string) *TriageResult {
 		Type:       "Observation",
 		Importance: 0.3,
 		Action:     "reference",
-		Title:      raw,
+		Title:      fallbackTitle(raw),
 	}
+}
+
+func sanitizeTriageJSON(content string) string {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(text, "```") {
+		lines := strings.Split(text, "\n")
+		if len(lines) >= 3 {
+			start := 1
+			end := len(lines) - 1
+			for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+				start++
+			}
+			for end >= 0 && strings.TrimSpace(lines[end]) != "```" {
+				end--
+			}
+			if end > start {
+				text = strings.Join(lines[start:end], "\n")
+			}
+		}
+	}
+
+	if obj, ok := extractFirstJSONObject(text); ok {
+		text = obj
+	} else {
+		first := strings.Index(text, "{")
+		last := strings.LastIndex(text, "}")
+		if first >= 0 && last > first {
+			text = text[first : last+1]
+		}
+	}
+
+	return strings.TrimSpace(text)
+}
+
+func extractFirstJSONObject(text string) (string, bool) {
+	start := strings.Index(text, "{")
+	if start < 0 {
+		return "", false
+	}
+
+	depth := 0
+	inString := false
+	escaping := false
+	for i := start; i < len(text); i++ {
+		ch := text[i]
+
+		if inString {
+			if escaping {
+				escaping = false
+				continue
+			}
+			if ch == '\\' {
+				escaping = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(text[start : i+1]), true
+			}
+		}
+	}
+
+	return "", false
+}
+
+func fallbackTitle(raw string) string {
+	for _, line := range strings.Split(raw, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if len(trimmed) > 96 {
+			return trimmed[:96]
+		}
+		return trimmed
+	}
+	return "Captured Note"
 }
 
 func (b *Brain) Respond(ctx context.Context, message string, history []ConversationTurn) (string, error) {
@@ -244,7 +367,7 @@ func (b *Brain) Respond(ctx context.Context, message string, history []Conversat
 
 	request := ToolUseRequest{
 		SystemPrompt: b.renderSystemPrompt(),
-		Model:        string(b.respondModel),
+		Model:        b.respondModel,
 		MaxTokens:    b.respondMaxTokens,
 		Tools:        b.tools,
 	}
@@ -346,6 +469,10 @@ func (b *Brain) SetEmbedder(e embedding.Embedder) {
 
 func (b *Brain) SetCalendarClient(c *googlecal.CalendarClient) {
 	b.calendarClient = c
+}
+
+func (b *Brain) SetSessionBus(bus *sessionbus.Bus) {
+	b.sessionBus = bus
 }
 
 func (b *Brain) renderSystemPrompt() string {

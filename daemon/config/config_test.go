@@ -47,7 +47,7 @@ func TestAgentConfig(t *testing.T) {
 
 	requiredRules := []string{
 		"Never store raw message text as a memory. Distill and synthesize first.",
-		"Never let the desk grow past 3. If he tries, push back.",
+		`Never let the desk grow past 3. If he tries, gently hold the line — "let's finish one first."`,
 	}
 	seen := make(map[string]struct{}, len(cfg.Agent.Rules))
 	for _, rule := range cfg.Agent.Rules {
@@ -66,15 +66,24 @@ func TestToolsConfig(t *testing.T) {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if len(cfg.Tools.Tools) != 7 {
-		t.Errorf("expected 7 tools, got %d", len(cfg.Tools.Tools))
+	if len(cfg.Tools.Tools) != 8 {
+		t.Errorf("expected 8 tools, got %d", len(cfg.Tools.Tools))
 	}
 
 	names := make(map[string]bool)
 	for _, tool := range cfg.Tools.Tools {
 		names[tool.Name] = true
 	}
-	expected := []string{"save_to_inbox", "get_desk", "search_memories", "update_desk_item", "get_inbox", "add_to_notebook", "get_calendar_events"}
+	expected := []string{
+		"save_to_inbox",
+		"get_desk",
+		"search_memories",
+		"update_desk_item",
+		"get_inbox",
+		"get_calendar_events",
+		"list_sessions",
+		"send_to_session",
+	}
 	for _, name := range expected {
 		if !names[name] {
 			t.Errorf("missing tool: %s", name)
@@ -191,6 +200,134 @@ func TestDefaults(t *testing.T) {
 	}
 	if _, ok := cfg.Cortex.Tasks["session_cleanup"]; !ok {
 		t.Error("expected default session_cleanup task")
+	}
+	if cfg.LLM.Version != 1 {
+		t.Errorf("expected default llm version 1, got %d", cfg.LLM.Version)
+	}
+	if _, ok := cfg.LLM.Routes[LLMRouteBrainRespond]; !ok {
+		t.Errorf("expected default llm route %q", LLMRouteBrainRespond)
+	}
+	if _, ok := cfg.LLM.Profiles["respond_default"]; !ok {
+		t.Error("expected default llm profile respond_default")
+	}
+}
+
+func TestCustomLLMConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: Test\nmodel: a\n"), 0o644); err != nil {
+		t.Fatalf("write agent.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tools.yaml"), []byte("tools: []\n"), 0o644); err != nil {
+		t.Fatalf("write tools.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "triage.yaml"), []byte("prompt: test\nmodel: b\n"), 0o644); err != nil {
+		t.Fatalf("write triage.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte("bulletin:\n  interval_minutes: 60\n  model: c\n"), 0o644); err != nil {
+		t.Fatalf("write cortex.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "embedding.yaml"), []byte("provider: ollama\n"), 0o644); err != nil {
+		t.Fatalf("write embedding.yaml: %v", err)
+	}
+
+	llmYAML := `
+version: 1
+providers:
+  local:
+    type: openai_compatible
+    base_url: http://127.0.0.1:11434/v1
+profiles:
+  p1:
+    provider: local
+    model: qwen2.5:14b
+routes:
+  brain.respond:
+    profile: p1
+    required: true
+  brain.triage:
+    profile: p1
+  brain.prioritize:
+    profile: p1
+  cortex.bulletin:
+    profile: p1
+  cortex.semantic:
+    profile: p1
+  cortex.observations:
+    profile: p1
+`
+	if err := os.WriteFile(filepath.Join(dir, "llm.yaml"), []byte(llmYAML), 0o644); err != nil {
+		t.Fatalf("write llm.yaml: %v", err)
+	}
+
+	cfg, err := Load(dir, "User")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.LLM.Providers["local"].Type != "openai_compatible" {
+		t.Fatalf("expected local provider type openai_compatible, got %q", cfg.LLM.Providers["local"].Type)
+	}
+	if cfg.LLM.Routes[LLMRouteBrainRespond].Profile != "p1" {
+		t.Fatalf("expected brain.respond profile p1, got %q", cfg.LLM.Routes[LLMRouteBrainRespond].Profile)
+	}
+}
+
+func TestLLMLockProviderValidation(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: Test\n"), 0o644); err != nil {
+		t.Fatalf("write agent.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tools.yaml"), []byte("tools: []\n"), 0o644); err != nil {
+		t.Fatalf("write tools.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "triage.yaml"), []byte("prompt: test\n"), 0o644); err != nil {
+		t.Fatalf("write triage.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte("bulletin:\n  interval_minutes: 60\n"), 0o644); err != nil {
+		t.Fatalf("write cortex.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "embedding.yaml"), []byte("provider: ollama\n"), 0o644); err != nil {
+		t.Fatalf("write embedding.yaml: %v", err)
+	}
+
+	llmYAML := `
+version: 1
+providers:
+  p1:
+    type: anthropic
+  p2:
+    type: openai_compatible
+    base_url: http://127.0.0.1:11434/v1
+profiles:
+  a:
+    provider: p1
+    model: m1
+  b:
+    provider: p2
+    model: m2
+routes:
+  brain.respond:
+    profile: a
+    fallback_profiles: [b]
+    lock_provider: true
+  brain.triage:
+    profile: a
+  brain.prioritize:
+    profile: a
+  cortex.bulletin:
+    profile: a
+  cortex.semantic:
+    profile: a
+  cortex.observations:
+    profile: a
+`
+	if err := os.WriteFile(filepath.Join(dir, "llm.yaml"), []byte(llmYAML), 0o644); err != nil {
+		t.Fatalf("write llm.yaml: %v", err)
+	}
+
+	if _, err := Load(dir, "User"); err == nil {
+		t.Fatal("expected lock_provider validation to fail")
 	}
 }
 

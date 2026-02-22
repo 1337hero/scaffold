@@ -26,6 +26,9 @@ tools:
           type: array
           items:
             type: string
+        domain:
+          type: string
+          description: "Life domain this belongs to (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies). If unsure, choose the best-fit domain."
       required: [title, content]
 
   - name: get_desk
@@ -66,19 +69,6 @@ tools:
       type: object
       properties: {}
 
-  - name: add_to_notebook
-    description: Append content to a notebook thread.
-    input_schema:
-      type: object
-      properties:
-        notebook:
-          type: string
-          description: Notebook name
-        content:
-          type: string
-          description: Content to append
-      required: [notebook, content]
-
   - name: get_calendar_events
     description: |
       Check the user's Google Calendar. Use to answer schedule questions,
@@ -96,3 +86,44 @@ tools:
           minimum: 1
           maximum: 24
       required: [scope]
+
+  - name: list_sessions
+    description: |
+      List currently registered agent sessions on the global session bus.
+      Use this before cross-agent coordination when you do not know target ids.
+    input_schema:
+      type: object
+      properties: {}
+
+  - name: send_to_session
+    description: |
+      Send a message to another session via the global session bus.
+      Optionally wait for one reply message.
+    input_schema:
+      type: object
+      properties:
+        to_session_id:
+          type: string
+          description: Target session id from list_sessions
+        message:
+          type: string
+          description: Message payload to deliver
+        mode:
+          type: string
+          enum: [steer, follow_up]
+          description: Delivery intent label for the recipient
+        from_session_id:
+          type: string
+          description: Optional sender session id; defaults to scaffold-agent
+        from_provider:
+          type: string
+          description: Optional sender provider label
+        from_name:
+          type: string
+          description: Optional sender display name
+        wait_seconds:
+          type: integer
+          minimum: 0
+          maximum: 120
+          description: Optional long-poll timeout for one reply message
+      required: [to_session_id, message]

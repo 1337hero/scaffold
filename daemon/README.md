@@ -1,2 +1,10 @@
 - systemctl --user restart scaffold-signal-cli.service
 - systemctl --user restart scaffold-daemon.service
+- Current Signal agent limitation: text-only input. Images, file attachments, and audio transcription are not supported yet.
+- Ingestion docs: ../docs/ingestion-system.md
+- Session bus CLI helper:
+  - Build: `go build -o bin/sessionctl ./cmd/sessionctl`
+  - List sessions: `./bin/sessionctl list`
+  - Register a session: `./bin/sessionctl register --session-id codex-main --provider codex --name "Codex Main"`
+  - Send: `./bin/sessionctl send --from codex-main --to gemini-worker --mode steer --message "Summarize latest notes"`
+  - Poll: `./bin/sessionctl poll --session-id codex-main --wait-seconds 30`
