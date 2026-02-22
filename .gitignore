@@ -28,6 +28,7 @@ daemon/bin/
 .env.local
 .env.production
 config/google.yaml
+config/webhooks.yaml
 
 # Deployment (instance-specific)
 deploy.sh

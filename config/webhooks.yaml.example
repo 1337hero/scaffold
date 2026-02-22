@@ -1,0 +1,11 @@
+# Copy to config/webhooks.yaml (gitignored) and fill in real tokens.
+# Generate tokens with: openssl rand -hex 32
+
+rate_limit:
+  max: 60           # requests per window per token
+  window_minutes: 60
+
+tokens:
+  fitness:  replace-with-random-token
+  homelab:  replace-with-random-token
+  github:   replace-with-random-token
