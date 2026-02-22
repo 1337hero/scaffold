@@ -1,10 +1,10 @@
 import { cn } from "@/lib/utils.js"
-import { desk, inbox, notebooks, search } from "@/constants/nav.js"
+import { desk, inbox, map, search } from "@/constants/nav.js"
 
 const tabs = [desk, inbox]
 
 const rightTabs = [
-  { ...notebooks, label: "Notes" },
+  map,
   { ...search, disabled: true },
 ]
 

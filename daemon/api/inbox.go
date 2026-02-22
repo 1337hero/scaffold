@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"scaffold/db"
@@ -17,21 +18,152 @@ type inboxOverrideRequest struct {
 	Tags       []string `json:"tags"`
 }
 
+type inboxCaptureResponse struct {
+	ID           string         `json:"ID"`
+	Raw          string         `json:"Raw"`
+	Source       string         `json:"Source"`
+	Processed    int            `json:"Processed"`
+	TriageAction sql.NullString `json:"TriageAction"`
+	MemoryID     sql.NullString `json:"MemoryID"`
+	CreatedAt    string         `json:"CreatedAt"`
+	Confirmed    int            `json:"Confirmed"`
+	DomainID     sql.NullInt64  `json:"DomainID"`
+	Title        string         `json:"Title"`
+	Summary      string         `json:"Summary"`
+	Type         string         `json:"Type"`
+}
+
 func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
-	captures, err := s.db.ListRecent(50)
+	captures, err := s.db.ListInboxCaptures(50)
 	if err != nil {
 		writeInternalError(w, err)
 		return
 	}
 
-	filtered := captures[:0]
-	for _, capture := range captures {
-		if strings.EqualFold(strings.TrimSpace(capture.Source), "user:archive") {
-			continue
+	out := make([]inboxCaptureResponse, 0, len(captures))
+	for _, c := range captures {
+		action := ""
+		if c.TriageAction.Valid {
+			action = c.TriageAction.String
 		}
-		filtered = append(filtered, capture)
+
+		title, summary := splitCaptureText(c.Raw, c.MemoryTitle.String)
+		captureType := inferCaptureType(c.Raw, c.Source, action, c.MemoryType.String)
+
+		out = append(out, inboxCaptureResponse{
+			ID:           c.ID,
+			Raw:          c.Raw,
+			Source:       c.Source,
+			Processed:    c.Processed,
+			TriageAction: c.TriageAction,
+			MemoryID:     c.MemoryID,
+			CreatedAt:    c.CreatedAt,
+			Confirmed:    c.Confirmed,
+			DomainID:     c.DomainID,
+			Title:        title,
+			Summary:      summary,
+			Type:         captureType,
+		})
 	}
-	writeJSON(w, http.StatusOK, filtered)
+	writeJSON(w, http.StatusOK, out)
+}
+
+func splitCaptureText(raw, memoryTitle string) (title, summary string) {
+	if memoryTitle != "" {
+		return memoryTitle, truncateOrDefault(raw, memoryTitle)
+	}
+
+	text := strings.TrimSpace(compactWhitespace(raw))
+	if text == "" {
+		return "Untitled capture", "Captured from inbox."
+	}
+	if len(text) <= 84 {
+		return text, "Captured from inbox. Ready to triage."
+	}
+
+	window := text[:min(len(text), 108)]
+	cut := maxIndex(
+		strings.LastIndex(window, ". "),
+		strings.LastIndex(window, " - "),
+		strings.LastIndex(window, " \u2014 "),
+		strings.LastIndex(window, "; "),
+		strings.LastIndex(window, ", "),
+	)
+	if cut < 40 {
+		cut = strings.LastIndex(window, " ")
+	}
+	if cut < 40 {
+		cut = 84
+	}
+
+	title = strings.TrimSpace(text[:cut])
+	remainder := strings.TrimSpace(text[cut:])
+	remainder = strings.TrimLeft(remainder, ",.;:- ")
+	if remainder == "" {
+		remainder = "Captured from inbox. Ready to triage."
+	}
+	return title, remainder
+}
+
+var (
+	rxURL     = regexp.MustCompile(`(?i)https?://|www\.`)
+	rxVideo   = regexp.MustCompile(`(?i)\b(video|youtube|watch|vimeo)\b`)
+	rxIdea    = regexp.MustCompile(`(?i)\b(idea|what if|maybe)\b`)
+	rxArticle = regexp.MustCompile(`(?i)\b(article|research|paper|spec)\b`)
+)
+
+var actionTypeMap = map[string]string{
+	"do":        "task",
+	"explore":   "idea",
+	"reference": "note",
+}
+
+func inferCaptureType(raw, source, action, memoryType string) string {
+	if rxURL.MatchString(raw) {
+		return "link"
+	}
+	if rxVideo.MatchString(raw) {
+		return "video"
+	}
+	if rxIdea.MatchString(raw) {
+		return "idea"
+	}
+	if rxArticle.MatchString(raw) {
+		return "article"
+	}
+	if strings.HasPrefix(source, "signal") {
+		return "note"
+	}
+	if t, ok := actionTypeMap[action]; ok {
+		return t
+	}
+	return "note"
+}
+
+func compactWhitespace(s string) string {
+	fields := strings.Fields(s)
+	return strings.Join(fields, " ")
+}
+
+func truncateOrDefault(raw, title string) string {
+	text := strings.TrimSpace(compactWhitespace(raw))
+	remainder := strings.TrimPrefix(text, title)
+	remainder = strings.TrimSpace(remainder)
+	remainder = strings.TrimLeft(remainder, ",.;:- ")
+	if remainder == "" {
+		return "Captured from inbox. Ready to triage."
+	}
+	return remainder
+}
+
+func maxIndex(vals ...int) int {
+	m := vals[0]
+	for _, v := range vals[1:] {
+		if v > m {
+			m = v
+		}
+	}
+	return m
 }
 
 func (s *Server) handleInboxConfirm(w http.ResponseWriter, r *http.Request) {

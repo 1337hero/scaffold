@@ -1,20 +1,18 @@
 import { useState, useEffect } from 'preact/hooks'
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Sidebar } from './components/Sidebar.jsx'
 import { MobileBar } from './components/MobileBar.jsx'
 import { CaptureModal } from './components/CaptureModal.jsx'
 import { Desk } from './components/desk/Desk.jsx'
 import { Inbox } from './components/inbox/Inbox.jsx'
-import { Notebooks } from './components/notebooks/Notebooks.jsx'
-import { NotebookPage } from './components/notebooks/NotebookPage.jsx'
+import { Map } from './components/map/Map.jsx'
+import { DomainDetail } from './components/map/DomainDetail.jsx'
 import { Login } from './components/Login.jsx'
 import { inboxQuery } from '@/api/queries.js'
 
-const queryClient = new QueryClient()
-
 function AppShell() {
   const [activePanel, setActivePanel] = useState('desk')
-  const [activeNotebook, setActiveNotebook] = useState(null)
+  const [activeDomain, setActiveDomain] = useState(null)
   const [captureOpen, setCaptureOpen] = useState(false)
 
   const { data: inboxGroups = [] } = useQuery(inboxQuery)
@@ -25,11 +23,8 @@ function AppShell() {
 
   const navigateTo = (panel) => {
     setActivePanel(panel)
-    setActiveNotebook(null)
+    setActiveDomain(null)
   }
-
-  const openNotebook = (id) => setActiveNotebook(id)
-  const closeNotebook = () => setActiveNotebook(null)
 
   useEffect(() => {
     function onKeyDown(e) {
@@ -55,13 +50,13 @@ function AppShell() {
       />
 
       <main class="flex-1 overflow-y-auto h-screen">
-        {activeNotebook ? (
-          <NotebookPage notebookId={activeNotebook} onBack={closeNotebook} />
+        {activeDomain !== null ? (
+          <DomainDetail domainId={activeDomain} onBack={() => setActiveDomain(null)} />
         ) : (
           <>
             {activePanel === 'desk' && <Desk />}
             {activePanel === 'inbox' && <Inbox />}
-            {activePanel === 'notebooks' && <Notebooks onOpen={openNotebook} />}
+            {activePanel === 'map' && <Map onOpenDomain={(id) => setActiveDomain(id)} />}
           </>
         )}
       </main>
@@ -78,29 +73,35 @@ function AppShell() {
 }
 
 export function App() {
-  const [authed, setAuthed] = useState(null)
+  const queryClient = useQueryClient()
+
+  const { data: authed, isLoading } = useQuery({
+    queryKey: ['auth'],
+    queryFn: () =>
+      fetch('/api/auth/check', { credentials: 'include' })
+        .then((res) => res.ok)
+        .catch(() => false),
+    retry: false,
+    staleTime: Infinity,
+  })
 
   useEffect(() => {
-    fetch('/api/auth/check', { credentials: 'include' })
-      .then((res) => setAuthed(res.ok))
-      .catch(() => setAuthed(false))
-  }, [])
-
-  useEffect(() => {
-    const onExpired = () => setAuthed(false)
+    const onExpired = () => queryClient.setQueryData(['auth'], false)
     window.addEventListener('auth:expired', onExpired)
     return () => window.removeEventListener('auth:expired', onExpired)
-  }, [])
+  }, [queryClient])
 
-  if (authed === null) return null
-
-  if (!authed) {
-    return <Login onSuccess={() => setAuthed(true)} />
+  if (isLoading) {
+    return (
+      <div class="flex items-center justify-center min-h-screen bg-bg">
+        <div class="w-6 h-6 border-2 border-text/20 border-t-text/60 rounded-full animate-spin" />
+      </div>
+    )
   }
 
-  return (
-    <QueryClientProvider client={queryClient}>
-      <AppShell />
-    </QueryClientProvider>
-  )
+  if (!authed) {
+    return <Login onSuccess={() => queryClient.setQueryData(['auth'], true)} />
+  }
+
+  return <AppShell />
 }

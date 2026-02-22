@@ -90,7 +90,7 @@ If no new patterns found, return: []`,
 		strings.Join(existingList, "\n"),
 	)
 
-	raw, err := c.llm.CompletionJSON(ctx, c.semanticModel(), systemPrompt, userPrompt, 512)
+	raw, err := c.observationsClient().CompletionJSON(ctx, c.observationsModel(), systemPrompt, userPrompt, 512)
 	if err != nil {
 		return fmt.Errorf("observations LLM call: %w", err)
 	}

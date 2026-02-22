@@ -19,7 +19,7 @@ func (db *DB) SearchFTS(query string, topK int) ([]ScoredMemory, error) {
 	escaped := escapeFTSQuery(query)
 	rows, err := db.conn.Query(
 		`SELECT m.id, m.type, m.content, m.title, m.importance, m.source, m.tags,
-		        m.created_at, m.updated_at, m.accessed_at, m.access_count, m.archived, m.suppressed_at,
+		        m.created_at, m.updated_at, m.accessed_at, m.access_count, m.archived, m.suppressed_at, m.domain_id,
 		        -fts.rank as fts_score
 		 FROM memories_fts fts
 		 JOIN memories m ON m.id = fts.memory_id
@@ -39,7 +39,7 @@ func (db *DB) SearchFTS(query string, topK int) ([]ScoredMemory, error) {
 		var tags, accessedAt sql.NullString
 		if err := rows.Scan(
 			&sm.ID, &sm.Type, &sm.Content, &sm.Title, &sm.Importance, &sm.Source, &tags,
-			&sm.CreatedAt, &sm.UpdatedAt, &accessedAt, &sm.AccessCount, &sm.Archived, &sm.SuppressedAt,
+			&sm.CreatedAt, &sm.UpdatedAt, &accessedAt, &sm.AccessCount, &sm.Archived, &sm.SuppressedAt, &sm.DomainID,
 			&sm.FTSScore,
 		); err != nil {
 			return nil, err

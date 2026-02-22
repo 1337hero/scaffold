@@ -39,6 +39,7 @@ func TestAPIPrefixRoutesRemainAvailable(t *testing.T) {
 	}{
 		{method: http.MethodGet, path: "/api/inbox", expectedCode: http.StatusOK},
 		{method: http.MethodGet, path: "/api/memories", expectedCode: http.StatusOK},
+		{method: http.MethodPost, path: "/api/ingest", expectedCode: http.StatusServiceUnavailable},
 		{method: http.MethodPost, path: "/api/inbox/missing/confirm", expectedCode: http.StatusNotFound},
 		{method: http.MethodPost, path: "/api/inbox/missing/archive", expectedCode: http.StatusNotFound},
 		{method: http.MethodPost, path: "/api/inbox/missing/override", body: `{}`, expectedCode: http.StatusBadRequest},

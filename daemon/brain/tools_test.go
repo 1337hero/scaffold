@@ -323,16 +323,6 @@ func TestUpdateDeskItemMissingFields(t *testing.T) {
 	}
 }
 
-func TestAddToNotebookStub(t *testing.T) {
-	result, err := handleAddToNotebook(context.Background(), nil, nil, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(result, "not yet available") {
-		t.Fatalf("expected stub message, got %q", result)
-	}
-}
-
 func TestSaveToInboxMissingTitle(t *testing.T) {
 	params, _ := json.Marshal(map[string]string{"content": "stuff"})
 	_, err := handleSaveToInbox(context.Background(), nil, nil, params)

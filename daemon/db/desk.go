@@ -1,6 +1,9 @@
 package db
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+)
 
 type DeskItem struct {
 	ID          string
@@ -12,6 +15,7 @@ type DeskItem struct {
 	Date        string
 	CreatedAt   string
 	CompletedAt sql.NullString
+	DomainID    sql.NullInt64
 }
 
 func (db *DB) InsertDeskItem(d DeskItem) error {
@@ -26,23 +30,23 @@ func (db *DB) InsertDeskItem(d DeskItem) error {
 	}
 
 	_, err := db.conn.Exec(
-		`INSERT INTO desk (id, memory_id, title, position, status, micro_steps, date, created_at, completed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.MemoryID, d.Title, d.Position, d.Status, d.MicroSteps, d.Date, d.CreatedAt, d.CompletedAt,
+		`INSERT INTO desk (id, memory_id, title, position, status, micro_steps, date, created_at, completed_at, domain_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.MemoryID, d.Title, d.Position, d.Status, d.MicroSteps, d.Date, d.CreatedAt, d.CompletedAt, d.DomainID,
 	)
 	return err
 }
 
 func (db *DB) TodaysDesk() ([]DeskItem, error) {
 	return db.queryDesk(
-		`SELECT id, memory_id, title, position, status, micro_steps, date, created_at, completed_at
+		`SELECT id, memory_id, title, position, status, micro_steps, date, created_at, completed_at, domain_id
 		 FROM desk WHERE date = ? ORDER BY position ASC`, today(),
 	)
 }
 
 func (db *DB) YesterdaysDesk() ([]DeskItem, error) {
 	return db.queryDesk(
-		`SELECT id, memory_id, title, position, status, micro_steps, date, created_at, completed_at
+		`SELECT id, memory_id, title, position, status, micro_steps, date, created_at, completed_at, domain_id
 		 FROM desk WHERE date = date('now', '-1 day') ORDER BY position ASC`,
 	)
 }
@@ -64,7 +68,13 @@ func (db *DB) UpdateDeskStatus(id, status string) error {
 	if err != nil {
 		return err
 	}
-	return requireRowsAffected(result)
+	if err := requireRowsAffected(result); err != nil {
+		return err
+	}
+	if err := db.TouchDomainByDesk(id); err != nil {
+		return fmt.Errorf("touch domain after desk status update: %w", err)
+	}
+	return nil
 }
 
 func (db *DB) DeferDeskItem(id string) error {
@@ -75,7 +85,13 @@ func (db *DB) DeferDeskItem(id string) error {
 	if err != nil {
 		return err
 	}
-	return requireRowsAffected(result)
+	if err := requireRowsAffected(result); err != nil {
+		return err
+	}
+	if err := db.TouchDomainByDesk(id); err != nil {
+		return fmt.Errorf("touch domain after desk defer: %w", err)
+	}
+	return nil
 }
 
 func (db *DB) queryDesk(query string, args ...any) ([]DeskItem, error) {
@@ -90,7 +106,7 @@ func (db *DB) queryDesk(query string, args ...any) ([]DeskItem, error) {
 		var d DeskItem
 		if err := rows.Scan(
 			&d.ID, &d.MemoryID, &d.Title, &d.Position, &d.Status, &d.MicroSteps,
-			&d.Date, &d.CreatedAt, &d.CompletedAt,
+			&d.Date, &d.CreatedAt, &d.CompletedAt, &d.DomainID,
 		); err != nil {
 			return nil, err
 		}

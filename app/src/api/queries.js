@@ -54,17 +54,7 @@ const TRIAGE_GROUPS = [
   { action: "reference", label: "Reference", color: "cyan"   },
 ];
 
-const ACTION_UI = {
-  do: {
-    type: "task",
-  },
-  explore: {
-    type: "idea",
-  },
-  reference: {
-    type: "note",
-  },
-};
+const ACTION_TYPE = { do: "task", explore: "idea", reference: "note" };
 
 function formatCaptureTime(createdAt) {
   if (!createdAt) return "";
@@ -90,55 +80,16 @@ function formatCaptureTime(createdAt) {
   return `${day} ${h}${ampm}`;
 }
 
-function splitCaptureText(rawText) {
-  const raw = (rawText ?? "").trim().replace(/\s+/g, " ");
-  if (!raw) {
-    return { title: "Untitled capture", summary: "Captured from inbox." };
-  }
-  if (raw.length <= 84) {
-    return { title: raw, summary: "Captured from inbox. Ready to triage." };
-  }
-
-  const target = 84;
-  const window = raw.slice(0, target + 24);
-  let cut = Math.max(
-    window.lastIndexOf(". "),
-    window.lastIndexOf(" - "),
-    window.lastIndexOf(" — "),
-    window.lastIndexOf("; "),
-    window.lastIndexOf(", "),
-  );
-  if (cut < 40) cut = window.lastIndexOf(" ");
-  if (cut < 40) cut = target;
-
-  const title = raw.slice(0, cut).trim();
-  const remainder = raw.slice(cut).trim().replace(/^[,.;:-]\s*/, "");
-  const summary = remainder || "Captured from inbox. Ready to triage.";
-  return { title, summary };
-}
-
-function inferCaptureType(raw, source, action) {
-  if (/(https?:\/\/|www\.)/i.test(raw)) return "link";
-  if (/\b(video|youtube|watch|vimeo)\b/i.test(raw)) return "video";
-  if (/\bidea|what if|maybe\b/i.test(raw)) return "idea";
-  if (/\barticle|research|paper|spec\b/i.test(raw)) return "article";
-  if (source?.startsWith("signal")) return "note";
-  return ACTION_UI[action]?.type ?? "note";
-}
-
 function adaptCapture(capture, action) {
-  const raw = capture.Raw ?? "";
-  const { title, summary } = splitCaptureText(raw);
-  const ui = ACTION_UI[action] ?? ACTION_UI.do;
   return {
     id: capture.ID,
     triageAction: action,
     confirmed: capture.Confirmed === 1,
-    type: inferCaptureType(raw, capture.Source ?? "", action),
-    title,
-    summary,
+    type: capture.Type ?? ACTION_TYPE[action] ?? "note",
+    title: capture.Title ?? "",
+    summary: capture.Summary ?? "",
     time: formatCaptureTime(capture.CreatedAt),
-    cardType: ui.type,
+    cardType: ACTION_TYPE[action] ?? "note",
   };
 }
 
@@ -194,14 +145,53 @@ export async function createCapture(text) {
   return postJSON("/api/capture", { text });
 }
 
-// NOTEBOOKS — backend not yet implemented
+// DOMAINS / MAP
 
-export const notebooksQuery = {
-  queryKey: ["notebooks"],
-  queryFn: async () => [],
+export const domainsQuery = {
+  queryKey: ["domains"],
+  queryFn: async () => apiFetch("/api/domains"),
 };
 
-export const notebookQuery = (id) => ({
-  queryKey: ["notebook", id],
-  queryFn: async () => null,
+export const domainDetailQuery = (id) => ({
+  queryKey: ["domain", id],
+  queryFn: async () => {
+    const dump = id === "dump" || id === 0 || id === "0";
+    if (!dump) {
+      return apiFetch(`/api/domains/${encodeURIComponent(id)}`);
+    }
+
+    const dumpData = await apiFetch("/api/domains/dump");
+    const captures = Array.isArray(dumpData?.captures) ? dumpData.captures : [];
+    const memories = Array.isArray(dumpData?.memories) ? dumpData.memories : [];
+    const count = Number.isFinite(dumpData?.count) ? dumpData.count : captures.length + memories.length;
+
+    return {
+      domain: {
+        id: 0,
+        name: "The Dump",
+        importance: 1,
+      },
+      desk_items: [],
+      open_captures: captures,
+      recent_memories: memories,
+      drift_state: "cold",
+      drift_label: `${count} items`,
+    };
+  },
 });
+
+export async function patchDomain(id, body) {
+  return apiFetch(`/api/domains/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// CALENDAR
+
+export const calendarQuery = {
+  queryKey: ["calendar"],
+  queryFn: async () => apiFetch("/api/calendar/upcoming", { allow404: true, fallback: [] }),
+  staleTime: 5 * 60 * 1000,
+};

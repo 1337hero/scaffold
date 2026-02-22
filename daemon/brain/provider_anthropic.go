@@ -7,24 +7,28 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
+
+	"scaffold/llm"
 )
 
 type anthropicResponder struct {
 	client anthropic.Client
 }
 
-func newAnthropicResponder(client anthropic.Client) ToolUseResponder {
+func NewAnthropicResponder(apiKey string) llm.ToolUseResponder {
+	client := anthropic.NewClient(option.WithAPIKey(strings.TrimSpace(apiKey)))
 	return &anthropicResponder{client: client}
 }
 
-func (r *anthropicResponder) Respond(ctx context.Context, req ToolUseRequest) (*ToolUseResponse, error) {
+func (r *anthropicResponder) Respond(ctx context.Context, req llm.ToolUseRequest) (*llm.ToolUseResponse, error) {
 	messages, err := toAnthropicMessages(req.Messages)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("anthropic respond: %w", err)
 	}
 	tools, err := toAnthropicTools(req.Tools)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("anthropic respond: %w", err)
 	}
 
 	params := anthropic.MessageNewParams{
@@ -39,10 +43,10 @@ func (r *anthropicResponder) Respond(ctx context.Context, req ToolUseRequest) (*
 
 	resp, err := r.client.Messages.New(ctx, params)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("anthropic respond: %w", err)
 	}
 
-	out := &ToolUseResponse{}
+	out := &llm.ToolUseResponse{}
 	textParts := make([]string, 0)
 	for _, block := range resp.Content {
 		switch block.Type {
@@ -51,7 +55,7 @@ func (r *anthropicResponder) Respond(ctx context.Context, req ToolUseRequest) (*
 				textParts = append(textParts, text)
 			}
 		case "tool_use":
-			out.ToolCalls = append(out.ToolCalls, ToolCall{
+			out.ToolCalls = append(out.ToolCalls, llm.ToolCall{
 				ID:    block.ID,
 				Name:  block.Name,
 				Input: append(json.RawMessage(nil), block.Input...),
@@ -63,7 +67,7 @@ func (r *anthropicResponder) Respond(ctx context.Context, req ToolUseRequest) (*
 	return out, nil
 }
 
-func toAnthropicMessages(messages []RespondMessage) ([]anthropic.MessageParam, error) {
+func toAnthropicMessages(messages []llm.RespondMessage) ([]anthropic.MessageParam, error) {
 	out := make([]anthropic.MessageParam, 0, len(messages))
 	for _, message := range messages {
 		blocks := make([]anthropic.ContentBlockParamUnion, 0, 1+len(message.ToolCalls)+len(message.ToolResults))
@@ -112,7 +116,7 @@ func toAnthropicMessages(messages []RespondMessage) ([]anthropic.MessageParam, e
 	return out, nil
 }
 
-func toAnthropicTools(toolDefs []ToolDefinition) ([]anthropic.ToolUnionParam, error) {
+func toAnthropicTools(toolDefs []llm.ToolDefinition) ([]anthropic.ToolUnionParam, error) {
 	out := make([]anthropic.ToolUnionParam, 0, len(toolDefs))
 	for _, toolDef := range toolDefs {
 		name := strings.TrimSpace(toolDef.Name)

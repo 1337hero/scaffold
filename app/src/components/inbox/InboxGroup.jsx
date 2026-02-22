@@ -1,5 +1,5 @@
 import { InboxCard } from './InboxCard.jsx'
-import { colorClass } from '../../data/mock.js'
+import { colorClass } from '../../constants/colors.js'
 
 export function InboxGroup({ group, onConfirm, onOverride, onArchive, actionPending }) {
   return (

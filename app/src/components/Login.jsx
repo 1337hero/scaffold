@@ -76,7 +76,7 @@ export function Login({ onSuccess }) {
           <button
             type="submit"
             disabled={loading}
-            class="w-full py-2.5 px-4 bg-amber-dim border border-amber-border text-amber rounded-md font-sans text-[0.82rem] font-semibold cursor-pointer transition-all hover:bg-[rgba(245,158,11,0.18)] disabled:opacity-50 disabled:cursor-not-allowed"
+            class="btn-amber w-full py-2.5 px-4 rounded-md text-[0.82rem]"
           >
             {loading ? 'Signing in…' : 'Sign in'}
           </button>

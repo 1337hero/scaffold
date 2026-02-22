@@ -35,3 +35,6 @@ tasks:
   observations:
     interval_hours: 24
     timeout_seconds: 120
+  drift:
+    interval_hours: 6
+    timeout_seconds: 15

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -92,5 +93,29 @@ func TestBuildAgentSystemPromptIncludesRulesAndBulletinToken(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "{{cortex_bulletin}}") {
 		t.Fatalf("expected bulletin token in prompt, got %q", prompt)
+	}
+}
+
+func TestAnnotateUserMessageWithSignalMetadata(t *testing.T) {
+	got := annotateUserMessageWithSignalMetadata("check this", "image and audio")
+	if !strings.Contains(got, "check this") {
+		t.Fatalf("expected original message, got %q", got)
+	}
+	if !strings.Contains(got, "Signal metadata: user also sent image and audio") {
+		t.Fatalf("expected signal metadata note, got %q", got)
+	}
+}
+
+func TestAnnotateUserMessageWithSignalMetadataNoSummary(t *testing.T) {
+	got := annotateUserMessageWithSignalMetadata("plain text", "")
+	if got != "plain text" {
+		t.Fatalf("expected unchanged text, got %q", got)
+	}
+}
+
+func TestDefaultIngestDirFromConfigDir(t *testing.T) {
+	got := defaultIngestDir(filepath.Join("..", "config"))
+	if !strings.HasSuffix(filepath.ToSlash(got), "/ingest") {
+		t.Fatalf("expected ingest dir suffix /ingest, got %q", got)
 	}
 }

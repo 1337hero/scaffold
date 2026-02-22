@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go"
 	"scaffold/db"
 )
 
@@ -45,30 +44,17 @@ Active todos (by importance):
 Respond as JSON array: [{"title": "...", "micro_steps": ["step 1", "step 2"], "source_memory_id": "...", "why": "one sentence"}]
 Maximum 3 items.`, string(yesterdayJSON), string(todosJSON))
 
-	model := b.respondModel
-	if strings.TrimSpace(string(model)) == "" {
-		model = anthropic.ModelClaudeHaiku4_5
+	model := b.prioritizeModel
+	if strings.TrimSpace(model) == "" {
+		model = "claude-haiku-4-5"
 	}
 
-	resp, err := b.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     model,
-		MaxTokens: 1024,
-		System: []anthropic.TextBlockParam{
-			{Text: system},
-		},
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(user)),
-		},
-	})
+	resp, err := b.prioritizeLLM.CompletionJSON(ctx, model, system, user, 1024)
 	if err != nil {
-		return nil, fmt.Errorf("claude API: %w", err)
+		return nil, fmt.Errorf("prioritize model request: %w", err)
 	}
 
-	if len(resp.Content) == 0 {
-		return nil, fmt.Errorf("empty response from claude")
-	}
-
-	text := strings.TrimSpace(resp.Content[0].Text)
+	text := strings.TrimSpace(resp)
 	tasks, err := parsePrioritizeTasks(text)
 	if err != nil {
 		return nil, fmt.Errorf("parse prioritize JSON: %w", err)

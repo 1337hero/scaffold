@@ -2,6 +2,7 @@ package brain
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -53,5 +54,45 @@ func TestParseTriageContentMissingFieldsFallsBackWithError(t *testing.T) {
 	}
 	if result.Type != "Observation" {
 		t.Fatalf("expected fallback type Observation, got %s", result.Type)
+	}
+}
+
+func TestParseTriageContentCodeFenceJSON(t *testing.T) {
+	raw := "capture text"
+	content := "```json\n{\"type\":\"Identity\",\"importance\":1.0,\"action\":\"reference\",\"title\":\"Profile\",\"domain\":\"Personal Development\"}\n```"
+
+	result, err := parseTriageContent(raw, content)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if result.Type != "Identity" {
+		t.Fatalf("expected type Identity, got %s", result.Type)
+	}
+	if result.Title != "Profile" {
+		t.Fatalf("expected title Profile, got %s", result.Title)
+	}
+}
+
+func TestFallbackTitleTruncatesLongInput(t *testing.T) {
+	raw := strings.Repeat("a", 180)
+	result := fallbackTriage(raw)
+	if len(result.Title) != 96 {
+		t.Fatalf("expected fallback title length 96, got %d", len(result.Title))
+	}
+}
+
+func TestParseTriageContentUsesFirstJSONObjectWhenTrailingGarbage(t *testing.T) {
+	raw := "capture text"
+	content := `{"type":"Goal","importance":0.9,"action":"do","title":"Finish project","domain":"Work/Business"}, {"extra":"ignored"}`
+
+	result, err := parseTriageContent(raw, content)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if result.Type != "Goal" {
+		t.Fatalf("expected Goal, got %s", result.Type)
+	}
+	if result.Title != "Finish project" {
+		t.Fatalf("expected title Finish project, got %q", result.Title)
 	}
 }

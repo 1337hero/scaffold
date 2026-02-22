@@ -2,6 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import { useQuery } from '@tanstack/react-query'
 import { TheOne } from './TheOne.jsx'
 import { TaskRow } from './TaskRow.jsx'
+import { CalendarEvents } from './CalendarEvents.jsx'
 import { deskQuery } from '@/api/queries.js'
 
 function formatDate() {
@@ -20,51 +21,78 @@ function formatTime() {
   return `${h}:${m} ${ampm}`
 }
 
+function SkeletonPulse({ className }) {
+  return <div class={`animate-pulse bg-surface-card rounded ${className}`} />
+}
+
+function DeskSkeleton({ dayName, dateFull, clock }) {
+  return (
+    <div class="panel-shell">
+      <div class="flex justify-between items-baseline mb-9">
+        <div class="flex items-baseline gap-3.5">
+          <span class="text-[2rem] font-bold tracking-[-0.04em]">{dayName}</span>
+          <span class="text-[1rem] text-text-dim">{dateFull}</span>
+        </div>
+        <span class="font-mono text-[1rem] text-text-muted">{clock}</span>
+      </div>
+      <div class="flex items-center gap-2.5 mb-8">
+        <div class="flex-1 h-1.5 bg-surface-2 rounded-[3px]" />
+        <span class="font-mono text-[0.85rem] text-text-muted">- / -</span>
+      </div>
+      <SkeletonPulse className="h-[140px] mb-3 rounded-xl" />
+      <SkeletonPulse className="h-[72px] mb-2" />
+      <SkeletonPulse className="h-[72px] mb-2" />
+    </div>
+  )
+}
+
 export function Desk() {
   const { data, isLoading } = useQuery(deskQuery)
-  // Local UI state for interactivity — initialized from query data on first load
-  const [theOne, setTheOne] = useState(null)
-  const [tasks, setTasks] = useState(null)
+  const [doneIds, setDoneIds] = useState(new Set())
+  const [stepDoneIds, setStepDoneIds] = useState(new Set())
   const [clock, setClock] = useState(formatTime)
-  const [{ dayName, dateFull }] = useState(formatDate)
-
-  const loaded = !isLoading && data
-  // Seed local state once from query — intentionally one-way
-  // Use sentinel `false` to distinguish "seeded as null" from "not yet seeded"
-  if (loaded && theOne === null) setTheOne(data.theOne ?? false)
-  if (loaded && tasks === null) setTasks(data.tasks ?? [])
+  const { dayName, dateFull } = formatDate()
 
   useEffect(() => {
     const interval = setInterval(() => setClock(formatTime()), 60000)
     return () => clearInterval(interval)
   }, [])
 
-  if (!loaded || tasks === null) return null
+  if (isLoading || !data) {
+    return <DeskSkeleton dayName={dayName} dateFull={dateFull} clock={clock} />
+  }
 
-  const hasItems = theOne && tasks
-  const allItems = hasItems ? [theOne, ...tasks] : []
+  const toggleDone = (id) => setDoneIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const toggleStepDone = (stepId) => setStepDoneIds(prev => {
+    const next = new Set(prev)
+    next.has(stepId) ? next.delete(stepId) : next.add(stepId)
+    return next
+  })
+
+  const effectiveDone = (item) => !!(item.done ^ doneIds.has(item.id))
+
+  const applyDone = (item) => ({
+    ...item,
+    done: effectiveDone(item),
+    microSteps: item.microSteps?.map(s => ({
+      ...s,
+      done: !!(s.done ^ stepDoneIds.has(s.id)),
+    })),
+  })
+
+  const { theOne, tasks = [] } = data
+  const theOneEffective = theOne ? applyDone(theOne) : null
+  const tasksEffective = tasks.map(applyDone)
+
+  const allItems = theOneEffective ? [theOneEffective, ...tasksEffective] : tasksEffective
   const doneCount = allItems.filter(t => t.done).length
   const totalCount = allItems.length
   const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
-
-  function toggleTheOne() {
-    setTheOne(prev => ({ ...prev, done: !prev.done }))
-  }
-
-  function toggleMicroStep(stepId) {
-    setTheOne(prev => ({
-      ...prev,
-      microSteps: prev.microSteps.map(s =>
-        s.id === stepId ? { ...s, done: !s.done } : s
-      ),
-    }))
-  }
-
-  function toggleTask(taskId) {
-    setTasks(prev => prev.map(t =>
-      t.id === taskId ? { ...t, done: !t.done } : t
-    ))
-  }
 
   return (
     <div class="panel-shell">
@@ -76,6 +104,8 @@ export function Desk() {
         <span class="font-mono text-[1rem] text-text-muted">{clock}</span>
       </div>
 
+      <CalendarEvents />
+
       <div class="flex items-center gap-2.5 mb-8">
         <div class="flex-1 h-1.5 bg-surface-2 rounded-[3px] overflow-hidden">
           <div
@@ -86,21 +116,23 @@ export function Desk() {
         <span class="font-mono text-[0.85rem] text-text-muted">{doneCount} / {totalCount}</span>
       </div>
 
-      {!hasItems ? (
+      {totalCount === 0 ? (
         <div class="bg-surface border border-border rounded-lg p-9 mb-2 text-center">
           <div class="text-text-muted text-[1rem] mb-1">No tasks on the desk yet.</div>
           <div class="text-text-dim text-[0.9rem]">The morning prioritize will populate this, or capture something via Signal.</div>
         </div>
       ) : (
         <>
-          <TheOne
-            task={theOne}
-            onToggle={toggleTheOne}
-            onToggleStep={toggleMicroStep}
-          />
+          {theOneEffective && (
+            <TheOne
+              task={theOneEffective}
+              onToggle={() => toggleDone(theOne.id)}
+              onToggleStep={(stepId) => toggleStepDone(stepId)}
+            />
+          )}
 
-          {tasks.map((task) => (
-            <TaskRow key={task.id} task={task} onToggle={() => toggleTask(task.id)} />
+          {tasksEffective.map((task) => (
+            <TaskRow key={task.id} task={task} onToggle={() => toggleDone(task.id)} />
           ))}
         </>
       )}

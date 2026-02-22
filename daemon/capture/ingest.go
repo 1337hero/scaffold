@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"strings"
@@ -33,6 +34,20 @@ func Ingest(ctx context.Context, database *db.DB, b *brain.Brain, text, source s
 	if triage != nil {
 		log.Printf("triage: type=%s action=%s importance=%.1f", triage.Type, triage.Action, triage.Importance)
 
+		var domainID sql.NullInt64
+		resolvedName := strings.TrimSpace(triage.Domain)
+		if resolvedName == "" {
+			resolvedName = "Personal Development"
+		}
+		resolved, resolveErr := database.ResolveDomainID(resolvedName)
+		if resolveErr != nil {
+			log.Printf("triage: resolve domain %q: %v", resolvedName, resolveErr)
+		} else if resolved != nil {
+			domainID = sql.NullInt64{Int64: int64(*resolved), Valid: true}
+		} else {
+			log.Printf("triage: unknown domain %q, leaving undomained", resolvedName)
+		}
+
 		memoryID = uuid.New().String()
 		mem := db.Memory{
 			ID:         memoryID,
@@ -42,6 +57,7 @@ func Ingest(ctx context.Context, database *db.DB, b *brain.Brain, text, source s
 			Importance: triage.Importance,
 			Source:     source,
 			Tags:       strings.Join(triage.Tags, ","),
+			DomainID:   domainID,
 		}
 		if err := database.PersistTriageResult(captureID, mem, triage.Action); err != nil {
 			return captureID, "", triage, fmt.Errorf("persist triage result: %w", err)

@@ -12,13 +12,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-
 	"scaffold/brain"
 	appconfig "scaffold/config"
 	"scaffold/db"
 	"scaffold/embedding"
+	"scaffold/llm"
 )
 
 const (
@@ -54,6 +52,7 @@ type BulletinCache struct {
 	maxStaleAfter time.Duration
 }
 
+
 func newBulletinCache(maxStaleAfter time.Duration) *BulletinCache {
 	cache := &BulletinCache{maxStaleAfter: maxStaleAfter}
 	cache.content.Store("")
@@ -78,90 +77,7 @@ func (b *BulletinCache) Set(content string) {
 	b.generatedAt.Store(time.Now().Unix())
 }
 
-type llmClient interface {
-	SynthesizeBulletin(ctx context.Context, model string, maxWords int, sections bulletinSections) (string, error)
-	CompletionJSON(ctx context.Context, model, systemPrompt, userPrompt string, maxTokens int64) (string, error)
-}
-
-type anthropicLLMClient struct {
-	client anthropic.Client
-}
-
-func newAnthropicLLMClient(apiKey string) llmClient {
-	return &anthropicLLMClient{client: anthropic.NewClient(option.WithAPIKey(apiKey))}
-}
-
-func (c *anthropicLLMClient) SynthesizeBulletin(ctx context.Context, model string, maxWords int, sections bulletinSections) (string, error) {
-	systemPrompt := `You are the cortex's memory bulletin synthesizer.
-You receive pre-gathered memory data organized by category and synthesize it into one concise, contextualized briefing.
-The bulletin is injected into conversation so the agent has ambient awareness.
-
-Do:
-- Prioritize recent and high-importance information
-- Connect related facts into coherent narratives
-- Keep it scannable and actionable
-- Stay under the provided word limit
-
-Do not:
-- List IDs or metadata
-- Repeat section headers
-- Repeat the same information in multiple phrasings
-- Output markdown code fences`
-
-	payload, err := json.Marshal(sections)
-	if err != nil {
-		return "", fmt.Errorf("marshal sections: %w", err)
-	}
-
-	maxTokens := int64(maxWords * 3)
-	if maxTokens < bulletinMaxTokensFloor {
-		maxTokens = bulletinMaxTokensFloor
-	}
-	if maxTokens > bulletinMaxTokensCeil {
-		maxTokens = bulletinMaxTokensCeil
-	}
-
-	userPrompt := fmt.Sprintf("Max words: %d\n\nMemory sections (JSON):\n%s", maxWords, string(payload))
-
-	resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(model),
-		MaxTokens: maxTokens,
-		System: []anthropic.TextBlockParam{
-			{Text: systemPrompt},
-		},
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt)),
-		},
-	})
-	if err != nil {
-		return "", err
-	}
-	if len(resp.Content) == 0 {
-		return "", fmt.Errorf("empty bulletin response")
-	}
-
-	text := strings.TrimSpace(resp.Content[0].Text)
-	if text == "" {
-		return "", fmt.Errorf("blank bulletin response")
-	}
-	return truncateWords(text, maxWords), nil
-}
-
-func (c *anthropicLLMClient) CompletionJSON(ctx context.Context, model, systemPrompt, userPrompt string, maxTokens int64) (string, error) {
-	resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(model),
-		MaxTokens: maxTokens,
-		System:    []anthropic.TextBlockParam{{Text: systemPrompt}},
-		Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt))},
-	})
-	if err != nil {
-		return "", err
-	}
-	if len(resp.Content) == 0 {
-		return "", fmt.Errorf("empty response")
-	}
-	return strings.TrimSpace(resp.Content[0].Text), nil
-}
+type CompletionClient = llm.CompletionClient
 
 type memorySnippet struct {
 	Type       string  `json:"type"`
@@ -195,17 +111,32 @@ func (s bulletinSections) Empty() bool {
 }
 
 type Cortex struct {
-	db       *db.DB
-	brain    *brain.Brain
-	llm      llmClient
-	cfg      appconfig.CortexConfig
-	embedder embedding.Embedder
-	bulletin *BulletinCache
-	tasks    []*CortexTask
-	once     sync.Once
+	db                    *db.DB
+	brain                 *brain.Brain
+	llm                   CompletionClient
+	semanticLLM           CompletionClient
+	observationsLLM       CompletionClient
+	semanticModelName     string
+	observationsModelName string
+	cfg                   appconfig.CortexConfig
+	embedder              embedding.Embedder
+	bulletin              *BulletinCache
+	tasks                 []*CortexTask
+	once                  sync.Once
 }
 
-func New(database *db.DB, b *brain.Brain, apiKey string, cfg appconfig.CortexConfig, embedder embedding.Embedder) *Cortex {
+type LLMRoute struct {
+	Client CompletionClient
+	Model  string
+}
+
+type LLMRoutes struct {
+	Bulletin     LLMRoute
+	Semantic     LLMRoute
+	Observations LLMRoute
+}
+
+func NewWithLLM(database *db.DB, b *brain.Brain, cfg appconfig.CortexConfig, embedder embedding.Embedder, routes LLMRoutes) *Cortex {
 	if cfg.Bulletin.IntervalMinutes <= 0 {
 		cfg.Bulletin.IntervalMinutes = 60
 	}
@@ -224,13 +155,36 @@ func New(database *db.DB, b *brain.Brain, apiKey string, cfg appconfig.CortexCon
 		maxStale = 3 * time.Hour
 	}
 
+	if routes.Bulletin.Client == nil {
+		routes.Bulletin.Client = &llm.UnconfiguredCompletionClient{}
+	}
+	if strings.TrimSpace(routes.Bulletin.Model) != "" {
+		cfg.Bulletin.Model = strings.TrimSpace(routes.Bulletin.Model)
+	}
+	if routes.Semantic.Client == nil {
+		routes.Semantic.Client = routes.Bulletin.Client
+	}
+	if strings.TrimSpace(routes.Semantic.Model) == "" {
+		routes.Semantic.Model = cfg.Bulletin.Model
+	}
+	if routes.Observations.Client == nil {
+		routes.Observations.Client = routes.Semantic.Client
+	}
+	if strings.TrimSpace(routes.Observations.Model) == "" {
+		routes.Observations.Model = strings.TrimSpace(routes.Semantic.Model)
+	}
+
 	c := &Cortex{
-		db:       database,
-		brain:    b,
-		llm:      newAnthropicLLMClient(apiKey),
-		cfg:      cfg,
-		embedder: embedder,
-		bulletin: newBulletinCache(maxStale),
+		db:                    database,
+		brain:                 b,
+		llm:                   routes.Bulletin.Client,
+		semanticLLM:           routes.Semantic.Client,
+		observationsLLM:       routes.Observations.Client,
+		semanticModelName:     strings.TrimSpace(routes.Semantic.Model),
+		observationsModelName: strings.TrimSpace(routes.Observations.Model),
+		cfg:                   cfg,
+		embedder:              embedder,
+		bulletin:              newBulletinCache(maxStale),
 	}
 
 	c.tasks = c.buildTasks()
@@ -365,6 +319,8 @@ func (c *Cortex) taskFnForName(name string) func(context.Context) error {
 		return c.runEmbeddingBackfill
 	case "observations":
 		return c.runObservations
+	case "drift":
+		return c.runDrift
 	default:
 		return nil
 	}
@@ -390,20 +346,58 @@ func (c *Cortex) generateBulletin(ctx context.Context) error {
 		return nil
 	}
 
-	content, err := c.llm.SynthesizeBulletin(
-		ctx,
-		c.cfg.Bulletin.Model,
-		c.cfg.Bulletin.MaxWords,
-		sections,
-	)
+	systemPrompt, userPrompt, maxTokens, err := buildBulletinPrompt(c.cfg.Bulletin.MaxWords, sections)
+	if err != nil {
+		return err
+	}
+
+	content, err := c.llm.CompletionText(ctx, c.cfg.Bulletin.Model, systemPrompt, userPrompt, maxTokens)
 	if err != nil {
 		return fmt.Errorf("synthesize bulletin: %w", err)
+	}
+	content = truncateWords(content, c.cfg.Bulletin.MaxWords)
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("blank bulletin response")
 	}
 
 	if c.bulletin != nil {
 		c.bulletin.Set(content)
 	}
 	return nil
+}
+
+func buildBulletinPrompt(maxWords int, sections bulletinSections) (systemPrompt string, userPrompt string, maxTokens int64, err error) {
+	systemPrompt = `You are the cortex's memory bulletin synthesizer.
+You receive pre-gathered memory data organized by category and synthesize it into one concise, contextualized briefing.
+The bulletin is injected into conversation so the agent has ambient awareness.
+
+Do:
+- Prioritize recent and high-importance information
+- Connect related facts into coherent narratives
+- Keep it scannable and actionable
+- Stay under the provided word limit
+
+Do not:
+- List IDs or metadata
+- Repeat section headers
+- Repeat the same information in multiple phrasings
+- Output markdown code fences`
+
+	payload, err := json.Marshal(sections)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("marshal sections: %w", err)
+	}
+
+	maxTokens = int64(maxWords * 3)
+	if maxTokens < bulletinMaxTokensFloor {
+		maxTokens = bulletinMaxTokensFloor
+	}
+	if maxTokens > bulletinMaxTokensCeil {
+		maxTokens = bulletinMaxTokensCeil
+	}
+
+	userPrompt = fmt.Sprintf("Max words: %d\n\nMemory sections (JSON):\n%s", maxWords, string(payload))
+	return systemPrompt, userPrompt, maxTokens, nil
 }
 
 func (c *Cortex) loadSections() (bulletinSections, error) {
@@ -516,6 +510,7 @@ func (c *Cortex) runPrioritization(ctx context.Context) error {
 					String: task.SourceMemoryID,
 					Valid:  true,
 				}
+				item.DomainID = mem.DomainID
 			} else {
 				log.Printf("cortex: prioritize source memory %q missing; inserting desk item without memory_id", task.SourceMemoryID)
 			}
@@ -723,7 +718,7 @@ Respond with JSON: {"decision": "merge|relate|keep_separate", "keep_id": "%s or 
 		candidate.MemoryA.ID, candidate.MemoryB.ID,
 	)
 
-	raw, err := c.llm.CompletionJSON(ctx, c.semanticModel(), system, user, 150)
+	raw, err := c.semanticClient().CompletionJSON(ctx, c.semanticModel(), system, user, 150)
 	if err != nil {
 		return consolidationDecision{}, err
 	}
@@ -748,11 +743,47 @@ func (c *Cortex) semanticModel() string {
 	if c == nil {
 		return "claude-haiku-4-5"
 	}
+	if model := strings.TrimSpace(c.semanticModelName); model != "" {
+		return model
+	}
 	model := strings.TrimSpace(c.cfg.Bulletin.Model)
 	if model == "" {
 		return "claude-haiku-4-5"
 	}
 	return model
+}
+
+func (c *Cortex) observationsModel() string {
+	if c == nil {
+		return "claude-haiku-4-5"
+	}
+	if model := strings.TrimSpace(c.observationsModelName); model != "" {
+		return model
+	}
+	return c.semanticModel()
+}
+
+func (c *Cortex) semanticClient() CompletionClient {
+	if c == nil {
+		return &llm.UnconfiguredCompletionClient{}
+	}
+	if c.semanticLLM != nil {
+		return c.semanticLLM
+	}
+	if c.llm != nil {
+		return c.llm
+	}
+	return &llm.UnconfiguredCompletionClient{}
+}
+
+func (c *Cortex) observationsClient() CompletionClient {
+	if c == nil {
+		return &llm.UnconfiguredCompletionClient{}
+	}
+	if c.observationsLLM != nil {
+		return c.observationsLLM
+	}
+	return c.semanticClient()
 }
 
 func (c *Cortex) runReindex(ctx context.Context) error {
@@ -766,6 +797,26 @@ func (c *Cortex) runReindex(ctx context.Context) error {
 		return fmt.Errorf("reindex centrality: %w", err)
 	}
 	log.Printf("cortex: reindex indexed=%d max_degree=%d", report.MemoriesIndexed, report.MaxDegree)
+	return nil
+}
+
+func (c *Cortex) runDrift(ctx context.Context) error {
+	_ = ctx
+	if c.db == nil {
+		return fmt.Errorf("database is nil")
+	}
+
+	drifts, err := c.db.ComputeDriftStates()
+	if err != nil {
+		return fmt.Errorf("drift: %w", err)
+	}
+
+	counts := map[string]int{}
+	for _, d := range drifts {
+		counts[d.State]++
+	}
+	log.Printf("cortex: drift domains=%d active=%d drifting=%d neglected=%d cold=%d overactive=%d",
+		len(drifts), counts["active"], counts["drifting"], counts["neglected"], counts["cold"], counts["overactive"])
 	return nil
 }
 

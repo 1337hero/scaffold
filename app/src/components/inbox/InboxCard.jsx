@@ -1,4 +1,4 @@
-import { typeStyles } from '../../data/mock.js'
+import { typeStyles } from '../../constants/colors.js'
 
 export function InboxCard({ item, onConfirm, onOverride, onArchive, actionPending }) {
   const typeClass = typeStyles[item.type] || 'bg-surface-2 text-text-dim'
@@ -46,7 +46,7 @@ export function InboxCard({ item, onConfirm, onOverride, onArchive, actionPendin
             type="button"
             disabled={actionDisabled}
             onClick={() => onArchive?.(item)}
-            class="text-[0.78rem] font-medium py-1.5 px-3 rounded-[6px] border border-amber-border text-amber bg-amber-dim hover:bg-[rgba(245,158,11,0.18)] font-sans cursor-pointer transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+            class="btn-amber text-[0.78rem] py-1.5 px-3 rounded-[6px]"
           >
             Archive
           </button>

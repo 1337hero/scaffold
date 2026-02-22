@@ -1,19 +1,12 @@
-import { colorClass } from "@/data/mock.js"
+import { colorClass } from "@/constants/colors.js"
 import { Checkbox } from "@/components/ui/Checkbox.jsx"
 
 export function TaskRow({ task, onToggle }) {
   return (
-    <div
-      class="surface-card py-5 px-6 flex items-center gap-4 mb-2 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber/70"
+    <button
+      type="button"
+      class="surface-card py-5 px-6 flex items-center gap-4 mb-2 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber/70 text-left w-full"
       onClick={onToggle}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault()
-          onToggle()
-        }
-      }}
     >
       <span class="font-mono text-[0.84rem] text-text-muted min-w-[18px]">{task.num}</span>
 
@@ -28,6 +21,6 @@ export function TaskRow({ task, onToggle }) {
           {task.project.name}
         </div>
       </div>
-    </div>
+    </button>
   )
 }

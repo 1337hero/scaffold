@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/anthropics/anthropic-sdk-go"
 )
 
 type stubResponder struct {
@@ -93,14 +91,14 @@ func newRespondTestBrain(t *testing.T, responder ToolUseResponder) *Brain {
 		db:        openTestDB(t),
 		tools: []ToolDefinition{
 			{
-				Name:        "add_to_notebook",
-				Description: "stub notebook writer",
+				Name:        "get_desk",
+				Description: "read today's desk items",
 				InputSchema: map[string]interface{}{},
 			},
 		},
 		toolRegistry:     defaultToolRegistry(),
 		systemPrompt:     "test system prompt",
-		respondModel:     anthropic.Model("claude-haiku-4-5"),
+		respondModel:     "claude-haiku-4-5",
 		respondMaxTokens: 1024,
 	}
 }
@@ -161,8 +159,8 @@ func TestRespondExecutesToolLoopAndReturnsFinalText(t *testing.T) {
 			{
 				ToolCalls: []ToolCall{{
 					ID:    "tool-1",
-					Name:  "add_to_notebook",
-					Input: json.RawMessage(`{"notebook":"ideas","content":"kernel thought"}`),
+					Name:  "get_desk",
+					Input: json.RawMessage(`{}`),
 				}},
 			},
 			{Text: "Saved it for later."},
@@ -195,8 +193,8 @@ func TestRespondExecutesToolLoopAndReturnsFinalText(t *testing.T) {
 	if last.ToolResults[0].IsError {
 		t.Fatalf("expected non-error tool result, got %#v", last.ToolResults[0])
 	}
-	if !strings.Contains(last.ToolResults[0].Content, "Notebooks are not yet available") {
-		t.Fatalf("expected notebook stub result, got %q", last.ToolResults[0].Content)
+	if !strings.Contains(last.ToolResults[0].Content, "Desk is empty today") {
+		t.Fatalf("expected desk result, got %q", last.ToolResults[0].Content)
 	}
 }
 
@@ -239,8 +237,8 @@ func TestRespondStopsAfterMaxToolRounds(t *testing.T) {
 		responses = append(responses, ToolUseResponse{
 			ToolCalls: []ToolCall{{
 				ID:    "loop",
-				Name:  "add_to_notebook",
-				Input: json.RawMessage(`{"notebook":"loop","content":"again"}`),
+				Name:  "get_desk",
+				Input: json.RawMessage(`{}`),
 			}},
 		})
 	}

@@ -21,6 +21,7 @@ type Memory struct {
 	AccessCount  int
 	Archived     int
 	SuppressedAt sql.NullString
+	DomainID     sql.NullInt64
 }
 
 type EmbeddingJob struct {
@@ -49,35 +50,37 @@ func (db *DB) InsertMemory(m Memory) error {
 	}
 
 	_, err := db.conn.Exec(
-		`INSERT INTO memories (id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO memories (id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, m.Type, m.Content, m.Title, m.Importance, m.Source, m.Tags,
-		m.CreatedAt, m.UpdatedAt, m.AccessedAt, m.AccessCount, m.Archived, m.SuppressedAt,
+		m.CreatedAt, m.UpdatedAt, m.AccessedAt, m.AccessCount, m.Archived, m.SuppressedAt, m.DomainID,
 	)
 	if err != nil {
 		return err
 	}
-	_ = db.EnqueueEmbeddingJob(m.ID, "insert")
+	if err := db.EnqueueEmbeddingJob(m.ID, "insert"); err != nil {
+		return fmt.Errorf("enqueue embedding job: %w", err)
+	}
 	return nil
 }
 
 func (db *DB) ListByImportance(limit int) ([]Memory, error) {
 	return db.queryMemories(
-		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at
+		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id
 		 FROM memories WHERE suppressed_at IS NULL ORDER BY importance DESC LIMIT ?`, limit,
 	)
 }
 
 func (db *DB) ListByType(memType string, limit int) ([]Memory, error) {
 	return db.queryMemories(
-		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at
+		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id
 		 FROM memories WHERE type = ? AND suppressed_at IS NULL ORDER BY importance DESC LIMIT ?`, memType, limit,
 	)
 }
 
 func (db *DB) ListTodosByImportance(minImportance float64, limit int) ([]Memory, error) {
 	return db.queryMemories(
-		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at
+		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id
 		 FROM memories WHERE type = 'Todo' AND importance >= ? AND suppressed_at IS NULL ORDER BY importance DESC LIMIT ?`,
 		minImportance, limit,
 	)
@@ -85,7 +88,7 @@ func (db *DB) ListTodosByImportance(minImportance float64, limit int) ([]Memory,
 
 func (db *DB) ListRecentMemories(limit int) ([]Memory, error) {
 	return db.queryMemories(
-		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at
+		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id
 		 FROM memories WHERE suppressed_at IS NULL ORDER BY created_at DESC LIMIT ?`,
 		limit,
 	)
@@ -104,7 +107,7 @@ func (db *DB) queryMemories(query string, args ...any) ([]Memory, error) {
 		var tags, accessedAt sql.NullString
 		if err := rows.Scan(
 			&m.ID, &m.Type, &m.Content, &m.Title, &m.Importance, &m.Source, &tags,
-			&m.CreatedAt, &m.UpdatedAt, &accessedAt, &m.AccessCount, &m.Archived, &m.SuppressedAt,
+			&m.CreatedAt, &m.UpdatedAt, &accessedAt, &m.AccessCount, &m.Archived, &m.SuppressedAt, &m.DomainID,
 		); err != nil {
 			return nil, err
 		}
@@ -195,14 +198,14 @@ func (db *DB) UnsuppressMemory(id string) error {
 
 func (db *DB) GetMemory(id string) (*Memory, error) {
 	row := db.conn.QueryRow(
-		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at
+		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id
 		 FROM memories WHERE id = ?`, id,
 	)
 	var m Memory
 	var tags, accessedAt sql.NullString
 	err := row.Scan(
 		&m.ID, &m.Type, &m.Content, &m.Title, &m.Importance, &m.Source, &tags,
-		&m.CreatedAt, &m.UpdatedAt, &accessedAt, &m.AccessCount, &m.Archived, &m.SuppressedAt,
+		&m.CreatedAt, &m.UpdatedAt, &accessedAt, &m.AccessCount, &m.Archived, &m.SuppressedAt, &m.DomainID,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil

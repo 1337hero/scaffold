@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Ingest Content"
+  short_description: "Prepare business notes for ingestion-ready memory docs"
+  default_prompt: "Transform these raw notes into ingestion-ready memory briefs with redaction checks and tags."

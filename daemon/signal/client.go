@@ -131,9 +131,44 @@ type SSEEvent struct {
 
 // InboundMessage is a Signal message extracted from an SSE envelope event.
 type InboundMessage struct {
-	Sender  string
-	Message string
-	Raw     json.RawMessage
+	Sender          string
+	Message         string
+	Raw             json.RawMessage
+	AttachmentKinds []string
+}
+
+func (m *InboundMessage) HasNonTextContent() bool {
+	return m != nil && len(m.AttachmentKinds) > 0
+}
+
+func (m *InboundMessage) NonTextContentSummary() string {
+	if m == nil || len(m.AttachmentKinds) == 0 {
+		return ""
+	}
+
+	var hasImage, hasAudio, hasAttachment bool
+	for _, kind := range m.AttachmentKinds {
+		switch strings.ToLower(strings.TrimSpace(kind)) {
+		case "image":
+			hasImage = true
+		case "audio":
+			hasAudio = true
+		case "attachment":
+			hasAttachment = true
+		}
+	}
+
+	parts := make([]string, 0, 3)
+	if hasImage {
+		parts = append(parts, "image")
+	}
+	if hasAudio {
+		parts = append(parts, "audio")
+	}
+	if hasAttachment {
+		parts = append(parts, "attachment")
+	}
+	return joinKinds(parts)
 }
 
 // StreamEvents connects to signal-cli SSE and calls onEvent for each event.
@@ -186,7 +221,11 @@ func ParseInbound(event SSEEvent) *InboundMessage {
 		Envelope struct {
 			Source      string `json:"source"`
 			DataMessage *struct {
-				Message string `json:"message"`
+				Message     string `json:"message"`
+				Attachments []struct {
+					ContentType string `json:"contentType"`
+					VoiceNote   bool   `json:"voiceNote"`
+				} `json:"attachments"`
 			} `json:"dataMessage"`
 		} `json:"envelope"`
 	}
@@ -198,10 +237,44 @@ func ParseInbound(event SSEEvent) *InboundMessage {
 		return nil
 	}
 
+	attachmentKinds := make([]string, 0, len(envelope.Envelope.DataMessage.Attachments))
+	for _, a := range envelope.Envelope.DataMessage.Attachments {
+		attachmentKinds = append(attachmentKinds, classifyAttachmentKind(a.ContentType, a.VoiceNote))
+	}
+
 	return &InboundMessage{
-		Sender:  envelope.Envelope.Source,
-		Message: envelope.Envelope.DataMessage.Message,
-		Raw:     json.RawMessage(event.Data),
+		Sender:          envelope.Envelope.Source,
+		Message:         envelope.Envelope.DataMessage.Message,
+		Raw:             json.RawMessage(event.Data),
+		AttachmentKinds: attachmentKinds,
+	}
+}
+
+func classifyAttachmentKind(contentType string, voiceNote bool) string {
+	if voiceNote {
+		return "audio"
+	}
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	switch {
+	case strings.HasPrefix(ct, "image/"):
+		return "image"
+	case strings.HasPrefix(ct, "audio/"):
+		return "audio"
+	default:
+		return "attachment"
+	}
+}
+
+func joinKinds(parts []string) string {
+	switch len(parts) {
+	case 0:
+		return ""
+	case 1:
+		return parts[0]
+	case 2:
+		return parts[0] + " and " + parts[1]
+	default:
+		return strings.Join(parts[:len(parts)-1], ", ") + ", and " + parts[len(parts)-1]
 	}
 }
 

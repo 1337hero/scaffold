@@ -1,0 +1,69 @@
+# LLM routing config
+# Maps runtime routes to provider/model profiles.
+
+version: 1
+
+providers:
+  anthropic_main:
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    timeout_seconds: 30
+
+  # Example specialist local provider. Keep this for semantic/offline tasks.
+  # Enable tool use only if your local endpoint supports OpenAI tool calling.
+  ollama_specialist:
+    type: openai_compatible
+    base_url: http://127.0.0.1:11434/v1
+    api_key: ollama
+    timeout_seconds: 90
+    supports_tool_use: false
+
+profiles:
+  respond_default:
+    provider: anthropic_main
+    model: claude-haiku-4-5
+
+  triage_default:
+    provider: anthropic_main
+    model: claude-haiku-4-5
+
+  cortex_default:
+    provider: anthropic_main
+    model: claude-haiku-4-5
+
+  # Specialist profile for semantic maintenance.
+  ollama_semantic:
+    provider: ollama_specialist
+    model: qwen2.5:14b-instruct
+
+routes:
+  brain.respond:
+    profile: respond_default
+    required: true
+
+  brain.triage:
+    profile: triage_default
+    required: true
+
+  brain.prioritize:
+    profile: triage_default
+    required: true
+
+  cortex.bulletin:
+    profile: cortex_default
+    required: true
+
+  cortex.semantic:
+    profile: cortex_default
+    required: true
+
+  cortex.observations:
+    profile: cortex_default
+    required: true
+
+startup:
+  verify_required_routes: true
+  warmup_routes:
+    - brain.respond
+    - brain.triage
+    - cortex.semantic

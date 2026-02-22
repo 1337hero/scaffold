@@ -16,8 +16,6 @@ import (
 type stubLLM struct {
 	calls                int
 	lastModel            string
-	lastWords            int
-	lastInput            bulletinSections
 	text                 string
 	err                  error
 	completionJSON       string
@@ -26,13 +24,14 @@ type stubLLM struct {
 	lastCompletionUser   string
 	completionErr        error
 	completionCalls      int
+	completionTextCalls  int
 }
 
-func (s *stubLLM) SynthesizeBulletin(_ context.Context, model string, maxWords int, sections bulletinSections) (string, error) {
+func (s *stubLLM) CompletionText(_ context.Context, model, systemPrompt, userPrompt string, _ int64) (string, error) {
 	s.calls++
 	s.lastModel = model
-	s.lastWords = maxWords
-	s.lastInput = sections
+	s.lastCompletionSystem = systemPrompt
+	s.lastCompletionUser = userPrompt
 	if s.err != nil {
 		return "", s.err
 	}
@@ -223,7 +222,7 @@ func TestGenerateBulletinStoresSynthesis(t *testing.T) {
 
 func TestBuildTasksIncludesRuntimeHandlers(t *testing.T) {
 	database := openTestDB(t)
-	c := New(database, nil, "test-key", appconfig.CortexConfig{
+	c := NewWithLLM(database, nil, appconfig.CortexConfig{
 		Bulletin: appconfig.BulletinConfig{
 			IntervalMinutes:    60,
 			MaxWords:           500,
@@ -262,7 +261,9 @@ func TestBuildTasksIncludesRuntimeHandlers(t *testing.T) {
 				TimeoutSeconds: 300,
 			},
 		},
-	}, nil)
+	}, nil, LLMRoutes{
+		Bulletin: LLMRoute{Client: &stubLLM{}, Model: "claude-haiku-4-5"},
+	})
 
 	consolidation := c.taskByName("consolidation")
 	if consolidation == nil || consolidation.Fn == nil {
@@ -312,7 +313,7 @@ func TestRunPruneDeletesEligibleSuppressedMemory(t *testing.T) {
 		t.Fatalf("insert memory: %v", err)
 	}
 
-	c := New(database, nil, "test-key", appconfig.CortexConfig{
+	c := NewWithLLM(database, nil, appconfig.CortexConfig{
 		Bulletin: appconfig.BulletinConfig{
 			IntervalMinutes:    60,
 			MaxWords:           500,
@@ -326,7 +327,9 @@ func TestRunPruneDeletesEligibleSuppressedMemory(t *testing.T) {
 				SuppressedDays: 30,
 			},
 		},
-	}, nil)
+	}, nil, LLMRoutes{
+		Bulletin: LLMRoute{Client: &stubLLM{}, Model: "claude-haiku-4-5"},
+	})
 
 	if err := c.runPrune(context.Background()); err != nil {
 		t.Fatalf("run prune: %v", err)
@@ -355,7 +358,7 @@ func TestRunDecayUpdatesEligibleMemory(t *testing.T) {
 		t.Fatalf("insert memory: %v", err)
 	}
 
-	c := New(database, nil, "test-key", appconfig.CortexConfig{
+	c := NewWithLLM(database, nil, appconfig.CortexConfig{
 		Bulletin: appconfig.BulletinConfig{
 			IntervalMinutes:    60,
 			MaxWords:           500,
@@ -371,7 +374,9 @@ func TestRunDecayUpdatesEligibleMemory(t *testing.T) {
 				ImportanceFloor: 0.1,
 			},
 		},
-	}, nil)
+	}, nil, LLMRoutes{
+		Bulletin: LLMRoute{Client: &stubLLM{}, Model: "claude-haiku-4-5"},
+	})
 
 	if err := c.runDecay(context.Background()); err != nil {
 		t.Fatalf("run decay: %v", err)
@@ -400,7 +405,7 @@ func TestRunReindexWritesCentralityRows(t *testing.T) {
 		t.Fatalf("insert edge: %v", err)
 	}
 
-	c := New(database, nil, "test-key", appconfig.CortexConfig{
+	c := NewWithLLM(database, nil, appconfig.CortexConfig{
 		Bulletin: appconfig.BulletinConfig{
 			IntervalMinutes:    60,
 			MaxWords:           500,
@@ -413,7 +418,9 @@ func TestRunReindexWritesCentralityRows(t *testing.T) {
 				TimeoutSeconds: 30,
 			},
 		},
-	}, nil)
+	}, nil, LLMRoutes{
+		Bulletin: LLMRoute{Client: &stubLLM{}, Model: "claude-haiku-4-5"},
+	})
 
 	if err := c.runReindex(context.Background()); err != nil {
 		t.Fatalf("run reindex: %v", err)
@@ -457,7 +464,7 @@ func TestRunConsolidationSuppressesDuplicate(t *testing.T) {
 		}
 	}
 
-	c := New(database, nil, "test-key", appconfig.CortexConfig{
+	c := NewWithLLM(database, nil, appconfig.CortexConfig{
 		Bulletin: appconfig.BulletinConfig{
 			IntervalMinutes:    60,
 			MaxWords:           500,
@@ -470,7 +477,9 @@ func TestRunConsolidationSuppressesDuplicate(t *testing.T) {
 				TimeoutSeconds: 60,
 			},
 		},
-	}, nil)
+	}, nil, LLMRoutes{
+		Bulletin: LLMRoute{Client: &stubLLM{}, Model: "claude-haiku-4-5"},
+	})
 
 	if err := c.runConsolidation(context.Background()); err != nil {
 		t.Fatalf("run consolidation: %v", err)

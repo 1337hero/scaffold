@@ -10,14 +10,21 @@ prompt: |
 
   Actions:
   - "do" = this needs action, becomes a task
-  - "explore" = worth thinking about, open a notebook thread
+  - "explore" = worth thinking about, explore further
   - "reference" = file it, find it later
   - "waiting" = tracking something external
+
+  Domains (always assign exactly one best-fit domain):
+  Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies
+
+  Heuristics:
+  - Personal profile, working style, communication norms, and stable behavior patterns => Identity or Preference.
+  - Explicit targets, outcomes, and deadlines => Goal.
 
   If it's a task (action=do), suggest micro_steps (3-5 concrete actions, each short and specific).
 
   Respond ONLY with valid JSON, no other text:
-  {"type": "Todo", "importance": 0.8, "action": "do", "title": "Short title", "micro_steps": ["step 1", "step 2"], "tags": ["tag1"]}
+  {"type": "Todo", "importance": 0.8, "action": "do", "title": "Short title", "domain": "Work/Business", "micro_steps": ["step 1", "step 2"], "tags": ["tag1"]}
 
 model: claude-haiku-4-5
-max_tokens: 300
+max_tokens: 500

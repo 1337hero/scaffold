@@ -1,10 +1,10 @@
 import { cn } from "@/lib/utils.js"
-import { desk, inbox, notebooks, search, graph } from "@/constants/nav.js"
+import { desk, inbox, map, search, graph } from "@/constants/nav.js"
 
 const navItems = [
   desk,
   { ...inbox, hasBadge: true },
-  notebooks,
+  map,
 ]
 
 const toolItems = [search, graph]
@@ -66,7 +66,7 @@ export function Sidebar({ activePanel, onNavigate, onCapture, inboxCount }) {
         <button
           type="button"
           onClick={onCapture}
-          class="w-full py-3 px-4 bg-amber-dim border border-amber-border text-amber rounded-lg font-sans text-[0.95rem] font-semibold cursor-pointer transition-all hover:bg-[rgba(245,158,11,0.18)] flex items-center justify-center gap-2"
+          class="btn-amber w-full py-3 px-4 rounded-lg text-[0.95rem] flex items-center justify-center gap-2"
           aria-label="Capture new item"
         >
           + Capture

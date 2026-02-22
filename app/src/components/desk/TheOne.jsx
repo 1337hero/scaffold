@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils.js"
-import { colorClass } from "@/data/mock.js"
+import { colorClass } from "@/constants/colors.js"
 import { Checkbox } from "@/components/ui/Checkbox.jsx"
 
 export function TheOne({ task, onToggle, onToggleStep }) {

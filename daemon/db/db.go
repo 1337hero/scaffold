@@ -66,6 +66,35 @@ func (db *DB) migrate() error {
 	}
 
 	_, err = db.conn.Exec(`
+		CREATE TABLE IF NOT EXISTS domains (
+		  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+		  name            TEXT NOT NULL UNIQUE,
+		  importance      INTEGER NOT NULL DEFAULT 3 CHECK(importance BETWEEN 1 AND 5),
+		  last_touched_at TEXT NOT NULL,
+		  status_line     TEXT,
+		  briefing        TEXT,
+		  created_at      TEXT NOT NULL
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("apply domains schema: %w", err)
+	}
+
+	if err := db.migrateAddColumn("memories", "domain_id", "INTEGER REFERENCES domains(id)"); err != nil {
+		return err
+	}
+	if err := db.migrateAddColumn("captures", "domain_id", "INTEGER REFERENCES domains(id)"); err != nil {
+		return err
+	}
+	if err := db.migrateAddColumn("desk", "domain_id", "INTEGER REFERENCES domains(id)"); err != nil {
+		return err
+	}
+
+	if err := db.SeedDefaultDomains(); err != nil {
+		return fmt.Errorf("seed default domains: %w", err)
+	}
+
+	_, err = db.conn.Exec(`
 		CREATE TABLE IF NOT EXISTS conversation_log (
 		  id         TEXT PRIMARY KEY,
 		  sender     TEXT NOT NULL,
@@ -144,6 +173,37 @@ func (db *DB) migrate() error {
 	`)
 	if err != nil {
 		return fmt.Errorf("apply oauth schema: %w", err)
+	}
+
+	_, err = db.conn.Exec(`
+		CREATE TABLE IF NOT EXISTS ingestion_files (
+		  path             TEXT PRIMARY KEY,
+		  file_hash        TEXT NOT NULL,
+		  status           TEXT NOT NULL,
+		  total_chunks     INTEGER NOT NULL DEFAULT 0,
+		  processed_chunks INTEGER NOT NULL DEFAULT 0,
+		  last_error       TEXT,
+		  updated_at       TEXT NOT NULL,
+		  completed_at     TEXT
+		);
+
+		CREATE TABLE IF NOT EXISTS ingestion_progress (
+		  chunk_hash TEXT PRIMARY KEY,
+		  file_path  TEXT NOT NULL,
+		  file_hash  TEXT NOT NULL,
+		  chunk_index INTEGER NOT NULL,
+		  status     TEXT NOT NULL,
+		  memory_id  TEXT REFERENCES memories(id),
+		  error      TEXT,
+		  created_at TEXT NOT NULL,
+		  updated_at TEXT NOT NULL
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_ingestion_files_status ON ingestion_files(status, updated_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_ingestion_progress_file ON ingestion_progress(file_path, chunk_index);
+	`)
+	if err != nil {
+		return fmt.Errorf("apply ingestion schema: %w", err)
 	}
 
 	return nil

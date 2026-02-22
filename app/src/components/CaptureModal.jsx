@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createCapture } from '@/api/queries.js'
 
 export function CaptureModal({ open, onClose }) {
+  const dialogRef = useRef(null)
   const inputRef = useRef(null)
   const [text, setText] = useState('')
   const [error, setError] = useState('')
@@ -23,50 +24,42 @@ export function CaptureModal({ open, onClose }) {
   })
 
   useEffect(() => {
-    if (!open) {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (open) {
+      if (!dialog.open) dialog.showModal()
+      inputRef.current?.focus()
+    } else {
+      if (dialog.open) dialog.close()
       setText('')
       setError('')
       captureMutation.reset()
-      return
-    }
-
-    if (inputRef.current) {
-      inputRef.current.focus()
     }
   }, [open])
 
-  function onOverlayClick(e) {
-    if (captureMutation.isPending) return
-    if (e.target === e.currentTarget) onClose()
-  }
-
-  function onKeyDown(e) {
-    if (e.key === 'Escape' && !captureMutation.isPending) {
-      e.preventDefault()
-      onClose()
-    }
+  function onCancel(e) {
+    e.preventDefault()
+    if (!captureMutation.isPending) onClose()
   }
 
   function onSubmit(e) {
     e.preventDefault()
     const trimmed = text.trim()
     if (!trimmed || captureMutation.isPending) return
-
     setError('')
     captureMutation.mutate(trimmed)
   }
 
-  if (!open) return null
-
   return (
-    <div
-      class="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center backdrop-blur-[4px]"
-      onClick={onOverlayClick}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Capture modal"
-      onKeyDown={onKeyDown}
+    <dialog
+      ref={dialogRef}
+      class="m-0 p-0 w-screen h-screen max-w-none max-h-none bg-transparent border-none backdrop:bg-black/60 backdrop:backdrop-blur-[4px]"
+      onCancel={onCancel}
     >
+      <div
+        class="w-full h-full flex items-center justify-center"
+        onClick={(e) => { if (e.target === e.currentTarget && !captureMutation.isPending) onClose() }}
+      >
       <div class="bg-surface border border-border rounded-[16px] p-6 w-[90%] max-w-[560px] shadow-[0_18px_50px_rgba(0,0,0,0.45)]">
         <form onSubmit={onSubmit}>
           <input
@@ -97,9 +90,9 @@ export function CaptureModal({ open, onClose }) {
             <button
               type="submit"
               disabled={captureMutation.isPending || !text.trim()}
-              class="text-[0.74rem] font-semibold py-1.5 px-3 rounded-md border border-amber-border text-amber bg-amber-dim hover:bg-[rgba(245,158,11,0.18)] font-sans cursor-pointer transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+              class="btn-amber text-[0.74rem] py-1.5 px-3 rounded-md"
             >
-              {captureMutation.isPending ? 'Capturing…' : 'Capture'}
+              {captureMutation.isPending ? 'Capturing\u2026' : 'Capture'}
             </button>
           </div>
         </form>
@@ -114,6 +107,7 @@ export function CaptureModal({ open, onClose }) {
           </span>
         </div>
       </div>
-    </div>
+      </div>
+    </dialog>
   )
 }

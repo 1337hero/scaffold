@@ -21,6 +21,9 @@ func TestParseInboundValidMessage(t *testing.T) {
 	if msg.Message != "hello" {
 		t.Fatalf("expected message hello, got %s", msg.Message)
 	}
+	if msg.HasNonTextContent() {
+		t.Fatalf("expected no attachments, got %+v", msg.AttachmentKinds)
+	}
 }
 
 func TestParseInboundNoDataMessage(t *testing.T) {
@@ -42,6 +45,45 @@ func TestParseInboundInvalidJSON(t *testing.T) {
 
 	if msg := ParseInbound(event); msg != nil {
 		t.Fatalf("expected nil message, got %+v", msg)
+	}
+}
+
+func TestParseInboundAttachmentOnly(t *testing.T) {
+	event := SSEEvent{
+		Event: "receive",
+		Data:  `{"envelope":{"source":"+15551234567","dataMessage":{"attachments":[{"contentType":"image/jpeg"}]}}}`,
+	}
+
+	msg := ParseInbound(event)
+	if msg == nil {
+		t.Fatal("expected inbound message, got nil")
+	}
+	if msg.Message != "" {
+		t.Fatalf("expected empty text message, got %q", msg.Message)
+	}
+	if !msg.HasNonTextContent() {
+		t.Fatal("expected non-text content")
+	}
+	if got := msg.NonTextContentSummary(); got != "image" {
+		t.Fatalf("expected image summary, got %q", got)
+	}
+}
+
+func TestParseInboundAudioAndAttachmentSummary(t *testing.T) {
+	event := SSEEvent{
+		Event: "receive",
+		Data:  `{"envelope":{"source":"+15551234567","dataMessage":{"message":"check this","attachments":[{"contentType":"audio/ogg","voiceNote":true},{"contentType":"application/pdf"}]}}}`,
+	}
+
+	msg := ParseInbound(event)
+	if msg == nil {
+		t.Fatal("expected inbound message, got nil")
+	}
+	if msg.Message != "check this" {
+		t.Fatalf("expected text message, got %q", msg.Message)
+	}
+	if got := msg.NonTextContentSummary(); got != "audio and attachment" {
+		t.Fatalf("expected non-text summary, got %q", got)
 	}
 }
 

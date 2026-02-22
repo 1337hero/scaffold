@@ -14,16 +14,17 @@ type Capture struct {
 	MemoryID     sql.NullString
 	CreatedAt    string
 	Confirmed    int
+	DomainID     sql.NullInt64
 }
 
 func (db *DB) GetCapture(id string) (*Capture, error) {
 	row := db.conn.QueryRow(
-		`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed
+		`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed, domain_id
 		 FROM captures WHERE id = ?`, id,
 	)
 
 	var c Capture
-	err := row.Scan(&c.ID, &c.Raw, &c.Source, &c.Processed, &c.TriageAction, &c.MemoryID, &c.CreatedAt, &c.Confirmed)
+	err := row.Scan(&c.ID, &c.Raw, &c.Source, &c.Processed, &c.TriageAction, &c.MemoryID, &c.CreatedAt, &c.Confirmed, &c.DomainID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -52,16 +53,16 @@ func (db *DB) InsertProcessedCapture(raw, source, triageAction string) (string, 
 }
 
 func (db *DB) ListUnprocessed() ([]Capture, error) {
-	return db.queryCaptures(`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed FROM captures WHERE processed = 0 ORDER BY created_at DESC`)
+	return db.queryCaptures(`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed, domain_id FROM captures WHERE processed = 0 ORDER BY created_at DESC`)
 }
 
 func (db *DB) ListRecent(limit int) ([]Capture, error) {
-	return db.queryCaptures(`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed FROM captures ORDER BY created_at DESC LIMIT ?`, limit)
+	return db.queryCaptures(`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed, domain_id FROM captures ORDER BY created_at DESC LIMIT ?`, limit)
 }
 
 func (db *DB) ListRecentBySender(sender string, limit int) ([]Capture, error) {
 	return db.queryCaptures(
-		`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed
+		`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed, domain_id
 		 FROM captures
 		 WHERE source IN (?, ?, ?, 'signal')
 		 ORDER BY created_at DESC
@@ -88,7 +89,7 @@ func (db *DB) queryCaptures(query string, args ...any) ([]Capture, error) {
 	var out []Capture
 	for rows.Next() {
 		var c Capture
-		if err := rows.Scan(&c.ID, &c.Raw, &c.Source, &c.Processed, &c.TriageAction, &c.MemoryID, &c.CreatedAt, &c.Confirmed); err != nil {
+		if err := rows.Scan(&c.ID, &c.Raw, &c.Source, &c.Processed, &c.TriageAction, &c.MemoryID, &c.CreatedAt, &c.Confirmed, &c.DomainID); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -128,9 +129,9 @@ func (db *DB) InsertProcessedCaptureWithMemory(raw, source, action string, mem M
 
 	captureID := newID()
 	if _, err := tx.Exec(
-		`INSERT INTO captures (id, raw, source, processed, triage_action, memory_id, created_at)
-		 VALUES (?, ?, ?, 1, ?, ?, ?)`,
-		captureID, raw, source, action, mem.ID, ts,
+		`INSERT INTO captures (id, raw, source, processed, triage_action, memory_id, created_at, domain_id)
+		 VALUES (?, ?, ?, 1, ?, ?, ?, ?)`,
+		captureID, raw, source, action, mem.ID, ts, mem.DomainID,
 	); err != nil {
 		return "", fmt.Errorf("insert processed capture in tx: %w", err)
 	}
@@ -155,8 +156,8 @@ func (db *DB) PersistTriageResult(captureID string, mem Memory, action string) e
 	}
 
 	result, err := tx.Exec(
-		`UPDATE captures SET processed = 1, triage_action = ?, memory_id = ? WHERE id = ?`,
-		action, mem.ID, captureID,
+		`UPDATE captures SET processed = 1, triage_action = ?, memory_id = ?, domain_id = ? WHERE id = ?`,
+		action, mem.ID, mem.DomainID, captureID,
 	)
 	if err != nil {
 		return fmt.Errorf("update capture in triage tx: %w", err)
@@ -169,6 +170,51 @@ func (db *DB) PersistTriageResult(captureID string, mem Memory, action string) e
 		return fmt.Errorf("commit triage tx: %w", err)
 	}
 	return nil
+}
+
+type InboxCapture struct {
+	ID           string         `json:"ID"`
+	Raw          string         `json:"Raw"`
+	Source       string         `json:"Source"`
+	Processed    int            `json:"Processed"`
+	TriageAction sql.NullString `json:"TriageAction"`
+	MemoryID     sql.NullString `json:"MemoryID"`
+	CreatedAt    string         `json:"CreatedAt"`
+	Confirmed    int            `json:"Confirmed"`
+	DomainID     sql.NullInt64  `json:"DomainID"`
+	MemoryTitle  sql.NullString `json:"MemoryTitle"`
+	MemoryType   sql.NullString `json:"MemoryType"`
+}
+
+func (db *DB) ListInboxCaptures(limit int) ([]InboxCapture, error) {
+	rows, err := db.conn.Query(
+		`SELECT c.id, c.raw, c.source, c.processed, c.triage_action, c.memory_id,
+		        c.created_at, c.confirmed, c.domain_id,
+		        m.title, m.type
+		 FROM captures c
+		 LEFT JOIN memories m ON m.id = c.memory_id
+		 WHERE LOWER(TRIM(c.source)) != 'user:archive'
+		 ORDER BY c.created_at DESC
+		 LIMIT ?`, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []InboxCapture
+	for rows.Next() {
+		var c InboxCapture
+		if err := rows.Scan(
+			&c.ID, &c.Raw, &c.Source, &c.Processed, &c.TriageAction, &c.MemoryID,
+			&c.CreatedAt, &c.Confirmed, &c.DomainID,
+			&c.MemoryTitle, &c.MemoryType,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 func (db *DB) prepareAndInsertMemoryTx(tx *sql.Tx, mem Memory, embeddingReason string) (Memory, string, error) {
@@ -187,10 +233,10 @@ func (db *DB) prepareAndInsertMemoryTx(tx *sql.Tx, mem Memory, embeddingReason s
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO memories (id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO memories (id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		mem.ID, mem.Type, mem.Content, mem.Title, mem.Importance, mem.Source, mem.Tags,
-		mem.CreatedAt, mem.UpdatedAt, mem.AccessedAt, mem.AccessCount, mem.Archived, mem.SuppressedAt,
+		mem.CreatedAt, mem.UpdatedAt, mem.AccessedAt, mem.AccessCount, mem.Archived, mem.SuppressedAt, mem.DomainID,
 	); err != nil {
 		return Memory{}, "", fmt.Errorf("insert memory in tx: %w", err)
 	}

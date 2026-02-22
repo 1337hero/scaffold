@@ -16,6 +16,7 @@ type Config struct {
 	Cortex    CortexConfig
 	Embedding EmbeddingConfig
 	Google    GoogleConfig
+	LLM       LLMConfig
 }
 
 type GoogleConfig struct {
@@ -97,6 +98,9 @@ func Load(configDir string, userName string) (*Config, error) {
 	}
 	if err := loadFileOptional(filepath.Join(configDir, "google.yaml"), &cfg.Google); err != nil {
 		return nil, fmt.Errorf("load google.yaml: %w", err)
+	}
+	if err := loadFileOptional(filepath.Join(configDir, "llm.yaml"), &cfg.LLM); err != nil {
+		return nil, fmt.Errorf("load llm.yaml: %w", err)
 	}
 
 	applyDefaults(cfg)
@@ -190,6 +194,8 @@ func applyDefaults(cfg *Config) {
 	if cfg.Embedding.Dimensions == 0 {
 		cfg.Embedding.Dimensions = 384
 	}
+
+	applyLLMDefaults(cfg)
 }
 
 func substituteVars(cfg *Config, userName string) {
@@ -285,6 +291,10 @@ func validate(cfg *Config) error {
 		return fmt.Errorf("unsupported embedding.provider %q", cfg.Embedding.Provider)
 	}
 	cfg.Embedding.Provider = provider
+
+	if err := validateLLM(cfg); err != nil {
+		return err
+	}
 
 	return nil
 }

@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { InboxGroup } from './InboxGroup.jsx'
+import { OverrideModal } from './OverrideModal.jsx'
 import {
   archiveInboxCapture,
   confirmInboxCapture,
@@ -15,6 +16,7 @@ export function Inbox() {
   const { data: groups = [], isLoading } = useQuery(inboxQuery)
   const [activeView, setActiveView] = useState('By Action')
   const [actionError, setActionError] = useState('')
+  const [overrideItem, setOverrideItem] = useState(null)
 
   const invalidateInbox = () => {
     queryClient.invalidateQueries({ queryKey: ['inbox'] })
@@ -51,43 +53,44 @@ export function Inbox() {
     archiveMutation.mutate(item.id)
   }
 
-  const handleOverride = (item) => {
-    const typeInput = window.prompt(
-      'Override type (Identity, Goal, Decision, Todo, Idea, Preference, Fact, Event, Observation)',
-      'Todo',
-    )
-    if (!typeInput) return
+  const handleOverride = (item) => setOverrideItem(item)
 
-    const actionInput = window.prompt('Override action (do, explore, reference, waiting)', item.triageAction || 'reference')
-    if (!actionInput) return
-
-    const importanceInput = window.prompt('Importance (0.0 to 1.0)', '0.8')
-    if (!importanceInput) return
-    const importance = Number(importanceInput)
-    if (!Number.isFinite(importance) || importance < 0 || importance > 1) {
-      setActionError('Importance must be a number between 0 and 1')
-      return
-    }
-
-    const tagsInput = window.prompt('Tags (comma-separated, optional)', '')
-    const tags = (tagsInput || '')
-      .split(',')
-      .map((tag) => tag.trim())
-      .filter(Boolean)
-
+  const handleOverrideConfirm = (overrides) => {
     setActionError('')
-    overrideMutation.mutate({
-      captureID: item.id,
-      payload: {
-        type: typeInput.trim(),
-        action: actionInput.trim().toLowerCase(),
-        importance,
-        tags,
-      },
-    })
+    overrideMutation.mutate(
+      { captureID: overrideItem.id, payload: overrides },
+      { onSettled: () => setOverrideItem(null) },
+    )
   }
 
-  if (isLoading) return null
+  if (isLoading) return (
+    <div class="panel-shell">
+      <div class="flex justify-between items-center mb-8">
+        <div class="h-7 w-24 bg-surface-2 rounded-md animate-pulse" />
+        <div class="flex gap-1.5">
+          {[1, 2, 3].map((i) => <div key={i} class="h-9 w-20 bg-surface-2 rounded-md animate-pulse" />)}
+        </div>
+      </div>
+      {[1, 2, 3].map((g) => (
+        <div key={g} class="mb-8">
+          <div class="flex items-center gap-3 mb-3.5">
+            <div class="w-2.5 h-2.5 rounded-full bg-surface-3 animate-pulse" />
+            <div class="h-5 w-32 bg-surface-2 rounded-md animate-pulse" />
+          </div>
+          {[1, 2].map((c) => (
+            <div key={c} class="surface-card py-5 px-6 mb-2 flex items-start gap-4">
+              <div class="h-5 w-14 bg-surface-2 rounded-sm animate-pulse shrink-0" />
+              <div class="flex-1 space-y-2.5">
+                <div class="h-5 w-3/4 bg-surface-2 rounded-md animate-pulse" />
+                <div class="h-4 w-1/2 bg-surface-2 rounded-md animate-pulse" />
+              </div>
+              <div class="h-4 w-16 bg-surface-2 rounded-md animate-pulse shrink-0" />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
 
   return (
     <div class="panel-shell">
@@ -133,6 +136,12 @@ export function Inbox() {
           {activeView} view coming soon
         </div>
       )}
+
+      <OverrideModal
+        item={overrideItem}
+        onConfirm={handleOverrideConfirm}
+        onClose={() => setOverrideItem(null)}
+      />
     </div>
   )
 }

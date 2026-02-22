@@ -12,6 +12,7 @@ import (
 )
 
 type Event struct {
+	ID          string
 	Title       string
 	Start       string
 	End         string
@@ -101,6 +102,7 @@ func convertEvents(items []*calendar.Event) []Event {
 		}
 
 		e := Event{
+			ID:          item.Id,
 			Title:       item.Summary,
 			Location:    item.Location,
 			Description: item.Description,
