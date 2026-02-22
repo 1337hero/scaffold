@@ -54,6 +54,28 @@ func (rl *rateLimiter) record(ip string) {
 	rl.windows[ip] = append(rl.windows[ip], time.Now())
 }
 
+// allowAndRecord returns true and records the attempt if under the limit.
+// It is atomic — check and record happen under a single lock.
+func (rl *rateLimiter) allowAndRecord(key string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	cutoff := time.Now().Add(-rl.window)
+	attempts := rl.windows[key]
+	valid := make([]time.Time, 0, len(attempts))
+	for _, t := range attempts {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+	if len(valid) >= rl.max {
+		rl.windows[key] = valid
+		return false
+	}
+	rl.windows[key] = append(valid, time.Now())
+	return true
+}
+
 // hashToken returns the hex-encoded SHA-256 of the raw token.
 func hashToken(raw string) string {
 	h := sha256.Sum256([]byte(raw))

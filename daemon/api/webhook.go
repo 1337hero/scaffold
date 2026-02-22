@@ -54,13 +54,12 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.webhookLimiter.allow(tokenName) {
+	if !s.webhookLimiter.allowAndRecord(tokenName) {
 		retryAfter := strconv.Itoa(s.webhookCfg.RateLimit.WindowMinutes * 60)
 		w.Header().Set("Retry-After", retryAfter)
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate limit exceeded"})
 		return
 	}
-	s.webhookLimiter.record(tokenName)
 
 	var req webhookPayload
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Content) == "" {
@@ -80,5 +79,5 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, webhookResponse{ID: captureID, Source: tokenName})
+	writeJSON(w, http.StatusAccepted, webhookResponse{ID: captureID, Source: source})
 }
