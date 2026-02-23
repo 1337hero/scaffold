@@ -146,6 +146,7 @@ type TriageResult struct {
 	Action     string   `json:"action"`
 	Title      string   `json:"title"`
 	Domain     string   `json:"domain,omitempty"`
+	GoalType   string   `json:"goal_type,omitempty"`
 	MicroSteps []string `json:"micro_steps,omitempty"`
 	Tags       []string `json:"tags,omitempty"`
 }
@@ -197,11 +198,19 @@ Work/Business, Personal Projects, Homelife, Relationships, Personal Development,
 
 Heuristics:
 - Personal profile, working style, communication norms, and stable behavior patterns => Identity or Preference.
-- Explicit targets, outcomes, and deadlines => Goal.
+- Explicit targets, outcomes, and deadlines => Goal (type must be "Goal").
+- Aspirational outcomes, weight loss, fitness targets, launch deadlines, ongoing commitments => Goal.
+- Concrete one-off actions (call someone, buy something, set up X) => Todo with action "do".
+
+If type is "Goal", also classify goal_type:
+- "binary" = done or not done (e.g., "launch website", "get passport renewed")
+- "measurable" = has a numeric target (e.g., "lose 50lbs", "save $10k", "run a 5k in under 25min")
+- "habit" = recurring behavior tracked over time (e.g., "workout 4x/week", "no soda", "read daily")
 
 If it's a task (action=do), suggest micro_steps (3-5 concrete actions, each short and specific).
 
 Respond ONLY with valid JSON, no other text:
+{"type": "Goal", "importance": 0.9, "action": "do", "title": "Lose 50lbs", "domain": "Personal Development", "goal_type": "measurable", "tags": ["health"]}
 {"type": "Todo", "importance": 0.8, "action": "do", "title": "Short title", "domain": "Work/Business", "micro_steps": ["step 1", "step 2"], "tags": ["tag1"]}`, cfg.UserName)
 }
 

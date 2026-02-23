@@ -31,7 +31,7 @@ func TestSeedDefaultDomains(t *testing.T) {
 func TestCreateDomain(t *testing.T) {
 	database := newTestDB(t)
 
-	d, err := database.CreateDomain("Test Domain", 4)
+	d, err := database.CreateDomain("Test Domain", 4, "", "")
 	if err != nil {
 		t.Fatalf("create domain: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestListDomains(t *testing.T) {
 func TestGetDomain(t *testing.T) {
 	database := newTestDB(t)
 
-	d, err := database.CreateDomain("Get Test", 3)
+	d, err := database.CreateDomain("Get Test", 3, "", "")
 	if err != nil {
 		t.Fatalf("create domain: %v", err)
 	}
@@ -94,13 +94,13 @@ func TestGetDomain(t *testing.T) {
 func TestUpdateDomain(t *testing.T) {
 	database := newTestDB(t)
 
-	d, err := database.CreateDomain("Update Test", 3)
+	d, err := database.CreateDomain("Update Test", 3, "", "")
 	if err != nil {
 		t.Fatalf("create domain: %v", err)
 	}
 
 	sl := "active project"
-	if err := database.UpdateDomain(d.ID, &sl, nil, nil); err != nil {
+	if err := database.UpdateDomain(d.ID, DomainUpdateOpts{StatusLine: &sl}); err != nil {
 		t.Fatalf("update status_line: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestUpdateDomain(t *testing.T) {
 
 	briefing := "current briefing"
 	imp := 5
-	if err := database.UpdateDomain(d.ID, nil, &briefing, &imp); err != nil {
+	if err := database.UpdateDomain(d.ID, DomainUpdateOpts{Briefing: &briefing, Importance: &imp}); err != nil {
 		t.Fatalf("update briefing+importance: %v", err)
 	}
 
@@ -132,7 +132,7 @@ func TestUpdateDomain(t *testing.T) {
 		t.Fatalf("status_line should persist, got %+v", got.StatusLine)
 	}
 
-	err = database.UpdateDomain(99999, &sl, nil, nil)
+	err = database.UpdateDomain(99999, DomainUpdateOpts{StatusLine: &sl})
 	if err == nil {
 		t.Fatal("expected error for missing domain")
 	}
@@ -141,7 +141,7 @@ func TestUpdateDomain(t *testing.T) {
 func TestTouchDomain(t *testing.T) {
 	database := newTestDB(t)
 
-	d, err := database.CreateDomain("Touch Test", 3)
+	d, err := database.CreateDomain("Touch Test", 3, "", "")
 	if err != nil {
 		t.Fatalf("create domain: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestTouchDomain(t *testing.T) {
 func TestDomainDetail(t *testing.T) {
 	database := newTestDB(t)
 
-	d, err := database.CreateDomain("Detail Test", 4)
+	d, err := database.CreateDomain("Detail Test", 4, "", "")
 	if err != nil {
 		t.Fatalf("create domain: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestComputeDriftStates(t *testing.T) {
 		}
 	}
 
-	d, err := database.CreateDomain("Fresh", 3)
+	d, err := database.CreateDomain("Fresh", 3, "", "")
 	if err != nil {
 		t.Fatalf("create fresh domain: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestCountDumpItems(t *testing.T) {
 func TestTouchDomainByMemory(t *testing.T) {
 	database := newTestDB(t)
 
-	d, err := database.CreateDomain("Touch By Memory", 3)
+	d, err := database.CreateDomain("Touch By Memory", 3, "", "")
 	if err != nil {
 		t.Fatalf("create domain: %v", err)
 	}

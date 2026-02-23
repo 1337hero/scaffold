@@ -1,6 +1,6 @@
 import { typeStyles } from '../../constants/colors.js'
 
-export function InboxCard({ item, onConfirm, onOverride, onArchive, actionPending }) {
+const InboxCard = ({ item, onConfirm, onOverride, onArchive, actionPending }) => {
   const typeClass = typeStyles[item.type] || 'bg-surface-2 text-text-dim'
   const confirmDisabled = actionPending || item.confirmed
   const actionDisabled = actionPending
@@ -59,3 +59,5 @@ export function InboxCard({ item, onConfirm, onOverride, onArchive, actionPendin
     </div>
   )
 }
+
+export default InboxCard

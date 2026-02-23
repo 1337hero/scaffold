@@ -21,13 +21,18 @@ type ToolHandler func(ctx context.Context, database *db.DB, b *Brain, params jso
 func defaultToolRegistry() map[string]ToolHandler {
 	return map[string]ToolHandler{
 		"save_to_inbox":       handleSaveToInbox,
-		"get_desk":            handleGetDesk,
 		"search_memories":     handleSearchMemories,
-		"update_desk_item":    handleUpdateDeskItem,
 		"get_inbox":           handleGetInbox,
 		"get_calendar_events": handleGetCalendarEvents,
 		"send_to_session":     handleSendToSession,
 		"list_sessions":       handleListSessions,
+		"create_goal":         handleCreateGoal,
+		"create_task":         handleCreateTask,
+		"create_note":         handleCreateNote,
+		"update_goal":         handleUpdateGoal,
+		"update_task":         handleUpdateTask,
+		"list_goals":          handleListGoals,
+		"list_tasks":          handleListTasks,
 	}
 }
 
@@ -512,4 +517,399 @@ func handleSendToSession(ctx context.Context, database *db.DB, b *Brain, params 
 
 	reply := incoming[0]
 	return fmt.Sprintf("Message sent to %s (id=%s).\nReply from %s:\n%s", p.ToSessionID, delivered.ID, reply.FromSessionID, reply.Message), nil
+}
+
+func resolveDomain(database *db.DB, name string) sql.NullInt64 {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return sql.NullInt64{}
+	}
+	resolved, err := database.ResolveDomainID(name)
+	if err != nil || resolved == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(*resolved), Valid: true}
+}
+
+func handleCreateGoal(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if database == nil {
+		return "", fmt.Errorf("create_goal: database is required")
+	}
+
+	var p struct {
+		Title        string  `json:"title"`
+		Domain       string  `json:"domain"`
+		Context      string  `json:"context"`
+		DueDate      string  `json:"due_date"`
+		Type         string  `json:"type"`
+		TargetValue  float64 `json:"target_value"`
+		CurrentValue float64 `json:"current_value"`
+		HabitType    string  `json:"habit_type"`
+		ScheduleDays string  `json:"schedule_days"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("create_goal: bad params: %w", err)
+	}
+	if p.Title == "" {
+		return "", fmt.Errorf("create_goal: title required")
+	}
+
+	g := db.Goal{
+		ID:       uuid.New().String(),
+		Title:    p.Title,
+		DomainID: resolveDomain(database, p.Domain),
+	}
+	if p.Context != "" {
+		g.Context = sql.NullString{String: p.Context, Valid: true}
+	}
+	if p.DueDate != "" {
+		g.DueDate = sql.NullString{String: p.DueDate, Valid: true}
+	}
+	if p.Type != "" {
+		g.Type = p.Type
+	}
+	if p.TargetValue != 0 {
+		g.TargetValue = sql.NullFloat64{Float64: p.TargetValue, Valid: true}
+	}
+	if p.CurrentValue != 0 {
+		g.CurrentValue = sql.NullFloat64{Float64: p.CurrentValue, Valid: true}
+	}
+	if p.HabitType != "" {
+		g.HabitType = sql.NullString{String: p.HabitType, Valid: true}
+	}
+	if p.ScheduleDays != "" {
+		g.ScheduleDays = sql.NullString{String: p.ScheduleDays, Valid: true}
+	}
+
+	if err := database.InsertGoal(g); err != nil {
+		return "", fmt.Errorf("create_goal: %w", err)
+	}
+	return fmt.Sprintf("Goal created: %q (id=%s)", p.Title, g.ID), nil
+}
+
+func handleCreateTask(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if database == nil {
+		return "", fmt.Errorf("create_task: database is required")
+	}
+
+	var p struct {
+		Title     string `json:"title"`
+		Domain    string `json:"domain"`
+		GoalID    string `json:"goal_id"`
+		Context   string `json:"context"`
+		DueDate   string `json:"due_date"`
+		Recurring string `json:"recurring"`
+		Priority  string `json:"priority"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("create_task: bad params: %w", err)
+	}
+	if p.Title == "" {
+		return "", fmt.Errorf("create_task: title required")
+	}
+
+	t := db.Task{
+		ID:       uuid.New().String(),
+		Title:    p.Title,
+		DomainID: resolveDomain(database, p.Domain),
+	}
+	if p.GoalID != "" {
+		t.GoalID = sql.NullString{String: p.GoalID, Valid: true}
+	}
+	if p.Context != "" {
+		t.Context = sql.NullString{String: p.Context, Valid: true}
+	}
+	if p.DueDate != "" {
+		t.DueDate = sql.NullString{String: p.DueDate, Valid: true}
+	}
+	if p.Recurring != "" {
+		t.Recurring = sql.NullString{String: p.Recurring, Valid: true}
+	}
+	if p.Priority != "" {
+		t.Priority = p.Priority
+	}
+
+	if err := database.InsertTask(t); err != nil {
+		return "", fmt.Errorf("create_task: %w", err)
+	}
+	return fmt.Sprintf("Task created: %q (id=%s)", p.Title, t.ID), nil
+}
+
+func handleCreateNote(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if database == nil {
+		return "", fmt.Errorf("create_note: database is required")
+	}
+
+	var p struct {
+		Title   string   `json:"title"`
+		Domain  string   `json:"domain"`
+		GoalID  string   `json:"goal_id"`
+		Content string   `json:"content"`
+		Tags    []string `json:"tags"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("create_note: bad params: %w", err)
+	}
+	if p.Title == "" {
+		return "", fmt.Errorf("create_note: title required")
+	}
+
+	n := db.Note{
+		ID:       uuid.New().String(),
+		Title:    p.Title,
+		DomainID: resolveDomain(database, p.Domain),
+	}
+	if p.GoalID != "" {
+		n.GoalID = sql.NullString{String: p.GoalID, Valid: true}
+	}
+	if p.Content != "" {
+		n.Content = sql.NullString{String: p.Content, Valid: true}
+	}
+	if len(p.Tags) > 0 {
+		n.Tags = sql.NullString{String: strings.Join(p.Tags, ","), Valid: true}
+	}
+
+	if err := database.InsertNote(n); err != nil {
+		return "", fmt.Errorf("create_note: %w", err)
+	}
+	return fmt.Sprintf("Note created: %q (id=%s)", p.Title, n.ID), nil
+}
+
+func handleUpdateGoal(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if database == nil {
+		return "", fmt.Errorf("update_goal: database is required")
+	}
+
+	var p struct {
+		ID           string   `json:"id"`
+		Title        *string  `json:"title"`
+		Domain       *string  `json:"domain"`
+		Context      *string  `json:"context"`
+		DueDate      *string  `json:"due_date"`
+		Type         *string  `json:"type"`
+		TargetValue  *float64 `json:"target_value"`
+		CurrentValue *float64 `json:"current_value"`
+		HabitType    *string  `json:"habit_type"`
+		ScheduleDays *string  `json:"schedule_days"`
+		Status       *string  `json:"status"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("update_goal: bad params: %w", err)
+	}
+	if p.ID == "" {
+		return "", fmt.Errorf("update_goal: id required")
+	}
+
+	updates := map[string]any{}
+	if p.Title != nil {
+		updates["title"] = *p.Title
+	}
+	if p.Domain != nil {
+		domainID := resolveDomain(database, *p.Domain)
+		if domainID.Valid {
+			updates["domain_id"] = domainID.Int64
+		}
+	}
+	if p.Context != nil {
+		updates["context"] = *p.Context
+	}
+	if p.DueDate != nil {
+		updates["due_date"] = *p.DueDate
+	}
+	if p.Type != nil {
+		updates["type"] = *p.Type
+	}
+	if p.TargetValue != nil {
+		updates["target_value"] = *p.TargetValue
+	}
+	if p.CurrentValue != nil {
+		updates["current_value"] = *p.CurrentValue
+	}
+	if p.HabitType != nil {
+		updates["habit_type"] = *p.HabitType
+	}
+	if p.ScheduleDays != nil {
+		updates["schedule_days"] = *p.ScheduleDays
+	}
+	if p.Status != nil {
+		updates["status"] = *p.Status
+		if *p.Status == "done" {
+			updates["completed_at"] = time.Now().UTC().Format(time.RFC3339)
+		}
+	}
+
+	if len(updates) == 0 {
+		return "No fields to update.", nil
+	}
+
+	if err := database.UpdateGoal(p.ID, updates); err != nil {
+		return "", fmt.Errorf("update_goal: %w", err)
+	}
+	return fmt.Sprintf("Goal %s updated.", p.ID), nil
+}
+
+func handleUpdateTask(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if database == nil {
+		return "", fmt.Errorf("update_task: database is required")
+	}
+
+	var p struct {
+		ID        string  `json:"id"`
+		Title     *string `json:"title"`
+		Domain    *string `json:"domain"`
+		GoalID    *string `json:"goal_id"`
+		Context   *string `json:"context"`
+		DueDate   *string `json:"due_date"`
+		Recurring *string `json:"recurring"`
+		Priority  *string `json:"priority"`
+		Status    *string `json:"status"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("update_task: bad params: %w", err)
+	}
+	if p.ID == "" {
+		return "", fmt.Errorf("update_task: id required")
+	}
+
+	if p.Status != nil && *p.Status == "done" {
+		if err := database.CompleteTask(p.ID); err != nil {
+			return "", fmt.Errorf("update_task: %w", err)
+		}
+		return fmt.Sprintf("Task %s completed.", p.ID), nil
+	}
+
+	updates := map[string]any{}
+	if p.Title != nil {
+		updates["title"] = *p.Title
+	}
+	if p.Domain != nil {
+		domainID := resolveDomain(database, *p.Domain)
+		if domainID.Valid {
+			updates["domain_id"] = domainID.Int64
+		}
+	}
+	if p.GoalID != nil {
+		updates["goal_id"] = *p.GoalID
+	}
+	if p.Context != nil {
+		updates["context"] = *p.Context
+	}
+	if p.DueDate != nil {
+		updates["due_date"] = *p.DueDate
+	}
+	if p.Recurring != nil {
+		updates["recurring"] = *p.Recurring
+	}
+	if p.Priority != nil {
+		updates["priority"] = *p.Priority
+	}
+	if p.Status != nil {
+		updates["status"] = *p.Status
+	}
+
+	if len(updates) == 0 {
+		return "No fields to update.", nil
+	}
+
+	if err := database.UpdateTask(p.ID, updates); err != nil {
+		return "", fmt.Errorf("update_task: %w", err)
+	}
+	return fmt.Sprintf("Task %s updated.", p.ID), nil
+}
+
+func handleListGoals(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if database == nil {
+		return "", fmt.Errorf("list_goals: database is required")
+	}
+
+	var p struct {
+		Domain string `json:"domain"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("list_goals: bad params: %w", err)
+	}
+
+	var domainID *int
+	if p.Domain != "" {
+		resolved, err := database.ResolveDomainID(p.Domain)
+		if err == nil && resolved != nil {
+			domainID = resolved
+		}
+	}
+
+	goals, err := database.GoalsWithProgress(domainID)
+	if err != nil {
+		return "", fmt.Errorf("list_goals: %w", err)
+	}
+
+	if len(goals) == 0 {
+		return "No active goals found.", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Goals (%d):\n", len(goals)))
+	for i, g := range goals {
+		sb.WriteString(fmt.Sprintf("%d. %s (id=%s, type=%s", i+1, g.Title, g.ID, g.Type))
+		if g.DueDate.Valid {
+			sb.WriteString(", due=" + g.DueDate.String)
+		}
+		if g.TotalTasks > 0 {
+			sb.WriteString(fmt.Sprintf(", tasks=%d/%d %.0f%%", g.CompletedTasks, g.TotalTasks, g.Progress*100))
+		}
+		sb.WriteString(")\n")
+	}
+	return sb.String(), nil
+}
+
+func handleListTasks(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if database == nil {
+		return "", fmt.Errorf("list_tasks: database is required")
+	}
+
+	var p struct {
+		Domain string `json:"domain"`
+		GoalID string `json:"goal_id"`
+		Status string `json:"status"`
+		Due    string `json:"due"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("list_tasks: bad params: %w", err)
+	}
+
+	var domainID *int
+	if p.Domain != "" {
+		resolved, err := database.ResolveDomainID(p.Domain)
+		if err == nil && resolved != nil {
+			domainID = resolved
+		}
+	}
+
+	var goalID *string
+	if p.GoalID != "" {
+		goalID = &p.GoalID
+	}
+
+	tasks, err := database.ListTasks(domainID, goalID, p.Status, p.Due)
+	if err != nil {
+		return "", fmt.Errorf("list_tasks: %w", err)
+	}
+
+	if len(tasks) == 0 {
+		return "No tasks found.", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Tasks (%d):\n", len(tasks)))
+	for i, t := range tasks {
+		sb.WriteString(fmt.Sprintf("%d. [%s] %s (id=%s, priority=%s", i+1, t.Status, t.Title, t.ID, t.Priority))
+		if t.DueDate.Valid {
+			sb.WriteString(", due=" + t.DueDate.String)
+		}
+		if t.GoalID.Valid {
+			sb.WriteString(", goal=" + t.GoalID.String)
+		}
+		sb.WriteString(")\n")
+	}
+	return sb.String(), nil
 }

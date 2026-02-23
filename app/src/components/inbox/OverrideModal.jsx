@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'preact/hooks'
 const typeOptions = ['Todo', 'Note', 'Idea', 'Event', 'Identity', 'Goal', 'Decision', 'Preference', 'Fact', 'Observation']
 const actionOptions = ['do', 'explore', 'reference', 'waiting']
 
-export function OverrideModal({ item, onConfirm, onClose }) {
+const OverrideModal = ({ item, onConfirm, onClose }) => {
   const dialogRef = useRef(null)
   const [type, setType] = useState('Todo')
   const [action, setAction] = useState(item?.triageAction || 'reference')
@@ -139,3 +139,5 @@ export function OverrideModal({ item, onConfirm, onClose }) {
     </dialog>
   )
 }
+
+export default OverrideModal

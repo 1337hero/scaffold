@@ -100,14 +100,45 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	s.mux.HandleFunc("POST /api/webhook", s.handleWebhook)
 	s.mux.HandleFunc("POST /api/ingest", s.protected(s.handleIngestUpload))
 	s.mux.HandleFunc("GET /api/domains", s.protected(s.handleDomains))
+	s.mux.HandleFunc("GET /api/domains/health", s.protected(s.handleDomainsHealth))
 	s.mux.HandleFunc("GET /api/domains/dump", s.protected(s.handleDomainsDump))
 	s.mux.HandleFunc("GET /api/domains/{id}", s.protected(s.handleDomainDetail))
+	s.mux.HandleFunc("POST /api/domains", s.protected(s.handleDomainCreate))
 	s.mux.HandleFunc("PATCH /api/domains/{id}", s.protected(s.handleDomainPatch))
+	s.mux.HandleFunc("DELETE /api/domains/{id}", s.protected(s.handleDomainDelete))
+	s.mux.HandleFunc("GET /api/dashboard", s.protected(s.handleDashboard))
+	s.mux.HandleFunc("GET /api/search", s.protected(s.handleSearch))
+	s.mux.HandleFunc("PUT /api/inbox/{id}/process", s.protected(s.handleInboxProcess))
 	s.mux.HandleFunc("GET /api/calendar/upcoming", s.protected(s.handleCalendarEvents))
 	s.mux.HandleFunc("POST /api/session-bus/register", s.protected(s.handleSessionBusRegister))
 	s.mux.HandleFunc("GET /api/session-bus/sessions", s.protected(s.handleSessionBusSessions))
 	s.mux.HandleFunc("POST /api/session-bus/send", s.protected(s.handleSessionBusSend))
 	s.mux.HandleFunc("POST /api/session-bus/poll", s.protected(s.handleSessionBusPoll))
+
+	// Goals
+	s.mux.HandleFunc("GET /api/goals", s.protected(s.handleGoalsList))
+	s.mux.HandleFunc("GET /api/goals/{id}", s.protected(s.handleGoalGet))
+	s.mux.HandleFunc("POST /api/goals", s.protected(s.handleGoalCreate))
+	s.mux.HandleFunc("PUT /api/goals/{id}", s.protected(s.handleGoalUpdate))
+	s.mux.HandleFunc("DELETE /api/goals/{id}", s.protected(s.handleGoalDelete))
+
+	// Tasks
+	s.mux.HandleFunc("GET /api/tasks", s.protected(s.handleTasksList))
+	s.mux.HandleFunc("POST /api/tasks", s.protected(s.handleTaskCreate))
+	s.mux.HandleFunc("PUT /api/tasks/{id}", s.protected(s.handleTaskUpdate))
+	s.mux.HandleFunc("PUT /api/tasks/{id}/complete", s.protected(s.handleTaskComplete))
+	s.mux.HandleFunc("PUT /api/tasks/{id}/reorder", s.protected(s.handleTaskReorder))
+	s.mux.HandleFunc("PUT /api/tasks/{id}/focus", s.protected(s.handleTaskSetFocus))
+	s.mux.HandleFunc("DELETE /api/tasks/focus", s.protected(s.handleTaskClearFocus))
+	s.mux.HandleFunc("DELETE /api/tasks/{id}", s.protected(s.handleTaskDelete))
+
+	// Notes
+	s.mux.HandleFunc("GET /api/notes", s.protected(s.handleNotesList))
+	s.mux.HandleFunc("GET /api/notes/{id}", s.protected(s.handleNoteGet))
+	s.mux.HandleFunc("POST /api/notes", s.protected(s.handleNoteCreate))
+	s.mux.HandleFunc("PUT /api/notes/{id}", s.protected(s.handleNoteUpdate))
+	s.mux.HandleFunc("DELETE /api/notes/{id}", s.protected(s.handleNoteDelete))
+
 	return s
 }
 
@@ -157,7 +188,7 @@ func (s *Server) NewHTTPServer(addr string) *http.Server {
 		Handler:           s.httpHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
+		WriteTimeout:      130 * time.Second, // accommodates max long-poll wait (120s) + buffer
 		IdleTimeout:       60 * time.Second,
 	}
 }

@@ -26,6 +26,20 @@ type CalendarClient struct {
 	CalendarID string
 }
 
+func (c *CalendarClient) ensureConfigured() error {
+	if c == nil || c.service == nil {
+		return fmt.Errorf("calendar client is not configured")
+	}
+	return nil
+}
+
+func normalizeCalendarID(calendarID string) string {
+	if strings.TrimSpace(calendarID) == "" {
+		return "primary"
+	}
+	return calendarID
+}
+
 func NewCalendarClient(ctx context.Context, tokenSource oauth2.TokenSource, calendarID string) (*CalendarClient, error) {
 	srv, err := calendar.NewService(ctx, option.WithTokenSource(tokenSource))
 	if err != nil {
@@ -38,6 +52,11 @@ func NewCalendarClient(ctx context.Context, tokenSource oauth2.TokenSource, cale
 }
 
 func (c *CalendarClient) calendarTimezone(ctx context.Context, calendarID string) (*time.Location, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return nil, err
+	}
+	calendarID = normalizeCalendarID(calendarID)
+
 	cal, err := c.service.Calendars.Get(calendarID).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("get calendar timezone: %w", err)
@@ -50,6 +69,11 @@ func (c *CalendarClient) calendarTimezone(ctx context.Context, calendarID string
 }
 
 func (c *CalendarClient) TodayEvents(ctx context.Context, calendarID string) ([]Event, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return nil, err
+	}
+	calendarID = normalizeCalendarID(calendarID)
+
 	loc, err := c.calendarTimezone(ctx, calendarID)
 	if err != nil {
 		loc = time.Local
@@ -74,6 +98,11 @@ func (c *CalendarClient) TodayEvents(ctx context.Context, calendarID string) ([]
 }
 
 func (c *CalendarClient) UpcomingEvents(ctx context.Context, calendarID string, hours int) ([]Event, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return nil, err
+	}
+	calendarID = normalizeCalendarID(calendarID)
+
 	now := time.Now()
 	end := now.Add(time.Duration(hours) * time.Hour)
 

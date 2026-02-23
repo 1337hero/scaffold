@@ -178,6 +178,11 @@ Re-run `register` periodically (for example every 60-120s) even if idle.
   - `gemini-worker-1`
   - `anthropic-planner`
 
+## Message Modes
+Valid values for the `mode` field:
+- `steer` — default; directive or new task (anything unrecognized also maps here)
+- `follow_up` — reply to a previous message (aliases: `follow-up`, `followup`)
+
 ## Request/Reply Convention
 The bus payload is plain text. If you need richer semantics, encode JSON into `message`.
 

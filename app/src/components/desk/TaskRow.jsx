@@ -1,7 +1,7 @@
 import { colorClass } from "@/constants/colors.js"
-import { Checkbox } from "@/components/ui/Checkbox.jsx"
+import Checkbox from "@/components/ui/Checkbox.jsx"
 
-export function TaskRow({ task, onToggle }) {
+const TaskRow = ({ task, onToggle }) => {
   return (
     <button
       type="button"
@@ -24,3 +24,5 @@ export function TaskRow({ task, onToggle }) {
     </button>
   )
 }
+
+export default TaskRow

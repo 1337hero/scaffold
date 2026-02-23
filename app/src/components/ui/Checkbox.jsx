@@ -20,7 +20,7 @@ const checkboxVariants = cva(
 
 const checkSizes = { sm: "text-[0.62rem]", md: "text-[0.82rem]" }
 
-export function Checkbox({ checked, onChange, size = "md" }) {
+const Checkbox = ({ checked, onChange, size = "md" }) => {
   return (
     <button
       type="button"
@@ -32,3 +32,5 @@ export function Checkbox({ checked, onChange, size = "md" }) {
     </button>
   )
 }
+
+export default Checkbox

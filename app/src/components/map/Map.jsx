@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { domainsQuery } from '@/api/queries.js'
-import { DomainTile } from './DomainTile.jsx'
+import DomainTile from './DomainTile.jsx'
 
 const GROUP_ORDER = [
   { key: "active",     label: "Active",     color: "text-green" },
@@ -26,7 +26,7 @@ function groupDomains(domains) {
     .map((g) => ({ ...g, domains: groups[g.key] }))
 }
 
-export function Map({ onOpenDomain }) {
+const Map = ({ onOpenDomain }) => {
   const { data: domains = [], isLoading } = useQuery(domainsQuery)
 
   if (isLoading) return (
@@ -76,3 +76,5 @@ export function Map({ onOpenDomain }) {
     </div>
   )
 }
+
+export default Map

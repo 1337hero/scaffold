@@ -1,7 +1,7 @@
-import { InboxCard } from './InboxCard.jsx'
+import InboxCard from './InboxCard.jsx'
 import { colorClass } from '../../constants/colors.js'
 
-export function InboxGroup({ group, onConfirm, onOverride, onArchive, actionPending }) {
+const InboxGroup = ({ group, onConfirm, onOverride, onArchive, actionPending }) => {
   return (
     <div class="mb-8">
       <div class="flex items-center gap-3 mb-3.5 cursor-default">
@@ -23,3 +23,7 @@ export function InboxGroup({ group, onConfirm, onOverride, onArchive, actionPend
     </div>
   )
 }
+
+export default InboxGroup
+
+export default InboxGroup

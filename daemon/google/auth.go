@@ -76,7 +76,12 @@ func RunConsentFlow(cfg *oauth2.Config, store TokenStore) error {
 	}
 	state := hex.EncodeToString(stateBytes)
 
-	authURL := cfg.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	authURL := cfg.AuthCodeURL(
+		state,
+		oauth2.AccessTypeOffline,
+		oauth2.ApprovalForce,
+		oauth2.SetAuthURLParam("prompt", "consent"),
+	)
 
 	ln, err := net.Listen("tcp", ":8085")
 	if err != nil {

@@ -97,6 +97,17 @@ func (db *DB) queryCaptures(query string, args ...any) ([]Capture, error) {
 	return out, rows.Err()
 }
 
+func (db *DB) MarkCaptureProcessed(id, triageAction string) error {
+	result, err := db.conn.Exec(
+		`UPDATE captures SET processed = 1, triage_action = ? WHERE id = ?`,
+		triageAction, id,
+	)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(result)
+}
+
 func (db *DB) ConfirmCapture(id string) error {
 	result, err := db.conn.Exec(`UPDATE captures SET confirmed = 1 WHERE id = ?`, id)
 	if err != nil {
@@ -156,7 +167,7 @@ func (db *DB) PersistTriageResult(captureID string, mem Memory, action string) e
 	}
 
 	result, err := tx.Exec(
-		`UPDATE captures SET processed = 1, triage_action = ?, memory_id = ?, domain_id = ? WHERE id = ?`,
+		`UPDATE captures SET triage_action = ?, memory_id = ?, domain_id = ? WHERE id = ?`,
 		action, mem.ID, mem.DomainID, captureID,
 	)
 	if err != nil {

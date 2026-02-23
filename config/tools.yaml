@@ -31,12 +31,6 @@ tools:
           description: "Life domain this belongs to (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies). If unsure, choose the best-fit domain."
       required: [title, content]
 
-  - name: get_desk
-    description: Read today's desk items. THE ONE + up to 2 more.
-    input_schema:
-      type: object
-      properties: {}
-
   - name: search_memories
     description: Search the knowledge graph for memories matching a query.
     input_schema:
@@ -49,19 +43,6 @@ tools:
           type: string
           description: Optional memory type filter (Todo, Goal, Decision, etc)
       required: [query]
-
-  - name: update_desk_item
-    description: Update a desk item — mark done, defer, reprioritize.
-    input_schema:
-      type: object
-      properties:
-        id:
-          type: string
-          description: Desk item ID
-        status:
-          type: string
-          enum: [done, deferred, active]
-      required: [id, status]
 
   - name: get_inbox
     description: Read pending inbox items waiting for review.
@@ -127,3 +108,198 @@ tools:
           maximum: 120
           description: Optional long-poll timeout for one reply message
       required: [to_session_id, message]
+
+  - name: create_goal
+    description: |
+      Create a new goal. Goals track outcomes the user wants to achieve.
+      Types: binary (done/not-done), measurable (has target_value), habit (recurring behavior).
+    input_schema:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Goal title
+        domain:
+          type: string
+          description: "Life domain (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies)"
+        context:
+          type: string
+          description: Additional context or notes about the goal
+        due_date:
+          type: string
+          description: "Target date (YYYY-MM-DD)"
+        type:
+          type: string
+          enum: [binary, measurable, habit]
+          description: "Goal type. Default: binary"
+        target_value:
+          type: number
+          description: Target value for measurable goals
+        current_value:
+          type: number
+          description: Current progress value for measurable goals
+        habit_type:
+          type: string
+          description: "Habit frequency type (e.g. daily, weekly)"
+        schedule_days:
+          type: string
+          description: "Comma-separated days for habit goals (e.g. mon,wed,fri)"
+      required: [title]
+
+  - name: create_task
+    description: |
+      Create a new task. Tasks are concrete action items, optionally linked to a goal.
+    input_schema:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Task title
+        domain:
+          type: string
+          description: "Life domain (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies)"
+        goal_id:
+          type: string
+          description: Link task to a goal by ID
+        context:
+          type: string
+          description: Additional context or notes
+        due_date:
+          type: string
+          description: "Due date (YYYY-MM-DD)"
+        recurring:
+          type: string
+          enum: [daily, weekly, monthly]
+          description: Recurrence schedule
+        priority:
+          type: string
+          enum: [high, normal, low]
+          description: "Priority level. Default: normal"
+      required: [title]
+
+  - name: create_note
+    description: |
+      Create a note. Notes capture freeform information, ideas, or reference material.
+    input_schema:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Note title
+        domain:
+          type: string
+          description: "Life domain (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies)"
+        goal_id:
+          type: string
+          description: Link note to a goal by ID
+        content:
+          type: string
+          description: Note body content
+        tags:
+          type: array
+          items:
+            type: string
+          description: Tags for categorization
+      required: [title]
+
+  - name: update_goal
+    description: |
+      Update an existing goal. Pass only the fields you want to change.
+      Set status to "done" to mark complete, "abandoned" to soft-delete.
+    input_schema:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Goal ID
+        title:
+          type: string
+        domain:
+          type: string
+          description: "Life domain name to resolve"
+        context:
+          type: string
+        due_date:
+          type: string
+          description: "YYYY-MM-DD"
+        type:
+          type: string
+          enum: [binary, measurable, habit]
+        target_value:
+          type: number
+        current_value:
+          type: number
+        habit_type:
+          type: string
+        schedule_days:
+          type: string
+        status:
+          type: string
+          enum: [active, done, abandoned]
+      required: [id]
+
+  - name: update_task
+    description: |
+      Update an existing task. Pass only the fields you want to change.
+      Set status to "done" to complete (handles recurring reset automatically).
+    input_schema:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Task ID
+        title:
+          type: string
+        domain:
+          type: string
+          description: "Life domain name to resolve"
+        goal_id:
+          type: string
+        context:
+          type: string
+        due_date:
+          type: string
+          description: "YYYY-MM-DD"
+        recurring:
+          type: string
+          enum: [daily, weekly, monthly]
+        priority:
+          type: string
+          enum: [high, normal, low]
+        status:
+          type: string
+          enum: [pending, in_progress, done, deleted]
+      required: [id]
+
+  - name: list_goals
+    description: |
+      List active goals with task progress. Optionally filter by domain.
+    input_schema:
+      type: object
+      properties:
+        domain:
+          type: string
+          description: "Filter by life domain name"
+        status:
+          type: string
+          description: "Filter by status (default: active)"
+
+  - name: list_tasks
+    description: |
+      List tasks with optional filters. Use due filter to scope by time.
+    input_schema:
+      type: object
+      properties:
+        domain:
+          type: string
+          description: "Filter by life domain name"
+        goal_id:
+          type: string
+          description: "Filter tasks linked to a specific goal"
+        status:
+          type: string
+          description: "Filter by status (default: pending)"
+        due:
+          type: string
+          enum: [today, tomorrow, week]
+          description: "Filter by due date window"

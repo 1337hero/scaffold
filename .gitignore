@@ -74,6 +74,7 @@ docs/*
 !docs/plans/
 !docs/plans/**
 archive/
+source/
 
 # Custom extensions (private per-deployment features)
 custom/

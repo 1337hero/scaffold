@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'preact/hooks'
 import { useQuery } from '@tanstack/react-query'
-import { TheOne } from './TheOne.jsx'
-import { TaskRow } from './TaskRow.jsx'
-import { CalendarEvents } from './CalendarEvents.jsx'
+import TheOne from './TheOne.jsx'
+import TaskRow from './TaskRow.jsx'
+import CalendarEvents from './CalendarEvents.jsx'
 import { deskQuery } from '@/api/queries.js'
 
 function formatDate() {
@@ -46,7 +46,7 @@ function DeskSkeleton({ dayName, dateFull, clock }) {
   )
 }
 
-export function Desk() {
+const Desk = () => {
   const { data, isLoading } = useQuery(deskQuery)
   const [doneIds, setDoneIds] = useState(new Set())
   const [stepDoneIds, setStepDoneIds] = useState(new Set())
@@ -158,3 +158,5 @@ export function Desk() {
     </div>
   )
 }
+
+export default Desk

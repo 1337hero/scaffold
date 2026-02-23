@@ -1,6 +1,6 @@
-import { DriftLabel } from './DriftLabel.jsx'
+import DriftLabel from './DriftLabel.jsx'
 
-export function DomainTile({ domain, onOpenDomain }) {
+const DomainTile = ({ domain, onOpenDomain }) => {
   const isDump = domain.id === 0 || domain.id === "dump"
 
   return (
@@ -32,3 +32,5 @@ export function DomainTile({ domain, onOpenDomain }) {
     </button>
   )
 }
+
+export default DomainTile

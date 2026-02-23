@@ -22,6 +22,32 @@ type Domain struct {
 	StatusLine    sql.NullString
 	Briefing      sql.NullString
 	CreatedAt     string
+	Icon          sql.NullString
+	Color         sql.NullString
+	Position      int
+	Status        string
+}
+
+type DomainUpdateOpts struct {
+	Name       *string
+	StatusLine *string
+	Briefing   *string
+	Importance *int
+	Icon       *string
+	Color      *string
+	Position   *int
+	Status     *string
+}
+
+type DomainHealthData struct {
+	Domain
+	GoalCount      int
+	TaskCount      int
+	NoteCount      int
+	CompletedTasks int
+	HealthScore    float64
+	DaysSinceTouch int
+	State          string
 }
 
 type DomainDetail struct {
@@ -141,18 +167,18 @@ func resolveDomainIDTx(tx *sql.Tx, name string) (*int, error) {
 
 func (db *DB) ListDomains() ([]Domain, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, name, importance, last_touched_at, status_line, briefing, created_at
-		 FROM domains ORDER BY importance DESC, name ASC`,
+		`SELECT id, name, importance, last_touched_at, status_line, briefing, created_at, icon, color, position, status
+		 FROM domains WHERE status != 'archived' ORDER BY position ASC, importance DESC, name ASC`,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var out []Domain
+	out := make([]Domain, 0)
 	for rows.Next() {
 		var d Domain
-		if err := rows.Scan(&d.ID, &d.Name, &d.Importance, &d.LastTouchedAt, &d.StatusLine, &d.Briefing, &d.CreatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Importance, &d.LastTouchedAt, &d.StatusLine, &d.Briefing, &d.CreatedAt, &d.Icon, &d.Color, &d.Position, &d.Status); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -162,11 +188,11 @@ func (db *DB) ListDomains() ([]Domain, error) {
 
 func (db *DB) GetDomain(id int) (*Domain, error) {
 	row := db.conn.QueryRow(
-		`SELECT id, name, importance, last_touched_at, status_line, briefing, created_at
+		`SELECT id, name, importance, last_touched_at, status_line, briefing, created_at, icon, color, position, status
 		 FROM domains WHERE id = ?`, id,
 	)
 	var d Domain
-	err := row.Scan(&d.ID, &d.Name, &d.Importance, &d.LastTouchedAt, &d.StatusLine, &d.Briefing, &d.CreatedAt)
+	err := row.Scan(&d.ID, &d.Name, &d.Importance, &d.LastTouchedAt, &d.StatusLine, &d.Briefing, &d.CreatedAt, &d.Icon, &d.Color, &d.Position, &d.Status)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -176,11 +202,16 @@ func (db *DB) GetDomain(id int) (*Domain, error) {
 	return &d, nil
 }
 
-func (db *DB) CreateDomain(name string, importance int) (*Domain, error) {
+func (db *DB) CreateDomain(name string, importance int, icon, color string) (*Domain, error) {
 	ts := now()
+
+	var maxPos int
+	_ = db.conn.QueryRow(`SELECT COALESCE(MAX(position), 0) FROM domains`).Scan(&maxPos)
+
 	result, err := db.conn.Exec(
-		`INSERT INTO domains (name, importance, last_touched_at, created_at) VALUES (?, ?, ?, ?)`,
-		name, importance, ts, ts,
+		`INSERT INTO domains (name, importance, icon, color, position, status, last_touched_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
+		name, importance, nullIfEmpty(icon), nullIfEmpty(color), maxPos+1, ts, ts,
 	)
 	if err != nil {
 		return nil, err
@@ -193,26 +224,64 @@ func (db *DB) CreateDomain(name string, importance int) (*Domain, error) {
 		ID:            int(id),
 		Name:          name,
 		Importance:    importance,
+		Icon:          toNullString(icon),
+		Color:         toNullString(color),
+		Position:      maxPos + 1,
+		Status:        "active",
 		LastTouchedAt: ts,
 		CreatedAt:     ts,
 	}, nil
 }
 
-func (db *DB) UpdateDomain(id int, statusLine, briefing *string, importance *int) error {
-	sets := make([]string, 0, 3)
-	args := make([]any, 0, 4)
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
 
-	if statusLine != nil {
+func toNullString(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
+}
+
+func (db *DB) UpdateDomain(id int, opts DomainUpdateOpts) error {
+	sets := make([]string, 0, 8)
+	args := make([]any, 0, 9)
+
+	if opts.Name != nil {
+		sets = append(sets, "name = ?")
+		args = append(args, *opts.Name)
+	}
+	if opts.StatusLine != nil {
 		sets = append(sets, "status_line = ?")
-		args = append(args, *statusLine)
+		args = append(args, *opts.StatusLine)
 	}
-	if briefing != nil {
+	if opts.Briefing != nil {
 		sets = append(sets, "briefing = ?")
-		args = append(args, *briefing)
+		args = append(args, *opts.Briefing)
 	}
-	if importance != nil {
+	if opts.Importance != nil {
 		sets = append(sets, "importance = ?")
-		args = append(args, *importance)
+		args = append(args, *opts.Importance)
+	}
+	if opts.Icon != nil {
+		sets = append(sets, "icon = ?")
+		args = append(args, *opts.Icon)
+	}
+	if opts.Color != nil {
+		sets = append(sets, "color = ?")
+		args = append(args, *opts.Color)
+	}
+	if opts.Position != nil {
+		sets = append(sets, "position = ?")
+		args = append(args, *opts.Position)
+	}
+	if opts.Status != nil {
+		sets = append(sets, "status = ?")
+		args = append(args, *opts.Status)
 	}
 
 	if len(sets) == 0 {
@@ -231,6 +300,90 @@ func (db *DB) UpdateDomain(id int, statusLine, briefing *string, importance *int
 func (db *DB) TouchDomain(id int) error {
 	_, err := db.conn.Exec(`UPDATE domains SET last_touched_at = ? WHERE id = ?`, now(), id)
 	return err
+}
+
+func (db *DB) ArchiveDomain(id int) error {
+	result, err := db.conn.Exec(`UPDATE domains SET status = 'archived' WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(result)
+}
+
+func (db *DB) DomainHealthAll() ([]DomainHealthData, error) {
+	domains, err := db.ListDomains()
+	if err != nil {
+		return nil, err
+	}
+
+	nowTime := time.Now().UTC()
+	sevenDaysAgo := nowTime.AddDate(0, 0, -7).Format(time.RFC3339)
+
+	out := make([]DomainHealthData, 0, len(domains))
+	for _, d := range domains {
+		var goalCount, taskCount, noteCount, completedTasks int
+		_ = db.conn.QueryRow(`SELECT COUNT(*) FROM goals WHERE domain_id = ? AND status = 'active'`, d.ID).Scan(&goalCount)
+		_ = db.conn.QueryRow(`SELECT COUNT(*) FROM tasks WHERE domain_id = ? AND status = 'pending'`, d.ID).Scan(&taskCount)
+		_ = db.conn.QueryRow(`SELECT COUNT(*) FROM notes WHERE domain_id = ?`, d.ID).Scan(&noteCount)
+		_ = db.conn.QueryRow(
+			`SELECT COUNT(*) FROM task_completions tc
+			 JOIN tasks t ON tc.task_id = t.id
+			 WHERE t.domain_id = ? AND tc.completed_at >= ?`, d.ID, sevenDaysAgo,
+		).Scan(&completedTasks)
+
+		touched, err := time.Parse(time.RFC3339, d.LastTouchedAt)
+		if err != nil {
+			touched = nowTime
+		}
+		daysSince := int(math.Floor(nowTime.Sub(touched).Hours() / 24))
+		if daysSince < 0 {
+			daysSince = 0
+		}
+
+		healthScore := computeHealthScore(d.Importance, daysSince, goalCount, taskCount, completedTasks)
+		driftScore := float64(d.Importance) * float64(daysSince)
+		state, _ := classifyDrift(d.Importance, daysSince, driftScore, taskCount)
+
+		out = append(out, DomainHealthData{
+			Domain:         d,
+			GoalCount:      goalCount,
+			TaskCount:      taskCount,
+			NoteCount:      noteCount,
+			CompletedTasks: completedTasks,
+			HealthScore:    healthScore,
+			DaysSinceTouch: daysSince,
+			State:          state,
+		})
+	}
+	return out, nil
+}
+
+func computeHealthScore(importance, daysSince, goalCount, taskCount, completedTasks int) float64 {
+	score := 1.0
+
+	// Decay by days since touch
+	if daysSince > 0 {
+		decay := float64(daysSince) * 0.05 * float64(importance)
+		score -= decay
+	}
+
+	// Boost for completed tasks
+	if completedTasks > 0 {
+		score += float64(completedTasks) * 0.1
+	}
+
+	// Slight boost for having goals
+	if goalCount > 0 {
+		score += 0.1
+	}
+
+	if score > 1.0 {
+		score = 1.0
+	}
+	if score < 0.0 {
+		score = 0.0
+	}
+	return score
 }
 
 func (db *DB) DomainDeskItems(domainID int) ([]DeskItem, error) {
@@ -394,27 +547,27 @@ func canonicalDomainName(name string) string {
 	}
 	lower := strings.ToLower(trimmed)
 	aliases := map[string]string{
-		"work business":         "Work/Business",
-		"work/business":         "Work/Business",
-		"personal project":      "Personal Projects",
-		"personal projects":     "Personal Projects",
-		"home life":             "Homelife",
-		"homelife":              "Homelife",
-		"relationship":          "Relationships",
-		"relationships":         "Relationships",
-		"personal development":  "Personal Development",
-		"health":                "Personal Development",
-		"faith":                 "Personal Development",
-		"finance":               "Finances",
-		"finances":              "Finances",
-		"finanaces":             "Finances",
-		"hobby":                 "Hobbies",
-		"hobbies":               "Hobbies",
-		"1337 hero":             "Work/Business",
-		"shenandoah":            "Personal Projects",
-		"vera":                  "Personal Projects",
-		"homelab":               "Personal Projects",
-		"family":                "Relationships",
+		"work business":        "Work/Business",
+		"work/business":        "Work/Business",
+		"personal project":     "Personal Projects",
+		"personal projects":    "Personal Projects",
+		"home life":            "Homelife",
+		"homelife":             "Homelife",
+		"relationship":         "Relationships",
+		"relationships":        "Relationships",
+		"personal development": "Personal Development",
+		"health":               "Personal Development",
+		"faith":                "Personal Development",
+		"finance":              "Finances",
+		"finances":             "Finances",
+		"finanaces":            "Finances",
+		"hobby":                "Hobbies",
+		"hobbies":              "Hobbies",
+		"1337 hero":            "Work/Business",
+		"shenandoah":           "Personal Projects",
+		"vera":                 "Personal Projects",
+		"homelab":              "Personal Projects",
+		"family":               "Relationships",
 	}
 	if mapped, ok := aliases[lower]; ok {
 		return mapped
@@ -445,7 +598,7 @@ func (db *DB) ComputeDriftStates() ([]DomainDrift, error) {
 
 		var openTasks int
 		if err := db.conn.QueryRow(
-			`SELECT COUNT(*) FROM desk WHERE domain_id = ? AND status = 'active'`, d.ID,
+			`SELECT COUNT(*) FROM tasks WHERE domain_id = ? AND status = 'pending'`, d.ID,
 		).Scan(&openTasks); err != nil {
 			return nil, fmt.Errorf("count open tasks for domain %d: %w", d.ID, err)
 		}

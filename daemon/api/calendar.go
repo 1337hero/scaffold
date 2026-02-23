@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -22,7 +23,8 @@ func (s *Server) handleCalendarEvents(w http.ResponseWriter, r *http.Request) {
 
 	events, err := s.brain.CalendarUpcoming(r.Context(), 3)
 	if err != nil {
-		writeInternalError(w, err)
+		log.Printf("warn: calendar upcoming unavailable: %v", err)
+		writeJSON(w, http.StatusOK, []calendarEventDTO{})
 		return
 	}
 	if events == nil {

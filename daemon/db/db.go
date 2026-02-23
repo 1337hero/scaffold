@@ -206,6 +206,88 @@ func (db *DB) migrate() error {
 		return fmt.Errorf("apply ingestion schema: %w", err)
 	}
 
+	_, err = db.conn.Exec(`
+		CREATE TABLE IF NOT EXISTS goals (
+		  id            TEXT PRIMARY KEY,
+		  title         TEXT NOT NULL,
+		  domain_id     INTEGER REFERENCES domains(id),
+		  context       TEXT,
+		  due_date      TEXT,
+		  type          TEXT DEFAULT 'binary',
+		  target_value  REAL,
+		  current_value REAL,
+		  habit_type    TEXT,
+		  schedule_days TEXT,
+		  notify        INTEGER DEFAULT 0,
+		  status        TEXT DEFAULT 'active',
+		  created_at    TEXT NOT NULL,
+		  completed_at  TEXT
+		);
+		CREATE INDEX IF NOT EXISTS idx_goals_domain ON goals(domain_id);
+		CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status);
+
+		CREATE TABLE IF NOT EXISTS tasks (
+		  id          TEXT PRIMARY KEY,
+		  title       TEXT NOT NULL,
+		  domain_id   INTEGER REFERENCES domains(id),
+		  goal_id     TEXT REFERENCES goals(id),
+		  context     TEXT,
+		  due_date    TEXT,
+		  recurring   TEXT,
+		  priority    TEXT DEFAULT 'normal',
+		  status      TEXT DEFAULT 'pending',
+		  micro_steps TEXT,
+		  notify      INTEGER DEFAULT 0,
+		  position    INTEGER DEFAULT 0,
+		  created_at  TEXT NOT NULL,
+		  completed_at TEXT
+		);
+		CREATE INDEX IF NOT EXISTS idx_tasks_domain ON tasks(domain_id);
+		CREATE INDEX IF NOT EXISTS idx_tasks_goal ON tasks(goal_id);
+		CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+		CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
+
+		CREATE TABLE IF NOT EXISTS task_completions (
+		  id           TEXT PRIMARY KEY,
+		  task_id      TEXT NOT NULL REFERENCES tasks(id),
+		  goal_id      TEXT REFERENCES goals(id),
+		  completed_at TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_task_completions_goal ON task_completions(goal_id, completed_at);
+
+		CREATE TABLE IF NOT EXISTS notes (
+		  id         TEXT PRIMARY KEY,
+		  title      TEXT NOT NULL,
+		  domain_id  INTEGER REFERENCES domains(id),
+		  goal_id    TEXT REFERENCES goals(id),
+		  content    TEXT,
+		  tags       TEXT,
+		  created_at TEXT NOT NULL,
+		  updated_at TEXT
+		);
+		CREATE INDEX IF NOT EXISTS idx_notes_domain ON notes(domain_id);
+		CREATE INDEX IF NOT EXISTS idx_notes_goal ON notes(goal_id);
+	`)
+	if err != nil {
+		return fmt.Errorf("apply lifeos schema: %w", err)
+	}
+
+	if err := db.migrateAddColumn("domains", "icon", "TEXT"); err != nil {
+		return err
+	}
+	if err := db.migrateAddColumn("domains", "color", "TEXT"); err != nil {
+		return err
+	}
+	if err := db.migrateAddColumn("domains", "position", "INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := db.migrateAddColumn("domains", "status", "TEXT DEFAULT 'active'"); err != nil {
+		return err
+	}
+	if err := db.migrateAddColumn("tasks", "is_focus", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+
 	return nil
 }
 

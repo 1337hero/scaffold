@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils.js"
 import { colorClass } from "@/constants/colors.js"
-import { Checkbox } from "@/components/ui/Checkbox.jsx"
+import Checkbox from "@/components/ui/Checkbox.jsx"
 
-export function TheOne({ task, onToggle, onToggleStep }) {
+const TheOne = ({ task, onToggle, onToggleStep }) => {
   return (
     <div class="bg-surface border border-border border-l-[3px] border-l-amber rounded-xl p-7 mb-3">
       <div class="text-[0.76rem] font-semibold uppercase tracking-[0.12em] text-amber mb-3">
@@ -47,3 +47,5 @@ export function TheOne({ task, onToggle, onToggleStep }) {
     </div>
   )
 }
+
+export default TheOne

@@ -78,6 +78,44 @@ func TestOAuthToken_Update(t *testing.T) {
 	}
 }
 
+func TestOAuthToken_UpdatePreservesRefreshTokenWhenBlank(t *testing.T) {
+	database := newTestDB(t)
+
+	first := &OAuthToken{
+		AccessToken:  "access-1",
+		RefreshToken: "refresh-keep",
+		TokenType:    "Bearer",
+		Expiry:       "2026-12-31T23:59:59Z",
+	}
+	if err := database.SaveOAuthToken("google", first); err != nil {
+		t.Fatalf("SaveOAuthToken (first): %v", err)
+	}
+
+	second := &OAuthToken{
+		AccessToken:  "access-2",
+		RefreshToken: "",
+		TokenType:    "Bearer",
+		Expiry:       "2027-01-01T00:00:00Z",
+	}
+	if err := database.SaveOAuthToken("google", second); err != nil {
+		t.Fatalf("SaveOAuthToken (second): %v", err)
+	}
+
+	got, err := database.GetOAuthToken("google")
+	if err != nil {
+		t.Fatalf("GetOAuthToken: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected token, got nil")
+	}
+	if got.AccessToken != "access-2" {
+		t.Fatalf("access_token = %q, want %q", got.AccessToken, "access-2")
+	}
+	if got.RefreshToken != "refresh-keep" {
+		t.Fatalf("refresh_token = %q, want %q", got.RefreshToken, "refresh-keep")
+	}
+}
+
 func TestOAuthToken_Delete(t *testing.T) {
 	database := newTestDB(t)
 

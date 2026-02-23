@@ -6,7 +6,9 @@ const stateColors = {
   overactive: "text-purple",
 }
 
-export function DriftLabel({ state, label }) {
+const DriftLabel = ({ state, label }) => {
   const color = stateColors[state] ?? "text-text-dim"
   return <span class={`text-xs font-medium ${color}`}>{label}</span>
 }
+
+export default DriftLabel

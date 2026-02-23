@@ -59,7 +59,7 @@ func TestHandleDomainDetailReturnsAggregatedView(t *testing.T) {
 	}
 	domain := domains[0]
 	briefing := "briefing text from api test"
-	if err := database.UpdateDomain(domain.ID, nil, &briefing, nil); err != nil {
+	if err := database.UpdateDomain(domain.ID, db.DomainUpdateOpts{Briefing: &briefing}); err != nil {
 		t.Fatalf("update domain briefing: %v", err)
 	}
 

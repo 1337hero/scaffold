@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	"scaffold/db"
 )
 
@@ -119,6 +120,9 @@ var actionTypeMap = map[string]string{
 }
 
 func inferCaptureType(raw, source, action, memoryType string) string {
+	if strings.EqualFold(memoryType, "Goal") {
+		return "goal"
+	}
 	if rxURL.MatchString(raw) {
 		return "link"
 	}
@@ -314,6 +318,160 @@ func (s *Server) handleInboxOverride(w http.ResponseWriter, r *http.Request) {
 		"action":     action,
 		"importance": importance,
 		"tags":       cleanTags(req.Tags),
+	})
+}
+
+type inboxProcessRequest struct {
+	Type     string  `json:"type"`
+	Title    string  `json:"title"`
+	DomainID *int64  `json:"domain_id"`
+	GoalID   *string `json:"goal_id"`
+	Context  *string `json:"context"`
+	DueDate  *string `json:"due_date"`
+	Priority *string `json:"priority"`
+	Recurring *string `json:"recurring"`
+	Content  *string `json:"content"`
+	Tags     *string `json:"tags"`
+
+	GoalType     *string  `json:"goal_type"`
+	TargetValue  *float64 `json:"target_value"`
+	CurrentValue *float64 `json:"current_value"`
+	HabitType    *string  `json:"habit_type"`
+	ScheduleDays *string  `json:"schedule_days"`
+}
+
+func (s *Server) handleInboxProcess(w http.ResponseWriter, r *http.Request) {
+	captureID := strings.TrimSpace(r.PathValue("id"))
+	if captureID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "capture id is required"})
+		return
+	}
+
+	var req inboxProcessRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+
+	if strings.TrimSpace(req.Title) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "title is required"})
+		return
+	}
+
+	capture, err := s.db.GetCapture(captureID)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if capture == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "capture not found"})
+		return
+	}
+
+	var createdID string
+
+	switch req.Type {
+	case "goal":
+		g := db.Goal{
+			ID:    uuid.New().String(),
+			Title: req.Title,
+		}
+		if req.DomainID != nil {
+			g.DomainID = sql.NullInt64{Int64: *req.DomainID, Valid: true}
+		}
+		if req.Context != nil {
+			g.Context = sql.NullString{String: *req.Context, Valid: true}
+		}
+		if req.DueDate != nil {
+			g.DueDate = sql.NullString{String: *req.DueDate, Valid: true}
+		}
+		if req.GoalType != nil {
+			g.Type = *req.GoalType
+		}
+		if req.TargetValue != nil {
+			g.TargetValue = sql.NullFloat64{Float64: *req.TargetValue, Valid: true}
+		}
+		if req.CurrentValue != nil {
+			g.CurrentValue = sql.NullFloat64{Float64: *req.CurrentValue, Valid: true}
+		}
+		if req.HabitType != nil {
+			g.HabitType = sql.NullString{String: *req.HabitType, Valid: true}
+		}
+		if req.ScheduleDays != nil {
+			g.ScheduleDays = sql.NullString{String: *req.ScheduleDays, Valid: true}
+		}
+		if err := s.db.InsertGoal(g); err != nil {
+			writeInternalError(w, err)
+			return
+		}
+		createdID = g.ID
+
+	case "task":
+		t := db.Task{
+			ID:    uuid.New().String(),
+			Title: req.Title,
+		}
+		if req.DomainID != nil {
+			t.DomainID = sql.NullInt64{Int64: *req.DomainID, Valid: true}
+		}
+		if req.GoalID != nil {
+			t.GoalID = sql.NullString{String: *req.GoalID, Valid: true}
+		}
+		if req.Context != nil {
+			t.Context = sql.NullString{String: *req.Context, Valid: true}
+		}
+		if req.DueDate != nil {
+			t.DueDate = sql.NullString{String: *req.DueDate, Valid: true}
+		}
+		if req.Priority != nil {
+			t.Priority = *req.Priority
+		}
+		if req.Recurring != nil {
+			t.Recurring = sql.NullString{String: *req.Recurring, Valid: true}
+		}
+		if err := s.db.InsertTask(t); err != nil {
+			writeInternalError(w, err)
+			return
+		}
+		createdID = t.ID
+
+	case "note":
+		n := db.Note{
+			ID:    uuid.New().String(),
+			Title: req.Title,
+		}
+		if req.DomainID != nil {
+			n.DomainID = sql.NullInt64{Int64: *req.DomainID, Valid: true}
+		}
+		if req.GoalID != nil {
+			n.GoalID = sql.NullString{String: *req.GoalID, Valid: true}
+		}
+		if req.Content != nil {
+			n.Content = sql.NullString{String: *req.Content, Valid: true}
+		}
+		if req.Tags != nil {
+			n.Tags = sql.NullString{String: *req.Tags, Valid: true}
+		}
+		if err := s.db.InsertNote(n); err != nil {
+			writeInternalError(w, err)
+			return
+		}
+		createdID = n.ID
+
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be goal, task, or note"})
+		return
+	}
+
+	if err := s.db.MarkCaptureProcessed(captureID, "processed:"+req.Type); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"capture_id": captureID,
+		"created_id": createdID,
+		"type":       req.Type,
 	})
 }
 

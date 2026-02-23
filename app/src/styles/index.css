@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-serif: "Playfair Display", serif;
+
+  --color-app-bg: #F5F0E8;
+  --color-app-ink: #2C2416;
+  --color-app-muted: #9C8E7A;
+  --color-app-border: #E8E0D0;
+  --color-card-bg: #FDFAF5;
+  --color-input-bg: #F9F5EE;
+
+  --animate-page-enter: page-enter 0.2s ease-out;
+  --animate-modal-card-enter: modal-card-enter 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-indicator-appear: indicator-appear 0.15s ease-out;
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(10px); }
+}
+
+@keyframes modal-card-enter {
+  from { opacity: 0; transform: scale(0.9) translateY(20px); }
+}
+
+@keyframes indicator-appear {
+  from { opacity: 0; transform: scaleY(0.3); }
+}
+
+@keyframes backdrop-enter {
+  from { opacity: 0; }
+}
+
+@layer base {
+  body {
+    @apply bg-app-bg text-app-ink font-sans antialiased;
+  }
+}
+
+.glass {
+  @apply bg-[#FDFAF5]/70 backdrop-blur-md border border-white/20;
+}
+
+.card-shadow {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+
+.mono {
+  @apply font-mono tracking-tight;
+}
+
+dialog::backdrop {
+  animation: backdrop-enter 0.2s ease-out;
+}
+
+dialog[open] .modal-card {
+  animation: modal-card-enter 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}

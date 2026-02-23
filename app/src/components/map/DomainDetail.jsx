@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { domainDetailQuery, patchDomain } from '@/api/queries.js'
-import { DriftLabel } from './DriftLabel.jsx'
+import DriftLabel from './DriftLabel.jsx'
 
 const norm = (raw, ...keys) => keys.reduce((v, k) => v ?? raw?.[k], undefined)
 
@@ -141,7 +141,7 @@ function DetailSkeleton() {
   )
 }
 
-export function DomainDetail({ domainId, onBack }) {
+const DomainDetail = ({ domainId, onBack }) => {
   const { data, isLoading } = useQuery(domainDetailQuery(domainId))
 
   if (isLoading) return <DetailSkeleton />
@@ -257,3 +257,5 @@ export function DomainDetail({ domainId, onBack }) {
     </div>
   )
 }
+
+export default DomainDetail

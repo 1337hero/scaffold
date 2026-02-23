@@ -1,77 +1,65 @@
-import { cn } from "@/lib/utils.js"
-import { desk, inbox, map, search, graph } from "@/constants/nav.js"
+import { dashboard, inbox, notebooks, search } from "@/constants/nav.js";
+import { cn } from "@/lib/utils.js";
+import { RiAddLine } from "@remixicon/react";
 
-const navItems = [
-  desk,
-  { ...inbox, hasBadge: true },
-  map,
-]
+const navItems = [dashboard, { ...inbox, hasBadge: true }, notebooks, search];
 
-const toolItems = [search, graph]
-
-export function Sidebar({ activePanel, onNavigate, onCapture, inboxCount }) {
+const Sidebar = ({ activeRoute, onNavigate, onCapture, inboxCount }) => {
   return (
-    <aside class="hidden md:flex w-[264px] bg-sidebar border-r border-border flex-col py-7 shrink-0 h-screen sticky top-0">
-      <div class="px-6 mb-9 flex items-center gap-3">
-        <div class="w-10 h-10 rounded-lg bg-amber-dim border border-amber-border flex items-center justify-center text-[1rem] text-amber">
-          {'\u26a1'}
-        </div>
-        <span class="text-[2rem] font-bold tracking-[-0.03em] leading-none">Scaffold</span>
+    <aside className="fixed left-0 top-0 h-full w-64 border-r border-app-border bg-[#1C1712] z-40 hidden lg:flex flex-col p-6 text-[#9C8E7A]">
+      <div className="mb-10">
+        <h1 className="font-serif italic text-2xl font-semibold tracking-tight text-[#F5F0E8]">
+          Scaffold
+        </h1>
+        <p className="text-[10px] mono uppercase opacity-40 mt-1">
+          Life Operating System
+        </p>
       </div>
 
-      <nav class="flex-1">
-        {navItems.map((item) => (
-          <button
-            type="button"
-            key={item.id}
-            onClick={() => onNavigate(item.id)}
-            class={cn(
-              "flex items-center gap-3.5 w-full px-6 py-3 border-l-[3px] text-[1rem] font-medium transition-all cursor-pointer text-left",
-              activePanel === item.id
-                ? "bg-[rgba(245,158,11,0.06)] border-l-amber text-text"
-                : "border-l-transparent text-text-dim hover:bg-[rgba(255,255,255,0.03)] hover:text-text"
-            )}
-            aria-label={item.label}
-            aria-current={activePanel === item.id ? "page" : undefined}
-          >
-            <item.icon size={20} class={cn("shrink-0", activePanel === item.id ? "opacity-100" : "opacity-70")} />
-            {item.label}
-            {item.hasBadge && inboxCount > 0 && (
-              <span class="ml-auto font-mono text-[0.72rem] font-semibold bg-amber-dim text-amber px-2 py-0.5 rounded-sm">
-                {inboxCount}
-              </span>
-            )}
-          </button>
-        ))}
-
-        <div class="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-text-muted px-6 pt-5 pb-2.5">
-          Tools
-        </div>
-
-        {toolItems.map((item) => (
-          <button
-            type="button"
-            key={item.id}
-            class="flex items-center gap-3.5 w-full px-6 py-3 border-l-[3px] border-l-transparent text-text-dim text-[1rem] font-medium opacity-40 cursor-default text-left"
-            disabled
-            aria-label={`${item.label} (coming soon)`}
-          >
-            <item.icon size={20} class="shrink-0 opacity-70" />
-            {item.label}
-          </button>
-        ))}
+      <nav class="flex-1 space-y-2">
+        {navItems.map((item) => {
+          const active = activeRoute === item.id;
+          return (
+            <button
+              type="button"
+              key={item.id}
+              onClick={() => onNavigate(item.path)}
+              class={cn(
+                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative",
+                active
+                  ? "bg-[#2E2318] text-[#F5F0E8] shadow-lg shadow-black/5"
+                  : "hover:bg-white/5 hover:text-[#F5F0E8]",
+              )}
+              aria-label={item.label}
+              aria-current={active ? "page" : undefined}
+            >
+              <item.icon size={20} class="shrink-0" />
+              <span class="font-medium">{item.label}</span>
+              {item.hasBadge && inboxCount > 0 && (
+                <span class="ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold mono bg-[#F5F0E8] text-[#1C1712]">
+                  {inboxCount}
+                </span>
+              )}
+              {active && (
+                <div class="absolute left-0 w-1 h-6 bg-[#C47D3A] rounded-full ml-1 animate-indicator-appear" />
+              )}
+            </button>
+          );
+        })}
       </nav>
 
-      <div class="px-5 pt-5 border-t border-border">
-        <button
-          type="button"
-          onClick={onCapture}
-          class="btn-amber w-full py-3 px-4 rounded-lg text-[0.95rem] flex items-center justify-center gap-2"
-          aria-label="Capture new item"
-        >
-          + Capture
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={onCapture}
+        class="mt-auto flex items-center justify-center gap-2 w-full py-4 bg-[#C47D3A] hover:bg-[#B06A2E] text-white rounded-2xl font-bold shadow-lg shadow-[#C47D3A]/20 transition-all active:scale-95"
+        aria-label="Capture new item"
+      >
+        <RiAddLine size={20} />
+        <span>Capture</span>
+        <span class="text-[10px] opacity-60 mono ml-1">⌘K</span>
+      </button>
     </aside>
-  )
-}
+  );
+};
+
+export default Sidebar;

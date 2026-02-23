@@ -1,7 +1,7 @@
 # Session Bus MVP (Global Cross-Agent Tooling)
 
 Date: 2026-02-22
-Status: Drafted + scaffolded in daemon
+Status: Validated — Claude ↔ Codex round-trip confirmed 2026-02-22
 
 Integration guide:
 - `docs/plans/2026-02-22-session-bus-agent-integration.md`
@@ -122,3 +122,10 @@ Poll:
 3. Add correlation IDs and reply-to semantics.
 4. Add event streaming transport (SSE/WebSocket) for push delivery.
 5. Add policy hooks for max rate, allowed peer matrix, and audit log.
+
+## Future: Broadcast + Gather (Deliberation Pattern)
+Fan out a single message to multiple sessions simultaneously, then aggregate responses.
+Use case: design decision points — ask Claude, Gemini, Ollama, and a second Claude instance
+the same question and collect divergent perspectives before committing to an approach.
+Needs: `POST /api/session-bus/broadcast` with a list of target session IDs.
+Not needed until a second provider (Gemini, Ollama) is actually wired up.

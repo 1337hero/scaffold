@@ -1,7 +1,6 @@
-import { RiInbox2Line, RiLayoutGridLine, RiMapPinLine, RiSearchLine, RiNodeTree } from "@remixicon/react"
+import { RiDashboardLine, RiInbox2Line, RiBookOpenLine, RiSearchLine } from "@remixicon/react"
 
-export const desk = { id: "desk", icon: RiLayoutGridLine, label: "Desk" }
-export const inbox = { id: "inbox", icon: RiInbox2Line, label: "Inbox" }
-export const map = { id: "map", icon: RiMapPinLine, label: "Map" }
-export const search = { id: "search", icon: RiSearchLine, label: "Search" }
-export const graph = { id: "graph", icon: RiNodeTree, label: "Graph" }
+export const dashboard = { id: "dashboard", path: "#/dashboard", icon: RiDashboardLine, label: "Dashboard" }
+export const inbox = { id: "inbox", path: "#/inbox", icon: RiInbox2Line, label: "Inbox" }
+export const notebooks = { id: "notebooks", path: "#/notebooks", icon: RiBookOpenLine, label: "Notebooks" }
+export const search = { id: "search", path: "#/search", icon: RiSearchLine, label: "Search" }

@@ -35,9 +35,14 @@ type domainDetailResponse struct {
 }
 
 type domainPatchRequest struct {
+	Name       *string `json:"name"`
 	StatusLine *string `json:"status_line"`
 	Briefing   *string `json:"briefing"`
 	Importance *int    `json:"importance"`
+	Icon       *string `json:"icon"`
+	Color      *string `json:"color"`
+	Position   *int    `json:"position"`
+	Status     *string `json:"status"`
 }
 
 type dumpResponse struct {
@@ -89,6 +94,15 @@ func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
 	})
 
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleDomainsHealth(w http.ResponseWriter, r *http.Request) {
+	health, err := s.db.DomainHealthAll()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, health)
 }
 
 func (s *Server) handleDomainDetail(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +160,57 @@ func (s *Server) handleDomainDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+type domainCreateRequest struct {
+	Name       string `json:"name"`
+	Importance int    `json:"importance"`
+	Icon       string `json:"icon"`
+	Color      string `json:"color"`
+}
+
+func (s *Server) handleDomainCreate(w http.ResponseWriter, r *http.Request) {
+	var req domainCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+
+	if strings.TrimSpace(req.Name) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+		return
+	}
+	if req.Importance < 1 || req.Importance > 5 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "importance must be between 1 and 5"})
+		return
+	}
+
+	domain, err := s.db.CreateDomain(req.Name, req.Importance, req.Icon, req.Color)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, domain)
+}
+
+func (s *Server) handleDomainDelete(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimSpace(r.PathValue("id"))
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid domain id"})
+		return
+	}
+
+	if err := s.db.ArchiveDomain(id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
+			return
+		}
+		writeInternalError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"id": idStr, "archived": "true"})
+}
+
 func (s *Server) handleDomainPatch(w http.ResponseWriter, r *http.Request) {
 	idStr := strings.TrimSpace(r.PathValue("id"))
 	id, err := strconv.Atoi(idStr)
@@ -159,7 +224,17 @@ func (s *Server) handleDomainPatch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if req.StatusLine == nil && req.Briefing == nil && req.Importance == nil {
+	opts := db.DomainUpdateOpts{
+		Name:       req.Name,
+		StatusLine: req.StatusLine,
+		Briefing:   req.Briefing,
+		Importance: req.Importance,
+		Icon:       req.Icon,
+		Color:      req.Color,
+		Position:   req.Position,
+		Status:     req.Status,
+	}
+	if opts == (db.DomainUpdateOpts{}) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no fields to update"})
 		return
 	}
@@ -168,7 +243,7 @@ func (s *Server) handleDomainPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.db.UpdateDomain(id, req.StatusLine, req.Briefing, req.Importance); err != nil {
+	if err := s.db.UpdateDomain(id, opts); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
 			return

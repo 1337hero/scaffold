@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { calendarQuery } from '@/api/queries.js'
 
-export function CalendarEvents() {
+const CalendarEvents = () => {
   const { data: events = [] } = useQuery(calendarQuery)
   if (!events.length) return null
 
@@ -16,3 +16,5 @@ export function CalendarEvents() {
     </div>
   )
 }
+
+export default CalendarEvents

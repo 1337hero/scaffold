@@ -141,6 +141,96 @@ func (db *DB) SearchHybrid(query string, embedding []float32, embeddingModel str
 	return results, nil
 }
 
+type SearchResult struct {
+	ID       string        `json:"id"`
+	Type     string        `json:"type"`
+	Title    string        `json:"title"`
+	Snippet  string        `json:"snippet"`
+	DomainID sql.NullInt64 `json:"domain_id"`
+	Status   string        `json:"status"`
+}
+
+func (db *DB) SearchAll(query string, domainID *int, entityType string, status string) ([]SearchResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, fmt.Errorf("search query must not be empty")
+	}
+
+	like := "%" + query + "%"
+
+	var parts []string
+	var args []any
+
+	if entityType == "" || entityType == "goal" {
+		q := `SELECT id, 'goal' AS type, title, COALESCE(context, '') AS snippet, domain_id, status
+		      FROM goals WHERE (title LIKE ? OR context LIKE ?)`
+		a := []any{like, like}
+		if domainID != nil {
+			q += ` AND domain_id = ?`
+			a = append(a, *domainID)
+		}
+		if status != "" {
+			q += ` AND status = ?`
+			a = append(a, status)
+		}
+		parts = append(parts, q)
+		args = append(args, a...)
+	}
+
+	if entityType == "" || entityType == "task" {
+		q := `SELECT id, 'task' AS type, title, COALESCE(context, '') AS snippet, domain_id, status
+		      FROM tasks WHERE (title LIKE ? OR context LIKE ?)`
+		a := []any{like, like}
+		if domainID != nil {
+			q += ` AND domain_id = ?`
+			a = append(a, *domainID)
+		}
+		if status != "" {
+			q += ` AND status = ?`
+			a = append(a, status)
+		}
+		parts = append(parts, q)
+		args = append(args, a...)
+	}
+
+	if entityType == "" || entityType == "note" {
+		q := `SELECT id, 'note' AS type, title, COALESCE(content, '') AS snippet, domain_id, '' AS status
+		      FROM notes WHERE (title LIKE ? OR content LIKE ?)`
+		a := []any{like, like}
+		if domainID != nil {
+			q += ` AND domain_id = ?`
+			a = append(a, *domainID)
+		}
+		parts = append(parts, q)
+		args = append(args, a...)
+	}
+
+	if len(parts) == 0 {
+		return []SearchResult{}, nil
+	}
+
+	fullQuery := strings.Join(parts, " UNION ALL ") + " LIMIT 50"
+
+	rows, err := db.conn.Query(fullQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("search all: %w", err)
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+	for rows.Next() {
+		var r SearchResult
+		if err := rows.Scan(&r.ID, &r.Type, &r.Title, &r.Snippet, &r.DomainID, &r.Status); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+	if results == nil {
+		results = []SearchResult{}
+	}
+	return results, rows.Err()
+}
+
 func escapeFTSQuery(query string) string {
 	fields := strings.Fields(query)
 	if len(fields) == 0 {

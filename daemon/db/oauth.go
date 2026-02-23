@@ -22,7 +22,7 @@ func (db *DB) SaveOAuthToken(provider string, token *OAuthToken) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(provider) DO UPDATE SET
 		   access_token  = excluded.access_token,
-		   refresh_token = excluded.refresh_token,
+		   refresh_token = COALESCE(NULLIF(excluded.refresh_token, ''), oauth_tokens.refresh_token),
 		   token_type    = excluded.token_type,
 		   expiry        = excluded.expiry,
 		   updated_at    = excluded.updated_at`,

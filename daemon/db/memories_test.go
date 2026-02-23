@@ -271,8 +271,8 @@ func TestPersistTriageResult(t *testing.T) {
 	if capture == nil {
 		t.Fatal("expected capture")
 	}
-	if capture.Processed != 1 {
-		t.Fatalf("expected processed=1, got %d", capture.Processed)
+	if capture.Processed != 0 {
+		t.Fatalf("expected processed=0 (triage no longer marks processed), got %d", capture.Processed)
 	}
 	if !capture.MemoryID.Valid || capture.MemoryID.String != "mem-persist" {
 		t.Fatalf("expected memory_id mem-persist, got %+v", capture.MemoryID)
