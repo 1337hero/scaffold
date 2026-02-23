@@ -9,6 +9,11 @@ providers:
     api_key_env: ANTHROPIC_API_KEY
     timeout_seconds: 30
 
+  openai_main:
+    type: openai
+    api_key_env: OPENAI_API_KEY
+    timeout_seconds: 30
+
   # Example specialist local provider. Keep this for semantic/offline tasks.
   # Enable tool use only if your local endpoint supports OpenAI tool calling.
   ollama_specialist:
@@ -20,16 +25,16 @@ providers:
 
 profiles:
   respond_default:
-    provider: anthropic_main
-    model: claude-haiku-4-5
+    provider: openai_main
+    model: gpt-5-mini
 
   triage_default:
-    provider: anthropic_main
-    model: claude-haiku-4-5
+    provider: openai_main
+    model: gpt-5-mini
 
   cortex_default:
-    provider: anthropic_main
-    model: claude-haiku-4-5
+    provider: openai_main
+    model: gpt-5-mini
 
   # Specialist profile for semantic maintenance.
   ollama_semantic:

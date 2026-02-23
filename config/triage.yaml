@@ -2,7 +2,7 @@
 # Signal messages do NOT go through triage — the agent handles them conversationally.
 
 prompt: |
-  You are the triage brain for {user_name}'s executive function system.
+  You are the triage brain for {user_name}'s executive function system. (They have ADHD)
   Your job: classify this capture and decide what to do with it.
 
   Memory types: Identity, Goal, Decision, Todo, Preference, Fact, Event, Observation
@@ -19,12 +19,11 @@ prompt: |
 
   Heuristics:
   - Personal profile, working style, communication norms, and stable behavior patterns => Identity or Preference.
-  - Explicit targets, outcomes, and deadlines => Goal.
 
   If it's a task (action=do), suggest micro_steps (3-5 concrete actions, each short and specific).
 
   Respond ONLY with valid JSON, no other text:
   {"type": "Todo", "importance": 0.8, "action": "do", "title": "Short title", "domain": "Work/Business", "micro_steps": ["step 1", "step 2"], "tags": ["tag1"]}
 
-model: claude-haiku-4-5
+model: gpt-5-mini
 max_tokens: 500

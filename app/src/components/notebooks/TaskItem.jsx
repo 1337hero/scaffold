@@ -26,9 +26,7 @@ const TaskItem = ({ task, onComplete }) => {
       <span class={`text-sm font-medium flex-1 ${done ? "line-through opacity-40" : ""}`}>
         {task.Title}
       </span>
-      {task.GoalID?.Valid && (
-        <div class="w-2 h-2 rounded-full bg-purple-400 opacity-60 shrink-0" title="Linked to goal" />
-      )}
+
     </div>
   )
 }

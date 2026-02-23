@@ -14,32 +14,42 @@ import (
 )
 
 type openAIClient struct {
-	baseURL          string
-	apiKey           string
-	httpClient       *http.Client
-	supportsToolUse  bool
-	nativeJSONFormat bool
+	baseURL                string
+	apiKey                 string
+	httpClient             *http.Client
+	supportsToolUse        bool
+	nativeJSONFormat       bool
+	useMaxCompletionTokens bool
 }
 
-func newOpenAIClient(baseURL, apiKey string, timeout time.Duration, supportsToolUse, nativeJSONFormat bool) *openAIClient {
+func newOpenAIClient(baseURL, apiKey string, timeout time.Duration, supportsToolUse, nativeJSONFormat, useMaxCompletionTokens bool) *openAIClient {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
 	return &openAIClient{
-		baseURL:          baseURL,
-		apiKey:           strings.TrimSpace(apiKey),
-		httpClient:       &http.Client{Timeout: timeout},
-		supportsToolUse:  supportsToolUse,
-		nativeJSONFormat: nativeJSONFormat,
+		baseURL:                baseURL,
+		apiKey:                 strings.TrimSpace(apiKey),
+		httpClient:             &http.Client{Timeout: timeout},
+		supportsToolUse:        supportsToolUse,
+		nativeJSONFormat:       nativeJSONFormat,
+		useMaxCompletionTokens: useMaxCompletionTokens,
+	}
+}
+
+func (c *openAIClient) applyMaxTokens(req *openAIChatCompletionRequest, maxTokens int) {
+	if c.useMaxCompletionTokens {
+		req.MaxCompletionTokens = maxTokens
+	} else {
+		req.MaxTokens = maxTokens
 	}
 }
 
 func (c *openAIClient) CompletionJSON(ctx context.Context, model, systemPrompt, userPrompt string, maxTokens int64) (string, error) {
 	req := openAIChatCompletionRequest{
-		Model:     strings.TrimSpace(model),
-		MaxTokens: int(maxTokens),
+		Model: strings.TrimSpace(model),
 	}
+	c.applyMaxTokens(&req, int(maxTokens))
 	if system := strings.TrimSpace(systemPrompt); system != "" {
 		req.Messages = append(req.Messages, openAIChatMessage{
 			Role:    "system",
@@ -63,9 +73,9 @@ func (c *openAIClient) CompletionJSON(ctx context.Context, model, systemPrompt, 
 
 func (c *openAIClient) CompletionText(ctx context.Context, model, systemPrompt, userPrompt string, maxTokens int64) (string, error) {
 	req := openAIChatCompletionRequest{
-		Model:     strings.TrimSpace(model),
-		MaxTokens: int(maxTokens),
+		Model: strings.TrimSpace(model),
 	}
+	c.applyMaxTokens(&req, int(maxTokens))
 	if system := strings.TrimSpace(systemPrompt); system != "" {
 		req.Messages = append(req.Messages, openAIChatMessage{
 			Role:    "system",
@@ -90,9 +100,9 @@ func (c *openAIClient) Respond(ctx context.Context, req ToolUseRequest) (*ToolUs
 	}
 
 	chatReq := openAIChatCompletionRequest{
-		Model:     strings.TrimSpace(req.Model),
-		MaxTokens: req.MaxTokens,
+		Model: strings.TrimSpace(req.Model),
 	}
+	c.applyMaxTokens(&chatReq, req.MaxTokens)
 	if system := strings.TrimSpace(req.SystemPrompt); system != "" {
 		chatReq.Messages = append(chatReq.Messages, openAIChatMessage{
 			Role:    "system",
@@ -194,12 +204,13 @@ func (c *openAIClient) Respond(ctx context.Context, req ToolUseRequest) (*ToolUs
 }
 
 type openAIChatCompletionRequest struct {
-	Model          string              `json:"model"`
-	Messages       []openAIChatMessage `json:"messages"`
-	MaxTokens      int                 `json:"max_tokens,omitempty"`
-	Tools          []openAIChatTool    `json:"tools,omitempty"`
-	ToolChoice     string              `json:"tool_choice,omitempty"`
-	ResponseFormat map[string]string   `json:"response_format,omitempty"`
+	Model                 string              `json:"model"`
+	Messages              []openAIChatMessage `json:"messages"`
+	MaxTokens             int                 `json:"max_tokens,omitempty"`
+	MaxCompletionTokens   int                 `json:"max_completion_tokens,omitempty"`
+	Tools                 []openAIChatTool    `json:"tools,omitempty"`
+	ToolChoice            string              `json:"tool_choice,omitempty"`
+	ResponseFormat        map[string]string   `json:"response_format,omitempty"`
 }
 
 type openAIChatMessage struct {

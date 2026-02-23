@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { createTask, createNote, createGoal } from "@/api/queries.js"
+import NoteModal from "./NoteModal.jsx"
 
 const InlineCreate = ({ domainId, type, compact }) => {
   const [open, setOpen] = useState(false)
@@ -8,6 +9,7 @@ const InlineCreate = ({ domainId, type, compact }) => {
   const [dueDate, setDueDate] = useState("")
   const [content, setContent] = useState("")
   const [goalType, setGoalType] = useState("binary")
+  const [noteModalOpen, setNoteModalOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const mutation = useMutation({
@@ -41,6 +43,35 @@ const InlineCreate = ({ domainId, type, compact }) => {
   const label = type.charAt(0).toUpperCase() + type.slice(1)
   const inputClass =
     "bg-black/5 border border-app-border rounded-xl px-3 py-2 text-sm outline-none focus:border-app-ink/30 transition-all w-full"
+
+  if (type === "note") {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setNoteModalOpen(true)}
+          class="text-[10px] mono uppercase font-bold text-emerald-600 hover:underline cursor-pointer"
+        >
+          + Add Note
+        </button>
+        {noteModalOpen && (
+          <NoteModal
+            note={null}
+            domainId={domainId}
+            onClose={() => setNoteModalOpen(false)}
+            onSave={({ title, content }) => {
+              mutation.mutate({
+                title: title.trim(),
+                domain_id: Number(domainId),
+                ...(content && { content }),
+              })
+              setNoteModalOpen(false)
+            }}
+          />
+        )}
+      </>
+    )
+  }
 
   if (!open) {
     return (
@@ -87,16 +118,6 @@ const InlineCreate = ({ domainId, type, compact }) => {
           <option value="measurable">Measurable</option>
           <option value="habit">Habit</option>
         </select>
-      )}
-
-      {type === "note" && (
-        <input
-          type="text"
-          value={content}
-          onInput={(e) => setContent(e.currentTarget.value)}
-          class={inputClass}
-          placeholder="Content (optional)..."
-        />
       )}
 
       <div class="flex items-center gap-2 justify-end">

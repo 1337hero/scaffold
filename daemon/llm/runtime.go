@@ -72,11 +72,12 @@ func (p *externalProvider) HealthCheck() HealthChecker {
 }
 
 type openAIProvider struct {
-	baseURL          string
-	apiKey           string
-	timeout          time.Duration
-	supportsToolUse  bool
-	nativeJSONFormat bool
+	baseURL                 string
+	apiKey                  string
+	timeout                 time.Duration
+	supportsToolUse         bool
+	nativeJSONFormat        bool
+	useMaxCompletionTokens  bool
 }
 
 func (p *openAIProvider) SupportsToolUse() bool {
@@ -95,12 +96,12 @@ func (p *openAIProvider) NewResponder() (ToolUseResponder, error) {
 	if !p.supportsToolUse {
 		return nil, fmt.Errorf("provider does not support tool use")
 	}
-	client := newOpenAIClient(p.baseURL, p.apiKey, p.timeout, p.supportsToolUse, p.nativeJSONFormat)
+	client := newOpenAIClient(p.baseURL, p.apiKey, p.timeout, p.supportsToolUse, p.nativeJSONFormat, p.useMaxCompletionTokens)
 	return client, nil
 }
 
 func (p *openAIProvider) NewCompletion() (CompletionClient, error) {
-	client := newOpenAIClient(p.baseURL, p.apiKey, p.timeout, p.supportsToolUse, p.nativeJSONFormat)
+	client := newOpenAIClient(p.baseURL, p.apiKey, p.timeout, p.supportsToolUse, p.nativeJSONFormat, p.useMaxCompletionTokens)
 	return client, nil
 }
 
@@ -169,11 +170,12 @@ func newProvider(cfg appconfig.LLMProviderConfig, factories map[string]ProviderF
 			return nil, fmt.Errorf("api key is required for provider type %q", providerType)
 		}
 		return &openAIProvider{
-			baseURL:          baseURL,
-			apiKey:           apiKey,
-			timeout:          timeout,
-			supportsToolUse:  true,
-			nativeJSONFormat: true,
+			baseURL:                baseURL,
+			apiKey:                 apiKey,
+			timeout:                timeout,
+			supportsToolUse:        true,
+			nativeJSONFormat:       true,
+			useMaxCompletionTokens: true,
 		}, nil
 	case "openai_compatible":
 		baseURL := strings.TrimSpace(cfg.BaseURL)
