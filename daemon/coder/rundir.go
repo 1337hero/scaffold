@@ -21,40 +21,62 @@ type RunStatus struct {
 	Error       string     `json:"error,omitempty"`
 }
 
-func initRunDir(base, runID string) (string, error) {
+// RunDir is an os.Root-anchored handle to a coder run directory.
+// All I/O is kernel-enforced to stay within the run dir.
+type RunDir struct {
+	root    *os.Root
+	AbsPath string
+}
+
+func initRunDir(base, runID string) (*RunDir, error) {
 	path := filepath.Join(base, runID)
 	if err := os.MkdirAll(filepath.Join(path, "steps"), 0o750); err != nil {
-		return "", fmt.Errorf("init run dir: %w", err)
+		return nil, fmt.Errorf("init run dir: %w", err)
 	}
-	return path, nil
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, fmt.Errorf("open run dir root: %w", err)
+	}
+	return &RunDir{root: root, AbsPath: path}, nil
 }
 
-func stepDir(runDir string, n int, name string) string {
-	return filepath.Join(runDir, "steps", fmt.Sprintf("%d-%s", n+1, name))
+func (r *RunDir) Close() error {
+	if r == nil || r.root == nil {
+		return nil
+	}
+	return r.root.Close()
 }
 
-func writeTaskFile(runDir, task string) {
-	_ = os.WriteFile(filepath.Join(runDir, "task.md"), []byte(task), 0o640)
+func (r *RunDir) stepRelDir(n int, name string) string {
+	return filepath.Join("steps", fmt.Sprintf("%d-%s", n+1, name))
 }
 
-func writeStatusFile(runDir string, status RunStatus) {
+func (r *RunDir) InitStepDir(n int, name string) (string, error) {
+	rel := r.stepRelDir(n, name)
+	if err := r.root.MkdirAll(rel, 0o750); err != nil {
+		return "", fmt.Errorf("init step dir: %w", err)
+	}
+	return rel, nil
+}
+
+func (r *RunDir) WriteTask(task string) {
+	_ = r.root.WriteFile("task.md", []byte(task), 0o640)
+}
+
+func (r *RunDir) WriteStatus(status RunStatus) {
 	data, err := json.MarshalIndent(status, "", "  ")
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(filepath.Join(runDir, "status.json"), data, 0o640)
+	_ = r.root.WriteFile("status.json", data, 0o640)
 }
 
-func initStepDir(dir string) error {
-	return os.MkdirAll(dir, 0o750)
+func (r *RunDir) WritePrompt(stepRel, prompt string) {
+	_ = r.root.WriteFile(filepath.Join(stepRel, "prompt.md"), []byte(prompt), 0o640)
 }
 
-func writePromptFile(dir, prompt string) {
-	_ = os.WriteFile(filepath.Join(dir, "prompt.md"), []byte(prompt), 0o640)
-}
-
-func appendStepEvent(dir string, data []byte) {
-	f, err := os.OpenFile(filepath.Join(dir, "events.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
+func (r *RunDir) AppendEvent(stepRel string, data []byte) {
+	f, err := r.root.OpenFile(filepath.Join(stepRel, "events.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
 	if err != nil {
 		return
 	}
@@ -62,14 +84,14 @@ func appendStepEvent(dir string, data []byte) {
 	_, _ = f.Write(append(data, '\n'))
 }
 
-func readStepOutput(dir string) string {
-	data, err := os.ReadFile(filepath.Join(dir, "output.md"))
+func (r *RunDir) ReadOutput(stepRel string) string {
+	data, err := r.root.ReadFile(filepath.Join(stepRel, "output.md"))
 	if err != nil || len(data) == 0 {
 		return ""
 	}
 	return string(data)
 }
 
-func writeStepOutput(dir, content string) {
-	_ = os.WriteFile(filepath.Join(dir, "output.md"), []byte(content), 0o640)
+func (r *RunDir) WriteOutput(stepRel, content string) {
+	_ = r.root.WriteFile(filepath.Join(stepRel, "output.md"), []byte(content), 0o640)
 }

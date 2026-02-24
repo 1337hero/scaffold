@@ -20,20 +20,22 @@ type ToolHandler func(ctx context.Context, database *db.DB, b *Brain, params jso
 
 func defaultToolRegistry() map[string]ToolHandler {
 	return map[string]ToolHandler{
-		"save_to_inbox":        handleSaveToInbox,
-		"search_memories":      handleSearchMemories,
-		"get_inbox":            handleGetInbox,
-		"get_calendar_events":  handleGetCalendarEvents,
-		"send_to_session":      handleSendToSession,
-		"list_sessions":        handleListSessions,
-		"create_goal":          handleCreateGoal,
-		"create_task":          handleCreateTask,
-		"create_note":          handleCreateNote,
-		"update_goal":          handleUpdateGoal,
-		"update_task":          handleUpdateTask,
-		"list_goals":           handleListGoals,
-		"list_tasks":           handleListTasks,
-		"dispatch_code_task":   handleDispatchCodeTask,
+		"save_to_inbox":       handleSaveToInbox,
+		"get_desk":            handleGetDesk,
+		"search_memories":     handleSearchMemories,
+		"update_desk_item":    handleUpdateDeskItem,
+		"get_inbox":           handleGetInbox,
+		"get_calendar_events": handleGetCalendarEvents,
+		"send_to_session":     handleSendToSession,
+		"list_sessions":       handleListSessions,
+		"create_goal":         handleCreateGoal,
+		"create_task":         handleCreateTask,
+		"create_note":         handleCreateNote,
+		"update_goal":         handleUpdateGoal,
+		"update_task":         handleUpdateTask,
+		"list_goals":          handleListGoals,
+		"list_tasks":          handleListTasks,
+		"dispatch_code_task":  handleDispatchCodeTask,
 	}
 }
 
@@ -210,25 +212,9 @@ func handleSearchMemories(ctx context.Context, database *db.DB, b *Brain, params
 		}
 	}
 
-	memories, err := database.ListByImportance(200)
+	results, err := database.SearchMemoriesLike(p.Query, requestedType, topK)
 	if err != nil {
 		return "", fmt.Errorf("search_memories: %w", err)
-	}
-
-	query := strings.ToLower(p.Query)
-	var results []db.ScoredMemory
-	for _, m := range memories {
-		if requestedType != "" && !strings.EqualFold(strings.TrimSpace(m.Type), requestedType) {
-			continue
-		}
-		if strings.Contains(strings.ToLower(m.Title), query) ||
-			strings.Contains(strings.ToLower(m.Content), query) ||
-			strings.Contains(strings.ToLower(m.Tags), query) {
-			results = append(results, db.ScoredMemory{Memory: m})
-			if len(results) >= topK {
-				break
-			}
-		}
 	}
 
 	if len(results) == 0 {
@@ -360,9 +346,14 @@ func markSearchAccess(database *db.DB, results []db.ScoredMemory) {
 		return
 	}
 
+	seen := make(map[string]struct{}, len(results))
 	ids := make([]string, 0, len(results))
 	for _, result := range results {
 		if id := strings.TrimSpace(result.ID); id != "" {
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
 			ids = append(ids, id)
 		}
 	}

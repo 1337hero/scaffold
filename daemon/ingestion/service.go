@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -44,6 +45,7 @@ type Service struct {
 	brain        *brain.Brain
 	dir          string
 	pollInterval time.Duration
+	ingestMu     sync.Mutex
 }
 
 func New(database *db.DB, b *brain.Brain, dir string, pollInterval time.Duration) (*Service, error) {
@@ -110,6 +112,11 @@ func (s *Service) Upload(_ context.Context, filename string, r io.Reader) (strin
 }
 
 func (s *Service) IngestNow(ctx context.Context) error {
+	if !s.ingestMu.TryLock() {
+		return nil
+	}
+	defer s.ingestMu.Unlock()
+
 	files, err := s.scanFiles()
 	if err != nil {
 		return err
@@ -211,7 +218,8 @@ func (s *Service) processFile(ctx context.Context, path string) error {
 		}
 
 		chunkHash := sha256Hex([]byte(chunk))
-		done, err := s.db.IsIngestionChunkCompleted(chunkHash)
+		chunkKey := scopedChunkHash(fileHash, chunkHash)
+		done, err := s.db.IsIngestionChunkCompleted(chunkKey)
 		if err != nil {
 			return fmt.Errorf("check chunk completion: %w", err)
 		}
@@ -232,7 +240,7 @@ func (s *Service) processFile(ctx context.Context, path string) error {
 			errField = sql.NullString{String: ingestErr.Error(), Valid: true}
 		}
 		if err := s.db.UpsertIngestionChunk(db.IngestionChunk{
-			ChunkHash:  chunkHash,
+			ChunkHash:  chunkKey,
 			FilePath:   path,
 			FileHash:   fileHash,
 			ChunkIndex: idx,
@@ -290,6 +298,10 @@ func (s *Service) processFile(ctx context.Context, path string) error {
 	}
 
 	return nil
+}
+
+func scopedChunkHash(fileHash, chunkHash string) string {
+	return fileHash + ":" + chunkHash
 }
 
 func (s *Service) loadText(ctx context.Context, path string) (string, []byte, error) {

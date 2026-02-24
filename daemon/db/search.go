@@ -141,6 +141,52 @@ func (db *DB) SearchHybrid(query string, embedding []float32, embeddingModel str
 	return results, nil
 }
 
+func (db *DB) SearchMemoriesLike(query string, memoryType string, limit int) ([]ScoredMemory, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, fmt.Errorf("search query must not be empty")
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	like := "%" + strings.ToLower(query) + "%"
+	args := []any{like, like, like}
+	sqlText := `SELECT id, type, content, title, importance, source, tags,
+	                created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id
+	            FROM memories
+	            WHERE suppressed_at IS NULL
+	              AND (LOWER(title) LIKE ? OR LOWER(content) LIKE ? OR LOWER(tags) LIKE ?)`
+	if mt := strings.TrimSpace(memoryType); mt != "" {
+		sqlText += ` AND type = ? COLLATE NOCASE`
+		args = append(args, mt)
+	}
+	sqlText += ` ORDER BY importance DESC, created_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := db.conn.Query(sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("memory like search: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]ScoredMemory, 0, limit)
+	for rows.Next() {
+		var sm ScoredMemory
+		var tags, accessedAt sql.NullString
+		if err := rows.Scan(
+			&sm.ID, &sm.Type, &sm.Content, &sm.Title, &sm.Importance, &sm.Source, &tags,
+			&sm.CreatedAt, &sm.UpdatedAt, &accessedAt, &sm.AccessCount, &sm.Archived, &sm.SuppressedAt, &sm.DomainID,
+		); err != nil {
+			return nil, err
+		}
+		sm.Tags = tags.String
+		sm.AccessedAt = accessedAt.String
+		results = append(results, sm)
+	}
+	return results, rows.Err()
+}
+
 type SearchResult struct {
 	ID       string        `json:"id"`
 	Type     string        `json:"type"`

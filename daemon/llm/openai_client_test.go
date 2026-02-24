@@ -23,7 +23,7 @@ func TestCompletionJSON_NativeFormat(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newOpenAIClient(srv.URL, "test-key", 0, false, true)
+	client := newOpenAIClient(srv.URL, "test-key", 0, false, true, false)
 	result, err := client.CompletionJSON(context.Background(), "gpt-4", "system", "user prompt", 100)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -48,7 +48,7 @@ func TestCompletionJSON_NonNativeFormat(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newOpenAIClient(srv.URL, "test-key", 0, false, false)
+	client := newOpenAIClient(srv.URL, "test-key", 0, false, false, false)
 	_, err := client.CompletionJSON(context.Background(), "gpt-4", "system", "user prompt", 100)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -68,7 +68,7 @@ func TestCompletionText_TrimmedOutput(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newOpenAIClient(srv.URL, "test-key", 0, false, false)
+	client := newOpenAIClient(srv.URL, "test-key", 0, false, false, false)
 	result, err := client.CompletionText(context.Background(), "gpt-4", "system", "user prompt", 100)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -100,7 +100,7 @@ func TestRespond_ToolCalls(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newOpenAIClient(srv.URL, "test-key", 0, true, false)
+	client := newOpenAIClient(srv.URL, "test-key", 0, true, false, false)
 	resp, err := client.Respond(context.Background(), ToolUseRequest{
 		Model:     "gpt-4",
 		MaxTokens: 100,
@@ -135,7 +135,7 @@ func TestRespond_ToolCalls(t *testing.T) {
 }
 
 func TestRespond_ToolUseNotSupported(t *testing.T) {
-	client := newOpenAIClient("http://unused", "key", 0, false, false)
+	client := newOpenAIClient("http://unused", "key", 0, false, false, false)
 	_, err := client.Respond(context.Background(), ToolUseRequest{Model: "gpt-4"})
 	if err == nil || !strings.Contains(err.Error(), "does not support tool use") {
 		t.Fatalf("expected tool use error, got: %v", err)
@@ -155,7 +155,7 @@ func TestRespond_ToolResultsInHistory(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newOpenAIClient(srv.URL, "test-key", 0, true, false)
+	client := newOpenAIClient(srv.URL, "test-key", 0, true, false, false)
 	_, err := client.Respond(context.Background(), ToolUseRequest{
 		Model:     "gpt-4",
 		MaxTokens: 100,
@@ -210,7 +210,7 @@ func TestRespond_ToolResultErrorPrefix(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newOpenAIClient(srv.URL, "test-key", 0, true, false)
+	client := newOpenAIClient(srv.URL, "test-key", 0, true, false, false)
 	_, err := client.Respond(context.Background(), ToolUseRequest{
 		Model:     "gpt-4",
 		MaxTokens: 100,
@@ -254,7 +254,7 @@ func TestChatCompletion_ServerError500(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newOpenAIClient(srv.URL, "test-key", 0, false, false)
+	client := newOpenAIClient(srv.URL, "test-key", 0, false, false, false)
 	_, err := client.CompletionText(context.Background(), "gpt-4", "", "hello", 100)
 	if err == nil {
 		t.Fatal("expected error for 500 status")
@@ -273,7 +273,7 @@ func TestChatCompletion_QuotaExceeded429(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newOpenAIClient(srv.URL, "test-key", 0, false, false)
+	client := newOpenAIClient(srv.URL, "test-key", 0, false, false, false)
 	_, err := client.CompletionText(context.Background(), "gpt-4", "", "hello", 100)
 	if err == nil {
 		t.Fatal("expected error for 429 status")
@@ -289,7 +289,7 @@ func TestChatCompletion_EmptyChoices(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newOpenAIClient(srv.URL, "test-key", 0, false, false)
+	client := newOpenAIClient(srv.URL, "test-key", 0, false, false, false)
 	_, err := client.CompletionText(context.Background(), "gpt-4", "", "hello", 100)
 	if err == nil {
 		t.Fatal("expected error for empty choices")
@@ -311,7 +311,7 @@ func TestChatCompletion_AuthorizationHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := newOpenAIClient(srv.URL, "sk-secret", 0, false, false)
+	client := newOpenAIClient(srv.URL, "sk-secret", 0, false, false, false)
 	client.CompletionText(context.Background(), "gpt-4", "", "hello", 100)
 	if gotAuth != "Bearer sk-secret" {
 		t.Fatalf("got Authorization %q, want %q", gotAuth, "Bearer sk-secret")

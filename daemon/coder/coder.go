@@ -38,10 +38,10 @@ type Config struct {
 
 // Coder listens for code_task messages on the session bus and runs chains.
 type Coder struct {
-	bus    *sessionbus.Bus
-	hub    *SSEHub
-	sem    chan struct{} // semaphore(1) — one chain at a time
-	cfg    Config
+	bus *sessionbus.Bus
+	hub *SSEHub
+	sem chan struct{} // semaphore(1) — one chain at a time
+	cfg Config
 
 	mu     sync.RWMutex
 	active *Task
@@ -50,19 +50,19 @@ type Coder struct {
 
 // Task tracks a running or completed chain.
 type Task struct {
-	ID        string     `json:"id"`
-	Chain     string     `json:"chain"`
-	TaskDesc  string     `json:"task"`
-	CWD       string     `json:"cwd"`
-	Status    string     `json:"status"` // running, done, failed, cancelled
-	StartedAt time.Time  `json:"started_at"`
-	EndedAt   *time.Time `json:"ended_at,omitempty"`
-	Steps     []StepInfo `json:"steps"`
-	Summary   string     `json:"summary,omitempty"`
-	FailedStep string    `json:"failed_step,omitempty"`
-	Error     string     `json:"error,omitempty"`
-	RunDir    string     `json:"run_dir"`
-	ReplyTo   string     `json:"-"`
+	ID         string     `json:"id"`
+	Chain      string     `json:"chain"`
+	TaskDesc   string     `json:"task"`
+	CWD        string     `json:"cwd"`
+	Status     string     `json:"status"` // running, done, failed, cancelled
+	StartedAt  time.Time  `json:"started_at"`
+	EndedAt    *time.Time `json:"ended_at,omitempty"`
+	Steps      []StepInfo `json:"steps"`
+	Summary    string     `json:"summary,omitempty"`
+	FailedStep string     `json:"failed_step,omitempty"`
+	Error      string     `json:"error,omitempty"`
+	RunDir     string     `json:"run_dir"`
+	ReplyTo    string     `json:"-"`
 
 	cancel context.CancelFunc
 }
@@ -184,7 +184,11 @@ func (c *Coder) loop(ctx context.Context) {
 				return
 			}
 			log.Printf("coder: poll error: %v", err)
-			time.Sleep(2 * time.Second)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+			}
 			continue
 		}
 
@@ -231,7 +235,16 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 
 	cwd := strings.TrimSpace(msg.CWD)
 	if cwd == "" {
-		cwd = "/home/mikekey/Builds/scaffold"
+		if len(c.cfg.AllowedPaths) > 0 {
+			cwd = c.cfg.AllowedPaths[0]
+		} else {
+			wd, err := os.Getwd()
+			if err != nil {
+				log.Printf("coder: resolve cwd: %v", err)
+				return
+			}
+			cwd = wd
+		}
 	}
 	if !c.isAllowedPath(cwd) {
 		log.Printf("coder: cwd %q not in allowlist", cwd)
@@ -282,10 +295,15 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 		log.Printf("coder: init run dir: %v", err)
 		return
 	}
-	task.RunDir = runDir
+	defer func() {
+		if err := runDir.Close(); err != nil {
+			log.Printf("coder: close run dir root: %v", err)
+		}
+	}()
+	task.RunDir = runDir.AbsPath
 
-	writeTaskFile(runDir, msg.Task)
-	writeStatusFile(runDir, RunStatus{
+	runDir.WriteTask(msg.Task)
+	runDir.WriteStatus(RunStatus{
 		Chain:     chain,
 		Task:      msg.Task,
 		Status:    "running",
@@ -311,17 +329,17 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 	prev := ""
 
 	for i, step := range chainDef.Steps {
-		dir := stepDir(runDir, i, step.Name)
-		if err := initStepDir(dir); err != nil {
+		stepRel, err := runDir.InitStepDir(i, step.Name)
+		if err != nil {
 			log.Printf("coder: init step dir: %v", err)
 			c.failChain(ctx, task, runDir, step.Name, "failed to create step directory", started, msg.ReplyTo)
 			return
 		}
 
-		prompt := renderPrompt(step.Prompt, msg.Task, prev, runDir)
+		prompt := renderPrompt(step.Prompt, msg.Task, prev, runDir.AbsPath)
 		stepSkill := c.loadSkill(step.Name)
 		fullPrompt := combineSkillAndPrompt(baseSkill, stepSkill, prompt)
-		writePromptFile(dir, fullPrompt)
+		runDir.WritePrompt(stepRel, fullPrompt)
 
 		task.Steps[i].Status = "running"
 		stepStart := time.Now()
@@ -335,7 +353,7 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 
 		log.Printf("coder: step %s/%s started", taskID, step.Name)
 
-		output, runErr := c.runStep(taskCtx, taskID, step.Name, dir, fullPrompt, cwd)
+		output, runErr := c.runStep(taskCtx, taskID, step.Name, runDir, stepRel, fullPrompt, cwd)
 		elapsed := time.Since(stepStart).Seconds()
 		task.Steps[i].ElapsedS = elapsed
 
@@ -363,7 +381,7 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 	task.Summary = prev
 
 	ended := time.Now()
-	writeStatusFile(runDir, RunStatus{
+	runDir.WriteStatus(RunStatus{
 		Chain:     chain,
 		Task:      msg.Task,
 		Status:    "done",
@@ -391,7 +409,7 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 	})
 }
 
-func (c *Coder) failChain(ctx context.Context, task *Task, runDir, failedStep, errMsg string, started time.Time, replyTo string) {
+func (c *Coder) failChain(ctx context.Context, task *Task, runDir *RunDir, failedStep, errMsg string, started time.Time, replyTo string) {
 	task.Status = "failed"
 	task.FailedStep = failedStep
 	task.Error = errMsg
@@ -399,7 +417,7 @@ func (c *Coder) failChain(ctx context.Context, task *Task, runDir, failedStep, e
 	elapsed := time.Since(started).Seconds()
 	now := time.Now()
 
-	writeStatusFile(runDir, RunStatus{
+	runDir.WriteStatus(RunStatus{
 		Chain:      task.Chain,
 		Task:       task.TaskDesc,
 		Status:     "failed",
@@ -444,7 +462,7 @@ func (c *Coder) sendResult(ctx context.Context, replyTo string, result CoderResu
 	}
 }
 
-func (c *Coder) runStep(ctx context.Context, taskID, stepName, dir, prompt, cwd string) (string, error) {
+func (c *Coder) runStep(ctx context.Context, taskID, stepName string, runDir *RunDir, stepRel, prompt, cwd string) (string, error) {
 	piBin := c.cfg.PiBinary
 	if piBin == "" {
 		piBin = "pi"
@@ -494,7 +512,10 @@ func (c *Coder) runStep(ctx context.Context, taskID, stepName, dir, prompt, cwd 
 		<-ctx.Done()
 		// Try graceful abort
 		_ = json.NewEncoder(stdin).Encode(map[string]string{"type": "abort", "id": "cancel"})
-		time.Sleep(5 * time.Second)
+		select {
+		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+		}
 		if cmd.Process != nil {
 			_ = cmd.Process.Signal(syscall.SIGTERM)
 		}
@@ -520,11 +541,13 @@ func (c *Coder) runStep(ctx context.Context, taskID, stepName, dir, prompt, cwd 
 			continue
 		}
 
-		appendStepEvent(dir, line)
+		runDir.AppendEvent(stepRel, line)
 		c.parsePiEvent(taskID, stepName, line, &lastResult)
 
 		// pi RPC is long-lived — break when agent finishes
-		var ev struct{ Type string `json:"type"` }
+		var ev struct {
+			Type string `json:"type"`
+		}
 		if json.Unmarshal(line, &ev) == nil && ev.Type == "agent_end" {
 			agentDone = true
 			break
@@ -543,11 +566,11 @@ func (c *Coder) runStep(ctx context.Context, taskID, stepName, dir, prompt, cwd 
 	}
 
 	// Prefer output.md written by agent
-	if out := readStepOutput(dir); out != "" {
+	if out := runDir.ReadOutput(stepRel); out != "" {
 		return out, nil
 	}
 	if lastResult != "" {
-		writeStepOutput(dir, lastResult)
+		runDir.WriteOutput(stepRel, lastResult)
 		return lastResult, nil
 	}
 	return "", nil
@@ -631,14 +654,32 @@ func (c *Coder) isAllowedPath(cwd string) bool {
 	if len(c.cfg.AllowedPaths) == 0 {
 		return false
 	}
+	resolvedCWD, err := canonicalPath(cwd)
+	if err != nil {
+		return false
+	}
 	for _, allowed := range c.cfg.AllowedPaths {
-		allowed = filepath.Clean(allowed)
-		cwd = filepath.Clean(cwd)
-		if cwd == allowed || strings.HasPrefix(cwd, allowed+string(filepath.Separator)) {
+		resolvedAllowed, err := canonicalPath(allowed)
+		if err != nil {
+			continue
+		}
+		if resolvedCWD == resolvedAllowed || strings.HasPrefix(resolvedCWD, resolvedAllowed+string(filepath.Separator)) {
 			return true
 		}
 	}
 	return false
+}
+
+func canonicalPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
 }
 
 // loadSkill reads a skill file. Pass "" for the base skill.
@@ -687,7 +728,9 @@ func renderPrompt(tmpl, task, previous, chainDir string) string {
 func extractToolInput(toolName string, input json.RawMessage) string {
 	switch toolName {
 	case "bash", "Bash":
-		var p struct{ Command string `json:"command"` }
+		var p struct {
+			Command string `json:"command"`
+		}
 		if err := json.Unmarshal(input, &p); err == nil {
 			cmd := p.Command
 			if len(cmd) > 80 {
@@ -729,17 +772,23 @@ func extractToolInput(toolName string, input json.RawMessage) string {
 			return p.FilePath
 		}
 	case "grep", "Grep":
-		var p struct{ Pattern string `json:"pattern"` }
+		var p struct {
+			Pattern string `json:"pattern"`
+		}
 		if err := json.Unmarshal(input, &p); err == nil {
 			return p.Pattern
 		}
 	case "find", "Glob":
-		var p struct{ Pattern string `json:"pattern"` }
+		var p struct {
+			Pattern string `json:"pattern"`
+		}
 		if err := json.Unmarshal(input, &p); err == nil {
 			return p.Pattern
 		}
 	case "ls":
-		var p struct{ Path string `json:"path"` }
+		var p struct {
+			Path string `json:"path"`
+		}
 		if err := json.Unmarshal(input, &p); err == nil {
 			return p.Path
 		}
