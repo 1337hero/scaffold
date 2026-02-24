@@ -158,6 +158,7 @@ func (s *Server) SetCoder(c *coder.Coder) {
 	s.mux.HandleFunc("GET /api/coder/tasks/{id}", s.protected(s.handleCoderTask))
 	s.mux.HandleFunc("DELETE /api/coder/tasks/{id}", s.protected(s.handleCoderTaskKill))
 	s.mux.HandleFunc("GET /api/coder/stream", s.protected(s.handleCoderStream))
+	s.mux.HandleFunc("POST /api/coder/dispatch", s.protected(s.handleCoderDispatch))
 }
 
 // EnableFrontendServing configures the daemon to serve built frontend assets

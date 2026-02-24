@@ -443,6 +443,7 @@ func (c *Coder) sendResult(ctx context.Context, replyTo string, result CoderResu
 func (c *Coder) runStep(ctx context.Context, taskID, stepName, dir, prompt, cwd string) (string, error) {
 	cmd := exec.Command("claude",
 		"--output-format", "stream-json",
+		"--verbose",
 		"--dangerously-skip-permissions",
 		"-p", prompt,
 	)

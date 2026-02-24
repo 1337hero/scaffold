@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks"
 import { cn } from "@/lib/utils.js"
+import { dispatchCoderTask } from "@/api/queries.js"
 
 const TYPE_OPTIONS = ["task", "note", "goal"]
 const PRIORITY_OPTIONS = ["high", "normal", "low"]
@@ -98,6 +99,10 @@ const InboxItem = ({ item, domains, goals, onProcess, onArchive }) => {
   const [scheduleDays, setScheduleDays] = useState([])
 
   const [submitting, setSubmitting] = useState(false)
+  const [dispatching, setDispatching] = useState(false)
+  const [dispatchChain, setDispatchChain] = useState("single")
+  const [dispatchSubmitting, setDispatchSubmitting] = useState(false)
+  const [dispatchDone, setDispatchDone] = useState(false)
 
   function toggleDay(day) {
     setScheduleDays((prev) =>
@@ -156,6 +161,20 @@ const InboxItem = ({ item, domains, goals, onProcess, onArchive }) => {
     onArchive(item.ID).finally(() => setSubmitting(false))
   }
 
+  async function handleDispatch(e) {
+    e.stopPropagation()
+    if (dispatchSubmitting) return
+    setDispatchSubmitting(true)
+    const task = [item.Title, item.Summary].filter(Boolean).join(" — ")
+    try {
+      await dispatchCoderTask({ task, chain: dispatchChain })
+      setDispatchDone(true)
+      setDispatching(false)
+    } finally {
+      setDispatchSubmitting(false)
+    }
+  }
+
   const createLabel =
     type === "goal" ? "Create Goal" : type === "note" ? "Create Note" : "Create Task"
 
@@ -180,7 +199,7 @@ const InboxItem = ({ item, domains, goals, onProcess, onArchive }) => {
           </p>
         )}
 
-        <div class="flex gap-2">
+        <div class="flex gap-2 flex-wrap">
           <button
             type="button"
             onClick={() => setExpanded(true)}
@@ -196,6 +215,47 @@ const InboxItem = ({ item, domains, goals, onProcess, onArchive }) => {
           >
             Archive
           </button>
+          {dispatchDone ? (
+            <span class="px-4 py-2 rounded-xl text-[10px] mono uppercase font-bold text-violet-500">
+              Dispatched ✓
+            </span>
+          ) : dispatching ? (
+            <div class="flex items-center gap-2">
+              <select
+                value={dispatchChain}
+                onChange={(e) => setDispatchChain(e.currentTarget.value)}
+                class="py-1.5 px-2 bg-black/5 border border-app-border rounded-lg text-[10px] mono uppercase outline-none cursor-pointer"
+              >
+                <option value="single">Single</option>
+                <option value="fix">Fix</option>
+                <option value="implement">Implement</option>
+                <option value="spec">Spec</option>
+              </select>
+              <button
+                type="button"
+                onClick={handleDispatch}
+                disabled={dispatchSubmitting}
+                class="px-4 py-2 rounded-xl bg-violet-500/10 text-violet-600 text-[10px] mono uppercase font-bold hover:bg-violet-500 hover:text-white transition-all disabled:opacity-40"
+              >
+                {dispatchSubmitting ? "Sending…" : "Go"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDispatching(false)}
+                class="px-3 py-2 rounded-xl bg-black/5 text-app-muted text-[10px] mono uppercase font-bold hover:bg-black/10 transition-all"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setDispatching(true) }}
+              class="px-4 py-2 rounded-xl bg-violet-500/10 text-violet-600 text-[10px] mono uppercase font-bold hover:bg-violet-500 hover:text-white transition-all"
+            >
+              → Agent
+            </button>
+          )}
         </div>
       </div>
     )

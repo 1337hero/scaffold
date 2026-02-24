@@ -275,3 +275,8 @@ export function archiveDomain(id) { return apiFetch(`/api/domains/${id}`, { meth
 export function processInboxItem(id, data) { return putJSON(`/api/inbox/${id}/process`, data) }
 export function archiveInboxCapture(id) { return apiFetch(`/api/inbox/${id}/archive`, { method: "POST" }) }
 export function createCapture(text) { return postJSON("/api/capture", { text }) }
+
+// Coder
+export function dispatchCoderTask({ task, chain = "single", cwd = "" }) {
+  return postJSON("/api/coder/dispatch", { task, chain, cwd })
+}
