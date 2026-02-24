@@ -1,10 +1,10 @@
-import { dashboard, inbox, notebooks, search } from "@/constants/nav.js";
+import { coderNav, dashboard, inbox, notebooks, search } from "@/constants/nav.js";
 import { cn } from "@/lib/utils.js";
 import { RiAddLine } from "@remixicon/react";
 
-const navItems = [dashboard, { ...inbox, hasBadge: true }, notebooks, search];
+const navItems = [dashboard, { ...inbox, hasBadge: true }, notebooks, search, coderNav];
 
-const Sidebar = ({ activeRoute, onNavigate, onCapture, inboxCount }) => {
+const Sidebar = ({ activeRoute, onNavigate, onCapture, inboxCount, coderActive }) => {
   return (
     <aside className="fixed left-0 top-0 h-full w-64 border-r border-app-border bg-[#1C1712] z-40 hidden lg:flex flex-col p-6 text-[#9C8E7A]">
       <div className="mb-10">
@@ -39,6 +39,9 @@ const Sidebar = ({ activeRoute, onNavigate, onCapture, inboxCount }) => {
                 <span class="ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold mono bg-[#F5F0E8] text-[#1C1712]">
                   {inboxCount}
                 </span>
+              )}
+              {item.id === "coder" && coderActive && (
+                <span class="ml-auto w-2 h-2 rounded-full bg-[#C47D3A] animate-pulse" />
               )}
               {active && (
                 <div class="absolute left-0 w-1 h-6 bg-[#C47D3A] rounded-full ml-1 animate-indicator-appear" />

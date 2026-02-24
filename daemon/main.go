@@ -20,6 +20,7 @@ import (
 	"scaffold/api"
 	"scaffold/brain"
 	appconfig "scaffold/config"
+	"scaffold/coder"
 	"scaffold/cortex"
 	"scaffold/db"
 	"scaffold/embedding"
@@ -150,6 +151,9 @@ func main() {
 		log.Printf("warn: session bus register scaffold-agent failed: %v", err)
 	}
 
+	coderCfg := loadCoderConfig(cfg.configDir)
+	coderSvc := coder.New(sessionBus, coderCfg)
+
 	var embedder embedding.Embedder
 	switch strings.ToLower(strings.TrimSpace(appCfg.Embedding.Provider)) {
 	case "ollama":
@@ -220,6 +224,7 @@ func main() {
 		LoginRateLimitMax:    cfg.loginRateLimitMax,
 	})
 	srv.SetSessionBus(sessionBus)
+	srv.SetCoder(coderSvc)
 	if ingestService != nil {
 		srv.SetIngestor(ingestService)
 	}
@@ -252,6 +257,7 @@ func main() {
 	defer cancel()
 
 	cortexRuntime.Start(ctx)
+	coderSvc.Start(ctx)
 	if ingestService != nil {
 		ingestService.Start(ctx)
 	}
@@ -473,6 +479,28 @@ func loadConfig() config {
 		loginRateLimitWindowSecs: loginRateLimitWindowSecs,
 		loginRateLimitMax:        loginRateLimitMax,
 	}
+}
+
+func loadCoderConfig(configDir string) coder.Config {
+	type coderYAML struct {
+		AllowedPaths []string `yaml:"allowed_paths"`
+	}
+	cfg := coder.Config{
+		SkillPath:     filepath.Join(configDir, "coder-skill.md"),
+		StepSkillsDir: filepath.Join(configDir, "coder-skills"),
+	}
+	data, err := os.ReadFile(filepath.Join(configDir, "coder.yaml"))
+	if err != nil {
+		log.Printf("coder: no coder.yaml found, using defaults")
+		return cfg
+	}
+	var y coderYAML
+	if err := yaml.Unmarshal(data, &y); err != nil {
+		log.Printf("coder: parse coder.yaml: %v", err)
+		return cfg
+	}
+	cfg.AllowedPaths = y.AllowedPaths
+	return cfg
 }
 
 func defaultIngestDir(configDir string) string {

@@ -4,6 +4,7 @@ import MobileBar from "@/components/MobileBar.jsx";
 import Sidebar from "@/components/Sidebar.jsx";
 import { useKeyboard } from "@/hooks/useKeyboard.js";
 import { navigate, useRoute } from "@/hooks/useRoute.js";
+import Coder from "@/pages/Coder.jsx";
 import Dashboard from "@/pages/Dashboard.jsx";
 import Inbox from "@/pages/Inbox.jsx";
 import Login from "@/pages/Login.jsx";
@@ -32,6 +33,8 @@ function RouteView({ route, param }) {
       );
     case "search":
       return <Search />;
+    case "coder":
+      return <Coder />;
     default:
       return <Dashboard />;
   }
@@ -41,6 +44,13 @@ function AuthenticatedShell() {
   const [captureOpen, setCaptureOpen] = useState(false);
   const { route, param } = useRoute();
   const { data: inboxCount = 0 } = useQuery(inboxCountQuery);
+  const { data: coderTasks = [] } = useQuery({
+    queryKey: ["coder-tasks"],
+    queryFn: () =>
+      fetch("/api/coder/tasks", { credentials: "include" }).then((r) => r.json()),
+    refetchInterval: 10_000,
+  });
+  const coderActive = (coderTasks ?? []).some((t) => t.status === "running");
 
   const openCapture = () => setCaptureOpen(true);
   const closeCapture = () => setCaptureOpen(false);
@@ -57,6 +67,7 @@ function AuthenticatedShell() {
         onNavigate={navigate}
         onCapture={openCapture}
         inboxCount={inboxCount}
+        coderActive={coderActive}
       />
 
       <main class="max-w-7xl mx-auto p-6 lg:p-12">

@@ -2,6 +2,7 @@ import { useState } from "preact/hooks"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { setTaskFocus, clearTaskFocus } from "@/api/queries.js"
 import EmptyState from "@/components/ui/EmptyState.jsx"
+import TaskModal from "@/components/notebooks/TaskModal.jsx"
 
 const DOMAIN_COLORS = {
   "Work/Business": "#5B8DB8",
@@ -45,13 +46,15 @@ const TargetIcon = ({ size = 14 }) => (
   </svg>
 )
 
-function TheOneTask({ task, onComplete, onClearFocus, isCompleting }) {
+function TheOneTask({ task, onComplete, onClearFocus, isCompleting, domains, goals, onSave, onDelete }) {
   const steps = parseMicroSteps(task)
   const color = domainColor(task.DomainName)
   const isPinned = task.IsFocus === 1
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalEditMode, setModalEditMode] = useState(false)
 
   return (
-    <div class={`relative p-6 bg-[var(--color-card-bg)] rounded-3xl border border-app-border card-shadow overflow-hidden transition-all duration-300 ${isCompleting ? "opacity-0 translate-y-2 scale-95" : ""}`}>
+    <div class={`relative p-6 bg-[var(--color-card-bg)] rounded-3xl border border-app-border card-shadow overflow-hidden transition-all duration-300 group ${isCompleting ? "opacity-0 translate-y-2 scale-95" : ""}`}>
       <div class="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: color }} />
 
       <div class="flex gap-4 pl-2">
@@ -59,24 +62,34 @@ function TheOneTask({ task, onComplete, onClearFocus, isCompleting }) {
           <div class="flex items-start gap-4">
             <button
               type="button"
-              onClick={() => onComplete(task.ID)}
+              onClick={(e) => { e.stopPropagation(); onComplete(task.ID) }}
               class="mt-1 text-app-muted hover:text-app-ink transition-colors"
             >
               <CircleIcon size={24} />
             </button>
-            <div class="flex-1">
+            <div class="flex-1 cursor-pointer" onClick={() => { setModalEditMode(false); setModalOpen(true) }}>
               <div class="flex items-center justify-between gap-2">
                 <p class="text-[10px] mono uppercase font-bold mb-1" style={{ color }}>The One</p>
-                {isPinned && (
+                <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={onClearFocus}
-                    class="text-[9px] mono uppercase opacity-30 hover:opacity-60 transition-opacity cursor-pointer"
-                    title="Clear focus"
+                    onClick={(e) => { e.stopPropagation(); setModalEditMode(true); setModalOpen(true) }}
+                    class="opacity-0 group-hover:opacity-100 text-[9px] mono uppercase opacity-30 hover:opacity-60 transition-opacity cursor-pointer"
+                    title="Edit task"
                   >
-                    clear
+                    edit
                   </button>
-                )}
+                  {isPinned && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onClearFocus() }}
+                      class="text-[9px] mono uppercase opacity-30 hover:opacity-60 transition-opacity cursor-pointer"
+                      title="Clear focus"
+                    >
+                      clear
+                    </button>
+                  )}
+                </div>
               </div>
               <h4 class="text-xl font-bold leading-tight">{task.Title}</h4>
               {task.DomainName && (
@@ -106,28 +119,55 @@ function TheOneTask({ task, onComplete, onClearFocus, isCompleting }) {
           )}
         </div>
       </div>
+
+      {modalOpen && (
+        <TaskModal
+          task={task}
+          domains={domains}
+          goals={goals}
+          initialEditMode={modalEditMode}
+          onClose={() => setModalOpen(false)}
+          onSave={onSave}
+          onDelete={onDelete}
+        />
+      )}
     </div>
   )
 }
 
-function CompactTaskItem({ task, onComplete, onSetFocus, isCompleting }) {
+function CompactTaskItem({ task, onComplete, onSetFocus, isCompleting, domains, goals, onSave, onDelete }) {
   const color = domainColor(task.DomainName)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalEditMode, setModalEditMode] = useState(false)
 
   return (
     <div class={`flex items-center gap-3 p-3 bg-[var(--color-card-bg)] rounded-xl border border-app-border hover:border-app-ink/10 transition-all duration-300 group ${isCompleting ? "opacity-0 translate-y-2 scale-95" : ""}`}>
       <button
         type="button"
-        onClick={() => onComplete(task.ID)}
+        onClick={(e) => { e.stopPropagation(); onComplete(task.ID) }}
         class="text-app-muted hover:text-app-ink transition-colors"
       >
         <CircleIcon size={18} />
       </button>
-      <span class="text-sm font-medium flex-1">{task.Title}</span>
+      <span
+        class="text-sm font-medium flex-1 cursor-pointer"
+        onClick={() => { setModalEditMode(false); setModalOpen(true) }}
+      >
+        {task.Title}
+      </span>
       {task.DomainName && (
         <span class="text-[9px] mono uppercase px-1.5 py-0.5 rounded bg-black/5 opacity-60" style={{ color }}>
           {task.DomainName}
         </span>
       )}
+      <button
+        type="button"
+        onClick={() => { setModalEditMode(true); setModalOpen(true) }}
+        class="opacity-0 group-hover:opacity-100 text-[9px] mono uppercase text-app-muted hover:text-app-ink transition-opacity cursor-pointer"
+        title="Edit task"
+      >
+        edit
+      </button>
       <button
         type="button"
         onClick={() => onSetFocus(task.ID)}
@@ -136,6 +176,18 @@ function CompactTaskItem({ task, onComplete, onSetFocus, isCompleting }) {
       >
         <TargetIcon size={14} />
       </button>
+
+      {modalOpen && (
+        <TaskModal
+          task={task}
+          domains={domains}
+          goals={goals}
+          initialEditMode={modalEditMode}
+          onClose={() => setModalOpen(false)}
+          onSave={onSave}
+          onDelete={onDelete}
+        />
+      )}
     </div>
   )
 }
@@ -146,7 +198,7 @@ const TABS = [
   { key: "this week", label: "This Week" },
 ]
 
-const TaskList = ({ tasks = [], overdueTasks = [], tomorrowTasks = [], weekTasks = [], onComplete }) => {
+const TaskList = ({ tasks = [], overdueTasks = [], tomorrowTasks = [], weekTasks = [], onComplete, domains = [], goals = [], onSaveTask, onDeleteTask }) => {
   const [tab, setTab] = useState("today")
   const [completing, setCompleting] = useState(() => new Set())
   const queryClient = useQueryClient()
@@ -226,6 +278,10 @@ const TaskList = ({ tasks = [], overdueTasks = [], tomorrowTasks = [], weekTasks
               onComplete={handleComplete}
               onClearFocus={() => clearFocusMutation.mutate()}
               isCompleting={completing.has(theOne.ID)}
+              domains={domains}
+              goals={goals}
+              onSave={onSaveTask}
+              onDelete={onDeleteTask}
             />
           )}
 
@@ -239,6 +295,10 @@ const TaskList = ({ tasks = [], overdueTasks = [], tomorrowTasks = [], weekTasks
                   onComplete={handleComplete}
                   onSetFocus={(id) => focusMutation.mutate(id)}
                   isCompleting={completing.has(task.ID)}
+                  domains={domains}
+                  goals={goals}
+                  onSave={onSaveTask}
+                  onDelete={onDeleteTask}
                 />
               ))}
             </div>
@@ -253,6 +313,10 @@ const TaskList = ({ tasks = [], overdueTasks = [], tomorrowTasks = [], weekTasks
               onComplete={handleComplete}
               onSetFocus={(id) => focusMutation.mutate(id)}
               isCompleting={completing.has(task.ID)}
+              domains={domains}
+              goals={goals}
+              onSave={onSaveTask}
+              onDelete={onDeleteTask}
             />
           ))}
         </div>

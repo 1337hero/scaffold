@@ -126,6 +126,14 @@ func (db *DB) UpdateGoal(id string, updates map[string]any) error {
 }
 
 func (db *DB) SoftDeleteGoal(id string) error {
+	// cascade: soft-delete non-done child tasks first
+	_, err := db.conn.Exec(
+		`UPDATE tasks SET status = 'deleted' WHERE goal_id = ? AND status != 'done' AND status != 'deleted'`,
+		id,
+	)
+	if err != nil {
+		return err
+	}
 	result, err := db.conn.Exec(`UPDATE goals SET status = 'abandoned' WHERE id = ?`, id)
 	if err != nil {
 		return err

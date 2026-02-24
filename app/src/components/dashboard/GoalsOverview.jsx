@@ -1,3 +1,6 @@
+import { useState } from "preact/hooks"
+import GoalModal from "@/components/notebooks/GoalModal.jsx"
+
 const DOMAIN_COLORS = {
   "Work/Business": "#5B8DB8",
   "Personal Projects": "#8B6BB1",
@@ -101,7 +104,59 @@ const GoalViz = ({ goal, color }) => {
   return <BinaryViz goal={goal} color={color} />
 }
 
-const GoalsOverview = ({ goals = [] }) => {
+const GoalCard = ({ goal, domains, tasks, onSaveGoal, onDeleteGoal }) => {
+  const [modalOpen, setModalOpen] = useState(false)
+  const color = domainColor(goal.DomainName)
+
+  return (
+    <a
+      href={`#/notebooks/${goal.DomainID}`}
+      class="block p-4 bg-[var(--color-card-bg)] rounded-2xl border border-app-border card-shadow group hover:border-app-ink/10 transition-all min-w-[240px] no-underline text-inherit cursor-pointer relative"
+    >
+      <div class="flex justify-between items-start mb-3">
+        <div>
+          {goal.DomainName && (
+            <span
+              class="text-[9px] mono uppercase px-1.5 py-0.5 rounded bg-black/5 opacity-60 mb-1 inline-block"
+              style={{ color }}
+            >
+              {goal.DomainName}
+            </span>
+          )}
+          <h4 class="font-semibold text-sm leading-tight">{goal.Title}</h4>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setModalOpen(true) }}
+            class="opacity-0 group-hover:opacity-100 text-[9px] mono uppercase text-app-muted hover:text-app-ink transition-opacity cursor-pointer"
+            title="Edit goal"
+          >
+            edit
+          </button>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-20" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
+          </svg>
+        </div>
+      </div>
+      <GoalViz goal={goal} color={color} />
+
+      {modalOpen && (
+        <GoalModal
+          goal={goal}
+          domains={domains}
+          tasks={tasks}
+          initialEditMode={true}
+          onClose={() => setModalOpen(false)}
+          onSave={onSaveGoal}
+          onDelete={onDeleteGoal}
+        />
+      )}
+    </a>
+  )
+}
+
+const GoalsOverview = ({ goals = [], domains = [], tasks = [], onSaveGoal, onDeleteGoal }) => {
   return (
     <section class="space-y-4">
       <div class="flex items-center gap-2 mb-3">
@@ -111,34 +166,16 @@ const GoalsOverview = ({ goals = [] }) => {
 
       {goals.length ? (
         <div class="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
-          {goals.map(goal => {
-            const color = domainColor(goal.DomainName)
-            return (
-              <a
-                key={goal.ID}
-                href={`#/notebooks/${goal.DomainID}`}
-                class="block p-4 bg-[var(--color-card-bg)] rounded-2xl border border-app-border card-shadow group hover:border-app-ink/10 transition-all min-w-[240px] no-underline text-inherit cursor-pointer"
-              >
-                <div class="flex justify-between items-start mb-3">
-                  <div>
-                    {goal.DomainName && (
-                      <span
-                        class="text-[9px] mono uppercase px-1.5 py-0.5 rounded bg-black/5 opacity-60 mb-1 inline-block"
-                        style={{ color }}
-                      >
-                        {goal.DomainName}
-                      </span>
-                    )}
-                    <h4 class="font-semibold text-sm leading-tight">{goal.Title}</h4>
-                  </div>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-20" aria-hidden="true">
-                    <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
-                  </svg>
-                </div>
-                <GoalViz goal={goal} color={color} />
-              </a>
-            )
-          })}
+          {goals.map(goal => (
+            <GoalCard
+              key={goal.ID}
+              goal={goal}
+              domains={domains}
+              tasks={tasks}
+              onSaveGoal={onSaveGoal}
+              onDeleteGoal={onDeleteGoal}
+            />
+          ))}
         </div>
       ) : (
         <div class="py-8 text-center opacity-30">

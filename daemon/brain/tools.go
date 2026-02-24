@@ -20,19 +20,20 @@ type ToolHandler func(ctx context.Context, database *db.DB, b *Brain, params jso
 
 func defaultToolRegistry() map[string]ToolHandler {
 	return map[string]ToolHandler{
-		"save_to_inbox":       handleSaveToInbox,
-		"search_memories":     handleSearchMemories,
-		"get_inbox":           handleGetInbox,
-		"get_calendar_events": handleGetCalendarEvents,
-		"send_to_session":     handleSendToSession,
-		"list_sessions":       handleListSessions,
-		"create_goal":         handleCreateGoal,
-		"create_task":         handleCreateTask,
-		"create_note":         handleCreateNote,
-		"update_goal":         handleUpdateGoal,
-		"update_task":         handleUpdateTask,
-		"list_goals":          handleListGoals,
-		"list_tasks":          handleListTasks,
+		"save_to_inbox":        handleSaveToInbox,
+		"search_memories":      handleSearchMemories,
+		"get_inbox":            handleGetInbox,
+		"get_calendar_events":  handleGetCalendarEvents,
+		"send_to_session":      handleSendToSession,
+		"list_sessions":        handleListSessions,
+		"create_goal":          handleCreateGoal,
+		"create_task":          handleCreateTask,
+		"create_note":          handleCreateNote,
+		"update_goal":          handleUpdateGoal,
+		"update_task":          handleUpdateTask,
+		"list_goals":           handleListGoals,
+		"list_tasks":           handleListTasks,
+		"dispatch_code_task":   handleDispatchCodeTask,
 	}
 }
 
@@ -860,6 +861,52 @@ func handleListGoals(ctx context.Context, database *db.DB, b *Brain, params json
 		sb.WriteString(")\n")
 	}
 	return sb.String(), nil
+}
+
+func handleDispatchCodeTask(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if b == nil || b.sessionBus == nil {
+		return "", fmt.Errorf("dispatch_code_task: session bus not configured")
+	}
+
+	var p struct {
+		Task  string `json:"task"`
+		Chain string `json:"chain"`
+		CWD   string `json:"cwd"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("dispatch_code_task: bad params: %w", err)
+	}
+	if strings.TrimSpace(p.Task) == "" {
+		return "", fmt.Errorf("dispatch_code_task: task required")
+	}
+	if p.Chain == "" {
+		p.Chain = "implement"
+	}
+	if p.CWD == "" {
+		p.CWD = "/home/mikekey/Builds/scaffold"
+	}
+
+	msg := map[string]any{
+		"type":     "code_task",
+		"task":     p.Task,
+		"chain":    p.Chain,
+		"cwd":      p.CWD,
+		"reply_to": "scaffold-agent",
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return "", fmt.Errorf("dispatch_code_task: marshal: %w", err)
+	}
+
+	if _, err := b.sessionBus.Send(ctx, sessionbus.SendRequest{
+		FromSessionID: "scaffold-agent",
+		ToSessionID:   "scaffold-coder",
+		Message:       string(data),
+	}); err != nil {
+		return "", fmt.Errorf("dispatch_code_task: %w", err)
+	}
+
+	return fmt.Sprintf("Code task dispatched (chain=%s). Check #/coder in the web UI for live progress. Results delivered on completion.", p.Chain), nil
 }
 
 func handleListTasks(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {

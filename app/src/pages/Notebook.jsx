@@ -1,13 +1,17 @@
 import { useState } from "preact/hooks"
 import {
   completeTask,
+  deleteGoal,
   deleteNote,
+  deleteTask,
   domainHealthQuery,
   domainsQuery,
   goalsQuery,
   notesQuery,
   tasksQuery,
+  updateGoal,
   updateNote,
+  updateTask,
 } from "@/api/queries.js"
 import GoalCard from "@/components/notebooks/GoalCard.jsx"
 import InlineCreate from "@/components/notebooks/InlineCreate.jsx"
@@ -75,6 +79,32 @@ const Notebook = ({ domainId, onBack }) => {
   const deleteMutation = useMutation({
     mutationFn: deleteNote,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notes"] }),
+  })
+
+  const updateTaskMutation = useMutation({
+    mutationFn: ({ id, data }) => updateTask(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] })
+      queryClient.invalidateQueries({ queryKey: ["goals"] })
+    },
+  })
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: deleteTask,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+  })
+
+  const updateGoalMutation = useMutation({
+    mutationFn: ({ id, data }) => updateGoal(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["goals"] }),
+  })
+
+  const deleteGoalMutation = useMutation({
+    mutationFn: deleteGoal,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] })
+      queryClient.invalidateQueries({ queryKey: ["tasks"] })
+    },
   })
 
   if (domainsLoading) {
@@ -179,7 +209,16 @@ const Notebook = ({ domainId, onBack }) => {
             ) : (
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {goals.map((goal) => (
-                  <GoalCard key={goal.ID} goal={goal} domain={domain} color={color} />
+                  <GoalCard
+                    key={goal.ID}
+                    goal={goal}
+                    domain={domain}
+                    color={color}
+                    domains={domains || []}
+                    tasks={tasks}
+                    onSave={(id, data) => updateGoalMutation.mutate({ id, data })}
+                    onDelete={(id) => deleteGoalMutation.mutate(id)}
+                  />
                 ))}
               </div>
             )}
@@ -222,6 +261,10 @@ const Notebook = ({ domainId, onBack }) => {
                     key={task.ID}
                     task={task}
                     onComplete={taskTab !== "done" ? () => completeMutation.mutate(task.ID) : undefined}
+                    domains={domains || []}
+                    goals={goals}
+                    onSave={(id, data) => updateTaskMutation.mutate({ id, data })}
+                    onDelete={(id) => deleteTaskMutation.mutate(id)}
                   />
                 ))}
               </div>

@@ -1,3 +1,6 @@
+import { useState } from "preact/hooks"
+import GoalModal from "./GoalModal.jsx"
+
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"]
 
@@ -53,7 +56,9 @@ const ScheduleViz = ({ goal, color }) => {
   )
 }
 
-const GoalCard = ({ goal, domain, color }) => {
+const GoalCard = ({ goal, domain, color, onSave, onDelete, domains, tasks }) => {
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalEditMode, setModalEditMode] = useState(false)
   const resolvedColor = domain?.color || domain?.Color?.String || color || "#9C8E7A"
   const domainName = domain?.name || domain?.Name
   const pct = Math.min(Math.round((goal.Progress || 0) * 100), 100)
@@ -61,7 +66,11 @@ const GoalCard = ({ goal, domain, color }) => {
   const habitType = goal.HabitType?.String
 
   return (
-    <div class="p-4 bg-[var(--color-card-bg)] rounded-2xl border border-app-border card-shadow group hover:border-app-ink/10 transition-all">
+    <>
+    <div
+      class="p-4 bg-[var(--color-card-bg)] rounded-2xl border border-app-border card-shadow group hover:border-app-ink/10 transition-all cursor-pointer"
+      onClick={() => { setModalEditMode(false); setModalOpen(true) }}
+    >
       <div class="flex justify-between items-start mb-3">
         <div>
           {domainName && (
@@ -74,7 +83,16 @@ const GoalCard = ({ goal, domain, color }) => {
           )}
           <h4 class="font-semibold text-sm leading-tight">{goal.Title}</h4>
         </div>
-        <span class="opacity-20 shrink-0 ml-2"><TargetIcon /></span>
+        <div class="flex items-center gap-2 shrink-0 ml-2">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setModalEditMode(true); setModalOpen(true) }}
+            class="text-[10px] mono uppercase font-bold text-app-muted hover:text-app-ink transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
+          >
+            Edit
+          </button>
+          <span class="opacity-20"><TargetIcon /></span>
+        </div>
       </div>
 
       {type === "measurable" ? (
@@ -104,6 +122,18 @@ const GoalCard = ({ goal, domain, color }) => {
         </div>
       )}
     </div>
+    {modalOpen && (
+      <GoalModal
+        goal={goal}
+        domains={domains}
+        tasks={tasks}
+        initialEditMode={modalEditMode}
+        onClose={() => setModalOpen(false)}
+        onSave={onSave}
+        onDelete={onDelete}
+      />
+    )}
+    </>
   )
 }
 

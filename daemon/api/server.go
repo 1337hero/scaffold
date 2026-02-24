@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"scaffold/brain"
+	"scaffold/coder"
 	"scaffold/config"
 	"scaffold/db"
 	"scaffold/sessionbus"
@@ -38,6 +39,7 @@ type Server struct {
 	brain           *brain.Brain
 	ingestor        Ingestor
 	sessionBus      *sessionbus.Bus
+	coder           *coder.Coder
 	mux             *http.ServeMux
 	frontendDistDir string
 	apiToken        string
@@ -148,6 +150,14 @@ func (s *Server) SetIngestor(ingestor Ingestor) {
 
 func (s *Server) SetSessionBus(bus *sessionbus.Bus) {
 	s.sessionBus = bus
+}
+
+func (s *Server) SetCoder(c *coder.Coder) {
+	s.coder = c
+	s.mux.HandleFunc("GET /api/coder/tasks", s.protected(s.handleCoderTasks))
+	s.mux.HandleFunc("GET /api/coder/tasks/{id}", s.protected(s.handleCoderTask))
+	s.mux.HandleFunc("DELETE /api/coder/tasks/{id}", s.protected(s.handleCoderTaskKill))
+	s.mux.HandleFunc("GET /api/coder/stream", s.protected(s.handleCoderStream))
 }
 
 // EnableFrontendServing configures the daemon to serve built frontend assets

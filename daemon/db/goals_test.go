@@ -262,3 +262,64 @@ func TestGoalsWithProgress(t *testing.T) {
 		t.Fatalf("expected progress ~%.4f, got %.4f", want, gp.Progress)
 	}
 }
+
+func TestSoftDeleteGoalCascadesTasks(t *testing.T) {
+	database := newTestDB(t)
+
+	if err := database.InsertGoal(Goal{ID: "g-cascade", Title: "Cascade Goal"}); err != nil {
+		t.Fatalf("insert goal: %v", err)
+	}
+
+	ts := now()
+	for _, task := range []struct {
+		id     string
+		status string
+	}{
+		{"t-open1", "pending"},
+		{"t-open2", "in_progress"},
+		{"t-done1", "done"},
+	} {
+		_, err := database.conn.Exec(
+			`INSERT INTO tasks (id, title, goal_id, status, created_at) VALUES (?, ?, ?, ?, ?)`,
+			task.id, "Task "+task.id, "g-cascade", task.status, ts,
+		)
+		if err != nil {
+			t.Fatalf("insert task %s: %v", task.id, err)
+		}
+	}
+
+	if err := database.SoftDeleteGoal("g-cascade"); err != nil {
+		t.Fatalf("soft delete goal: %v", err)
+	}
+
+	// Goal should be abandoned
+	got, err := database.GetGoal("g-cascade")
+	if err != nil {
+		t.Fatalf("get goal: %v", err)
+	}
+	if got.Status != "abandoned" {
+		t.Fatalf("expected goal status 'abandoned', got %q", got.Status)
+	}
+
+	// Open tasks should be deleted
+	for _, id := range []string{"t-open1", "t-open2"} {
+		var status string
+		err := database.conn.QueryRow(`SELECT status FROM tasks WHERE id = ?`, id).Scan(&status)
+		if err != nil {
+			t.Fatalf("get task %s: %v", id, err)
+		}
+		if status != "deleted" {
+			t.Fatalf("expected task %s status 'deleted', got %q", id, status)
+		}
+	}
+
+	// Done task should be untouched
+	var doneStatus string
+	err = database.conn.QueryRow(`SELECT status FROM tasks WHERE id = ?`, "t-done1").Scan(&doneStatus)
+	if err != nil {
+		t.Fatalf("get done task: %v", err)
+	}
+	if doneStatus != "done" {
+		t.Fatalf("expected done task to remain 'done', got %q", doneStatus)
+	}
+}
