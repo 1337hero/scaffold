@@ -592,6 +592,8 @@ func handleCreateTask(ctx context.Context, database *db.DB, b *Brain, params jso
 		DueDate   string `json:"due_date"`
 		Recurring string `json:"recurring"`
 		Priority  string `json:"priority"`
+		Source    string `json:"source"`
+		SourceRef string `json:"source_ref"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("create_task: bad params: %w", err)
@@ -620,6 +622,12 @@ func handleCreateTask(ctx context.Context, database *db.DB, b *Brain, params jso
 	if p.Priority != "" {
 		t.Priority = p.Priority
 	}
+	if p.Source != "" {
+		t.Source = sql.NullString{String: p.Source, Valid: true}
+	}
+	if p.SourceRef != "" {
+		t.SourceRef = sql.NullString{String: p.SourceRef, Valid: true}
+	}
 
 	if err := database.InsertTask(t); err != nil {
 		return "", fmt.Errorf("create_task: %w", err)
@@ -636,6 +644,7 @@ func handleCreateNote(ctx context.Context, database *db.DB, b *Brain, params jso
 		Title   string   `json:"title"`
 		Domain  string   `json:"domain"`
 		GoalID  string   `json:"goal_id"`
+		TaskID  string   `json:"task_id"`
 		Content string   `json:"content"`
 		Tags    []string `json:"tags"`
 	}
@@ -653,6 +662,9 @@ func handleCreateNote(ctx context.Context, database *db.DB, b *Brain, params jso
 	}
 	if p.GoalID != "" {
 		n.GoalID = sql.NullString{String: p.GoalID, Valid: true}
+	}
+	if p.TaskID != "" {
+		n.TaskID = sql.NullString{String: p.TaskID, Valid: true}
 	}
 	if p.Content != "" {
 		n.Content = sql.NullString{String: p.Content, Valid: true}

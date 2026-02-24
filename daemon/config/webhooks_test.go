@@ -47,11 +47,11 @@ tokens:
 	if cfg.RateLimit.WindowMinutes != 10 {
 		t.Errorf("expected window_minutes=10, got %d", cfg.RateLimit.WindowMinutes)
 	}
-	if cfg.Tokens["fitness"] != "tok-abc123" {
-		t.Errorf("expected fitness token tok-abc123, got %q", cfg.Tokens["fitness"])
+	if cfg.Tokens["fitness"] == nil || cfg.Tokens["fitness"].Token != "tok-abc123" {
+		t.Errorf("expected fitness token tok-abc123, got %v", cfg.Tokens["fitness"])
 	}
-	if cfg.Tokens["homelab"] != "tok-def456" {
-		t.Errorf("expected homelab token tok-def456, got %q", cfg.Tokens["homelab"])
+	if cfg.Tokens["homelab"] == nil || cfg.Tokens["homelab"].Token != "tok-def456" {
+		t.Errorf("expected homelab token tok-def456, got %v", cfg.Tokens["homelab"])
 	}
 }
 
@@ -71,6 +71,49 @@ func TestLoadWebhookConfigDefaults(t *testing.T) {
 	}
 	if cfg.RateLimit.WindowMinutes != 60 {
 		t.Errorf("expected default window=60, got %d", cfg.RateLimit.WindowMinutes)
+	}
+}
+
+func TestLoadWebhookConfigStructTokens(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "webhooks.yaml")
+	content := `
+tokens:
+  test: tok-simple
+  github:
+    token: tok-gh-abc
+    type: github
+    secret: whsec_1234
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, found, err := LoadWebhookConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatal("expected found=true")
+	}
+	if cfg.Tokens["test"] == nil || cfg.Tokens["test"].Token != "tok-simple" {
+		t.Errorf("expected simple token tok-simple, got %v", cfg.Tokens["test"])
+	}
+	if cfg.Tokens["test"].Type != "" {
+		t.Errorf("expected empty type for simple token, got %q", cfg.Tokens["test"].Type)
+	}
+	gh := cfg.Tokens["github"]
+	if gh == nil {
+		t.Fatal("expected github token")
+	}
+	if gh.Token != "tok-gh-abc" {
+		t.Errorf("expected token tok-gh-abc, got %q", gh.Token)
+	}
+	if gh.Type != "github" {
+		t.Errorf("expected type github, got %q", gh.Type)
+	}
+	if gh.Secret != "whsec_1234" {
+		t.Errorf("expected secret whsec_1234, got %q", gh.Secret)
 	}
 }
 

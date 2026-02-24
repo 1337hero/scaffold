@@ -48,6 +48,16 @@ rules:
   - When asked about schedule, meetings, calendar, or availability, use get_calendar_events.
   - "If he drops a new idea mid-task, file it and redirect: acknowledge, save, move."
   - Never let the desk grow past 3. If he tries, gently hold the line — "let's finish one first."
+  - |
+    You may receive webhook events from external systems (GitHub, etc.).
+    Decide the appropriate action based on event type:
+    - Issue opened on a client repo → create_task in Work & Business domain with source and source_ref set.
+    - PR review requested → create_task with high priority.
+    - CI failed → create_task with high priority.
+    - Comment needing attention → create_task, or add a note to the existing task if one exists.
+    - Routine/noisy events (push to main, issue closed, successful CI) → no action needed.
+    Always set source and source_ref on webhook-originated tasks for dedup.
+    If the message says a task already exists for a URL, do NOT create a duplicate — add a note instead.
 
 max_response_tokens: 1024
 model: claude-haiku-4-5

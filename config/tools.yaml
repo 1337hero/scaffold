@@ -175,6 +175,12 @@ tools:
           type: string
           enum: [high, normal, low]
           description: "Priority level. Default: normal"
+        source:
+          type: string
+          description: "Origin system (e.g. github, monday). Set for webhook-originated tasks."
+        source_ref:
+          type: string
+          description: "Unique reference URL from origin system. Used for dedup on repeated webhook deliveries."
       required: [title]
 
   - name: create_note
@@ -192,6 +198,9 @@ tools:
         goal_id:
           type: string
           description: Link note to a goal by ID
+        task_id:
+          type: string
+          description: Link note to a task by ID
         content:
           type: string
           description: Note body content

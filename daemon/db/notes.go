@@ -11,6 +11,7 @@ type Note struct {
 	Title     string
 	DomainID  sql.NullInt64
 	GoalID    sql.NullString
+	TaskID    sql.NullString
 	Content   sql.NullString
 	Tags      sql.NullString
 	CreatedAt string
@@ -29,21 +30,21 @@ func (db *DB) InsertNote(n Note) error {
 	}
 
 	_, err := db.conn.Exec(
-		`INSERT INTO notes (id, title, domain_id, goal_id, content, tags, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		n.ID, n.Title, n.DomainID, n.GoalID, n.Content, n.Tags, n.CreatedAt, n.UpdatedAt,
+		`INSERT INTO notes (id, title, domain_id, goal_id, task_id, content, tags, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.ID, n.Title, n.DomainID, n.GoalID, n.TaskID, n.Content, n.Tags, n.CreatedAt, n.UpdatedAt,
 	)
 	return err
 }
 
 func (db *DB) GetNote(id string) (*Note, error) {
 	row := db.conn.QueryRow(
-		`SELECT id, title, domain_id, goal_id, content, tags, created_at, updated_at
+		`SELECT id, title, domain_id, goal_id, task_id, content, tags, created_at, updated_at
 		 FROM notes WHERE id = ?`, id,
 	)
 
 	var n Note
-	err := row.Scan(&n.ID, &n.Title, &n.DomainID, &n.GoalID, &n.Content, &n.Tags, &n.CreatedAt, &n.UpdatedAt)
+	err := row.Scan(&n.ID, &n.Title, &n.DomainID, &n.GoalID, &n.TaskID, &n.Content, &n.Tags, &n.CreatedAt, &n.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -54,7 +55,7 @@ func (db *DB) GetNote(id string) (*Note, error) {
 }
 
 func (db *DB) ListNotes(domainID *int, goalID *string, tags string) ([]Note, error) {
-	q := `SELECT id, title, domain_id, goal_id, content, tags, created_at, updated_at FROM notes WHERE 1=1`
+	q := `SELECT id, title, domain_id, goal_id, task_id, content, tags, created_at, updated_at FROM notes WHERE 1=1`
 	var args []any
 
 	if domainID != nil {
@@ -78,6 +79,7 @@ var noteUpdateCols = map[string]bool{
 	"title":     true,
 	"domain_id": true,
 	"goal_id":   true,
+	"task_id":   true,
 	"content":   true,
 	"tags":      true,
 }
@@ -119,7 +121,7 @@ func (db *DB) DeleteNote(id string) error {
 
 func (db *DB) NotesByDomain(domainID int) ([]Note, error) {
 	return db.queryNotes(
-		`SELECT id, title, domain_id, goal_id, content, tags, created_at, updated_at
+		`SELECT id, title, domain_id, goal_id, task_id, content, tags, created_at, updated_at
 		 FROM notes WHERE domain_id = ? ORDER BY COALESCE(updated_at, created_at) DESC`,
 		domainID,
 	)
@@ -135,10 +137,18 @@ func (db *DB) queryNotes(query string, args ...any) ([]Note, error) {
 	out := make([]Note, 0)
 	for rows.Next() {
 		var n Note
-		if err := rows.Scan(&n.ID, &n.Title, &n.DomainID, &n.GoalID, &n.Content, &n.Tags, &n.CreatedAt, &n.UpdatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.Title, &n.DomainID, &n.GoalID, &n.TaskID, &n.Content, &n.Tags, &n.CreatedAt, &n.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
 	}
 	return out, rows.Err()
+}
+
+func (db *DB) NotesByTask(taskID string) ([]Note, error) {
+	return db.queryNotes(
+		`SELECT id, title, domain_id, goal_id, task_id, content, tags, created_at, updated_at
+		 FROM notes WHERE task_id = ? ORDER BY COALESCE(updated_at, created_at) DESC`,
+		taskID,
+	)
 }

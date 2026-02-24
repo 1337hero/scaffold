@@ -287,6 +287,23 @@ func (db *DB) migrate() error {
 	if err := db.migrateAddColumn("tasks", "is_focus", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := db.migrateAddColumn("tasks", "source", "TEXT"); err != nil {
+		return err
+	}
+	if err := db.migrateAddColumn("tasks", "source_ref", "TEXT"); err != nil {
+		return err
+	}
+	if err := db.migrateAddColumn("notes", "task_id", "TEXT REFERENCES tasks(id)"); err != nil {
+		return err
+	}
+
+	_, err = db.conn.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_tasks_source_ref ON tasks(source_ref);
+		CREATE INDEX IF NOT EXISTS idx_notes_task_id ON notes(task_id);
+	`)
+	if err != nil {
+		return fmt.Errorf("apply webhook indexes: %w", err)
+	}
 
 	return nil
 }

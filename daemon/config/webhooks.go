@@ -9,13 +9,28 @@ import (
 )
 
 type WebhookConfig struct {
-	RateLimit WebhookRateLimit  `yaml:"rate_limit"`
-	Tokens    map[string]string `yaml:"tokens"`
+	RateLimit WebhookRateLimit          `yaml:"rate_limit"`
+	Tokens    map[string]*WebhookToken  `yaml:"tokens"`
 }
 
 type WebhookRateLimit struct {
 	Max           int `yaml:"max"`
 	WindowMinutes int `yaml:"window_minutes"`
+}
+
+type WebhookToken struct {
+	Token  string `yaml:"token"`
+	Type   string `yaml:"type"`   // "github", "" for generic
+	Secret string `yaml:"secret"` // HMAC secret for verification
+}
+
+func (t *WebhookToken) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		t.Token = value.Value
+		return nil
+	}
+	type raw WebhookToken
+	return value.Decode((*raw)(t))
 }
 
 func LoadWebhookConfig(path string) (*WebhookConfig, bool, error) {
@@ -39,7 +54,7 @@ func LoadWebhookConfig(path string) (*WebhookConfig, bool, error) {
 		cfg.RateLimit.WindowMinutes = 60
 	}
 	if cfg.Tokens == nil {
-		cfg.Tokens = make(map[string]string)
+		cfg.Tokens = make(map[string]*WebhookToken)
 	}
 
 	return &cfg, true, nil

@@ -16,6 +16,7 @@ type noteCreateRequest struct {
 	Title    string  `json:"title"`
 	DomainID *int64  `json:"domain_id"`
 	GoalID   *string `json:"goal_id"`
+	TaskID   *string `json:"task_id"`
 	Content  *string `json:"content"`
 	Tags     *string `json:"tags"`
 }
@@ -95,6 +96,9 @@ func (s *Server) handleNoteCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Tags != nil {
 		n.Tags = sql.NullString{String: *req.Tags, Valid: true}
+	}
+	if req.TaskID != nil {
+		n.TaskID = sql.NullString{String: *req.TaskID, Valid: true}
 	}
 
 	if err := s.db.InsertNote(n); err != nil {

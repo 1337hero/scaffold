@@ -23,6 +23,8 @@ type taskCreateRequest struct {
 	MicroSteps *string `json:"micro_steps"`
 	Notify     *int    `json:"notify"`
 	Position   *int    `json:"position"`
+	Source     *string `json:"source"`
+	SourceRef  *string `json:"source_ref"`
 }
 
 type reorderRequest struct {
@@ -98,6 +100,12 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Position != nil {
 		t.Position = *req.Position
+	}
+	if req.Source != nil {
+		t.Source = sql.NullString{String: *req.Source, Valid: true}
+	}
+	if req.SourceRef != nil {
+		t.SourceRef = sql.NullString{String: *req.SourceRef, Valid: true}
 	}
 
 	if err := s.db.InsertTask(t); err != nil {
