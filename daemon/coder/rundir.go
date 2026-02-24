@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // RunStatus is written to status.json in the run directory.
@@ -29,6 +31,10 @@ type RunDir struct {
 }
 
 func initRunDir(base, runID string) (*RunDir, error) {
+	runID, err := validateRunID(runID)
+	if err != nil {
+		return nil, err
+	}
 	path := filepath.Join(base, runID)
 	if err := os.MkdirAll(filepath.Join(path, "steps"), 0o750); err != nil {
 		return nil, fmt.Errorf("init run dir: %w", err)
@@ -48,7 +54,7 @@ func (r *RunDir) Close() error {
 }
 
 func (r *RunDir) stepRelDir(n int, name string) string {
-	return filepath.Join("steps", fmt.Sprintf("%d-%s", n+1, name))
+	return filepath.Join("steps", fmt.Sprintf("%d-%s", n+1, sanitizeStepName(name)))
 }
 
 func (r *RunDir) InitStepDir(n int, name string) (string, error) {
@@ -94,4 +100,44 @@ func (r *RunDir) ReadOutput(stepRel string) string {
 
 func (r *RunDir) WriteOutput(stepRel, content string) {
 	_ = r.root.WriteFile(filepath.Join(stepRel, "output.md"), []byte(content), 0o640)
+}
+
+func validateRunID(runID string) (string, error) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return "", fmt.Errorf("run id is required")
+	}
+	clean := filepath.Clean(runID)
+	if clean == "." || clean == ".." || clean != runID {
+		return "", fmt.Errorf("invalid run id %q", runID)
+	}
+	if strings.Contains(runID, "/") || strings.Contains(runID, `\`) {
+		return "", fmt.Errorf("invalid run id %q", runID)
+	}
+	return runID, nil
+}
+
+func sanitizeStepName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "step"
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range name {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-_")
+	if out == "" {
+		return "step"
+	}
+	return out
 }
