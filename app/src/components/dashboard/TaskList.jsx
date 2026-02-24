@@ -2,7 +2,7 @@ import { useState } from "preact/hooks"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { setTaskFocus, clearTaskFocus } from "@/api/queries.js"
 import EmptyState from "@/components/ui/EmptyState.jsx"
-import TaskModal from "@/components/notebooks/TaskModal.jsx"
+import TaskModal from "@/components/areas/TaskModal.jsx"
 import { domainColor } from "@/constants/colors.js"
 
 function parseMicroSteps(task) {

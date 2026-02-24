@@ -13,10 +13,10 @@ import {
   updateNote,
   updateTask,
 } from "@/api/queries.js"
-import GoalCard from "@/components/notebooks/GoalCard.jsx"
-import InlineCreate from "@/components/notebooks/InlineCreate.jsx"
-import NoteItem from "@/components/notebooks/NoteItem.jsx"
-import TaskItem from "@/components/notebooks/TaskItem.jsx"
+import GoalCard from "@/components/areas/GoalCard.jsx"
+import InlineCreate from "@/components/areas/InlineCreate.jsx"
+import NoteItem from "@/components/areas/NoteItem.jsx"
+import TaskItem from "@/components/areas/TaskItem.jsx"
 import { nullable } from "@/utils/nullable.js"
 import { domainColor } from "@/constants/colors.js"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -34,7 +34,7 @@ const BookOpenIcon = () => (
   </svg>
 )
 
-const Notebook = ({ domainId, onBack }) => {
+const Area = ({ domainId, onBack }) => {
   const queryClient = useQueryClient()
   const { data: domains, isLoading: domainsLoading } = useQuery(domainsQuery)
   const { data: healthData = [] } = useQuery(domainHealthQuery)
@@ -304,4 +304,4 @@ const Notebook = ({ domainId, onBack }) => {
   )
 }
 
-export default Notebook
+export default Area

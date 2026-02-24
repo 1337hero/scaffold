@@ -8,8 +8,8 @@ import Coder from "@/pages/Coder.jsx";
 import Dashboard from "@/pages/Dashboard.jsx";
 import Inbox from "@/pages/Inbox.jsx";
 import Login from "@/pages/Login.jsx";
-import Notebook from "@/pages/Notebook.jsx";
-import Notebooks from "@/pages/Notebooks.jsx";
+import Area from "@/pages/Area.jsx";
+import Areas from "@/pages/Areas.jsx";
 import Search from "@/pages/Search.jsx";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "preact/hooks";
@@ -20,15 +20,15 @@ function RouteView({ route, param }) {
       return <Dashboard />;
     case "inbox":
       return <Inbox />;
-    case "notebooks":
+    case "areas":
       return param ? (
-        <Notebook
+        <Area
           domainId={param}
-          onBack={() => navigate("/notebooks")}
+          onBack={() => navigate("/areas")}
         />
       ) : (
-        <Notebooks
-          onOpenNotebook={(id) => navigate(`/notebooks/${id}`)}
+        <Areas
+          onOpenArea={(id) => navigate(`/areas/${id}`)}
         />
       );
     case "search":

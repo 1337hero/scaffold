@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { inboxCountQuery } from "@/api/queries.js"
-import { dashboard, inbox, notebooks, search } from "@/constants/nav.js"
+import { dashboard, inbox, areas, search } from "@/constants/nav.js"
 
 const DashboardIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -25,7 +25,7 @@ const PlusIcon = () => (
   </svg>
 )
 
-const NotebooksIcon = () => (
+const AreasIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
     <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
@@ -46,7 +46,7 @@ const MobileBar = ({ activeRoute, onNavigate, onCapture }) => {
     { id: dashboard.id, path: dashboard.path, icon: DashboardIcon },
     { id: inbox.id, path: inbox.path, icon: InboxIcon, badge: inboxCount },
     { id: "capture", icon: PlusIcon, primary: true },
-    { id: notebooks.id, path: notebooks.path, icon: NotebooksIcon },
+    { id: areas.id, path: areas.path, icon: AreasIcon },
     { id: search.id, path: search.path, icon: SearchIcon },
   ]
 

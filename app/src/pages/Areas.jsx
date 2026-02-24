@@ -73,14 +73,14 @@ const DomainCard = ({ domain, onOpen }) => {
       </div>
 
       <div class="mt-auto flex items-center justify-between text-app-muted group-hover:text-app-ink transition-colors">
-        <span class="text-xs font-bold">Open Notebook</span>
+        <span class="text-xs font-bold">Open Area</span>
         <ChevronRight />
       </div>
     </div>
   )
 }
 
-const Notebooks = ({ onOpenNotebook }) => {
+const Areas = ({ onOpenArea }) => {
   const { data: domains, isLoading } = useQuery(domainHealthQuery)
 
   const active = (domains || []).filter(d => d.Status !== "archived")
@@ -89,8 +89,8 @@ const Notebooks = ({ onOpenNotebook }) => {
     return (
       <div class="space-y-8">
         <header>
-          <h2 class="text-3xl font-serif italic font-semibold">Notebooks</h2>
-          <p class="text-app-muted text-sm mt-1">Deep dives into your life domains.</p>
+          <h2 class="text-3xl font-serif italic font-semibold">Areas</h2>
+          <p class="text-app-muted text-sm mt-1">Ongoing areas of responsibility.</p>
         </header>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {[1, 2, 3].map(i => (
@@ -104,8 +104,8 @@ const Notebooks = ({ onOpenNotebook }) => {
   return (
     <div class="space-y-8">
       <header>
-        <h2 class="text-3xl font-serif italic font-semibold">Notebooks</h2>
-        <p class="text-app-muted text-sm mt-1">Deep dives into your life domains.</p>
+        <h2 class="text-3xl font-serif italic font-semibold">Areas</h2>
+        <p class="text-app-muted text-sm mt-1">Ongoing areas of responsibility.</p>
       </header>
 
       {active.length === 0 ? (
@@ -115,7 +115,7 @@ const Notebooks = ({ onOpenNotebook }) => {
       ) : (
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {active.map(d => (
-            <DomainCard key={d.ID} domain={d} onOpen={onOpenNotebook} />
+            <DomainCard key={d.ID} domain={d} onOpen={onOpenArea} />
           ))}
         </div>
       )}
@@ -123,4 +123,4 @@ const Notebooks = ({ onOpenNotebook }) => {
   )
 }
 
-export default Notebooks
+export default Areas

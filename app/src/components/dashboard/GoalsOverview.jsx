@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks"
-import GoalModal from "@/components/notebooks/GoalModal.jsx"
+import GoalModal from "@/components/areas/GoalModal.jsx"
 import { domainColor } from "@/constants/colors.js"
 
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -96,7 +96,7 @@ const GoalCard = ({ goal, domains, tasks, onSaveGoal, onDeleteGoal }) => {
 
   return (
     <a
-      href={`#/notebooks/${goal.DomainID}`}
+      href={`#/areas/${goal.DomainID}`}
       class="block p-4 bg-[var(--color-card-bg)] rounded-2xl border border-app-border card-shadow group hover:border-app-ink/10 transition-all min-w-[240px] no-underline text-inherit cursor-pointer relative"
     >
       <div class="flex justify-between items-start mb-3">

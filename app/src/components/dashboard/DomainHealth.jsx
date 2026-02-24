@@ -20,7 +20,7 @@ const DomainHealth = ({ domains = [] }) => {
           return (
             <a
               key={domain.ID}
-              href={`#/notebooks/${domain.ID}`}
+              href={`#/areas/${domain.ID}`}
               class="p-4 bg-[var(--color-card-bg)] rounded-2xl border border-app-border card-shadow flex items-center gap-4 group hover:border-app-ink/10 transition-all cursor-pointer"
             >
               <div

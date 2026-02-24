@@ -176,7 +176,7 @@ export const domainsQuery = {
   },
 }
 
-// Domain Health (for Notebooks)
+// Domain Health (for Areas)
 
 export const domainHealthQuery = {
   queryKey: ["domains-health"],

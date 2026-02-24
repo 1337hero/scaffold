@@ -29,7 +29,7 @@ function ResultItem({ result, domains }) {
   const domainId = nullable(result.DomainID)
   const domain = domainId ? domains.find((d) => d.ID === domainId) : null
   const color = typeColor(result.Type)
-  const href = domainId ? `#/notebooks/${domainId}` : null
+  const href = domainId ? `#/areas/${domainId}` : null
 
   const card = (
     <div class="p-4 bg-[var(--color-card-bg)] rounded-2xl border border-app-border card-shadow hover:border-app-ink/10 transition-all flex items-center gap-3 cursor-pointer">

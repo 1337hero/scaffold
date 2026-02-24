@@ -1,8 +1,8 @@
-import { agentsNav, dashboard, inbox, notebooks, search } from "@/constants/nav.js";
+import { agentsNav, dashboard, inbox, areas, search } from "@/constants/nav.js";
 import { cn } from "@/lib/utils.js";
 import { RiAddLine } from "@remixicon/react";
 
-const navItems = [dashboard, { ...inbox, hasBadge: true }, notebooks, search, agentsNav];
+const navItems = [dashboard, { ...inbox, hasBadge: true }, areas, search, agentsNav];
 
 const Sidebar = ({ activeRoute, onNavigate, onCapture, inboxCount, coderActive }) => {
   return (
