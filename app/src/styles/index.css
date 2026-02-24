@@ -13,6 +13,57 @@
   --color-card-bg: #FDFAF5;
   --color-input-bg: #F9F5EE;
 
+  /* ── Sidebar ── */
+  --color-sidebar-bg: #1C1712;
+  --color-sidebar-active: #2E2318;
+  --color-sidebar-text: #9C8E7A;
+
+  /* ── Accent ── */
+  --color-accent: #C47D3A;
+  --color-accent-hover: #B06A2E;
+
+  /* ── Status ── */
+  --color-status-success: #5A9E6F;
+  --color-status-warning: #C47D3A;
+  --color-status-error: #C4617A;
+  --color-status-info: #5B8DB8;
+
+  /* ── Progress ── */
+  --color-progress-fill: #1A1A1A;
+
+  /* ── Domains ── */
+  --color-domain-work: #5B8DB8;
+  --color-domain-projects: #8B6BB1;
+  --color-domain-homelife: #C47D3A;
+  --color-domain-development: #5A9E6F;
+  --color-domain-relationships: #C4617A;
+  --color-domain-finances: #3D9E9E;
+  --color-domain-hobbies: #C4663A;
+  --color-domain-default: #9C8E7A;
+
+  /* ── Drift ── */
+  --color-drift-active: #27ae60;
+  --color-drift-drifting: #f39c12;
+  --color-drift-neglected: #e74c3c;
+  --color-drift-cold: #95a5a6;
+  --color-drift-overactive: #3498db;
+
+  /* ── Capture types ── */
+  --color-type-goal: #5A9E6F;
+  --color-type-task: #f59e0b;
+  --color-type-note: #8b5cf6;
+
+  /* ── Inbox groups ── */
+  --color-group-tasks: #d29922;
+  --color-group-goals: #58a6ff;
+  --color-group-notes: #8b949e;
+
+  /* ── Coder tools ── */
+  --color-tool-shell: #5B8DB8;
+  --color-tool-write: #C47D3A;
+  --color-tool-read: #5A9E6F;
+  --color-tool-error: #C4617A;
+
   --animate-page-enter: page-enter 0.2s ease-out;
   --animate-modal-card-enter: modal-card-enter 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-indicator-appear: indicator-appear 0.15s ease-out;
@@ -41,7 +92,7 @@
 }
 
 .glass {
-  @apply bg-[#FDFAF5]/70 backdrop-blur-md border border-white/20;
+  @apply bg-card-bg/70 backdrop-blur-md border border-white/20;
 }
 
 .card-shadow {
@@ -69,12 +120,12 @@ dialog[open] .modal-card {
 }
 
 .pulse-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: #C47D3A;
+  width: 7px; height: 7px; border-radius: 50%; background: var(--color-accent);
   flex-shrink: 0; position: relative;
 }
 .pulse-dot::after {
   content: ''; position: absolute; inset: -3px; border-radius: 50%;
-  background: #C47D3A; opacity: 0.25; animation: pulse-ring 1.5s ease-out infinite;
+  background: var(--color-accent); opacity: 0.25; animation: pulse-ring 1.5s ease-out infinite;
 }
 
 .step-icon-active {
@@ -82,7 +133,7 @@ dialog[open] .modal-card {
 }
 .step-icon-active::after {
   content: ''; position: absolute; inset: -3px; border-radius: 50%;
-  background: #C47D3A; opacity: 0.15; animation: pulse-ring 1.5s ease-out infinite;
+  background: var(--color-accent); opacity: 0.15; animation: pulse-ring 1.5s ease-out infinite;
 }
 
 .coder-action-text {
@@ -94,4 +145,47 @@ dialog[open] .modal-card {
 }
 .log-arrow.open {
   transform: rotate(90deg);
+}
+
+/* ── Theme Utility Classes ── */
+
+@layer utilities {
+  /* ── Status ── */
+  .text-status-done    { color: var(--color-status-success); }
+  .text-status-running { color: var(--color-status-warning); }
+  .text-status-failed  { color: var(--color-status-error); }
+  .bg-status-done      { background-color: var(--color-status-success); }
+  .bg-status-running   { background-color: var(--color-status-warning); }
+  .bg-status-failed    { background-color: var(--color-status-error); }
+
+  /* ── Drift ── */
+  .drift-active     { background-color: color-mix(in srgb, var(--color-drift-active) 10%, transparent); color: var(--color-drift-active); }
+  .drift-drifting   { background-color: color-mix(in srgb, var(--color-drift-drifting) 10%, transparent); color: var(--color-drift-drifting); }
+  .drift-neglected  { background-color: color-mix(in srgb, var(--color-drift-neglected) 10%, transparent); color: var(--color-drift-neglected); }
+  .drift-cold       { background-color: color-mix(in srgb, var(--color-drift-cold) 10%, transparent); color: var(--color-drift-cold); }
+  .drift-overactive { background-color: color-mix(in srgb, var(--color-drift-overactive) 10%, transparent); color: var(--color-drift-overactive); }
+
+  /* ── Tool badges ── */
+  .tool-badge-shell  { background-color: color-mix(in srgb, var(--color-tool-shell) 10%, transparent); color: var(--color-tool-shell); }
+  .tool-badge-write  { background-color: color-mix(in srgb, var(--color-tool-write) 10%, transparent); color: var(--color-tool-write); }
+  .tool-badge-read   { background-color: color-mix(in srgb, var(--color-tool-read) 10%, transparent); color: var(--color-tool-read); }
+  .tool-badge-result { background-color: color-mix(in srgb, var(--color-tool-read) 10%, transparent); color: var(--color-tool-read); }
+  .tool-badge-error  { background-color: color-mix(in srgb, var(--color-tool-error) 10%, transparent); color: var(--color-tool-error); }
+
+  /* ── Coder step icon ── */
+  .step-done    { background-color: color-mix(in srgb, var(--color-status-success) 12%, transparent); color: var(--color-status-success); }
+  .step-running { background-color: color-mix(in srgb, var(--color-status-warning) 12%, transparent); color: var(--color-status-warning); }
+  .step-failed  { background-color: color-mix(in srgb, var(--color-status-error) 10%, transparent); color: var(--color-status-error); }
+  .step-pending { background-color: rgb(0 0 0 / 0.04); color: var(--color-app-muted); }
+
+  /* ── Coder state containers ── */
+  .state-running { background-color: color-mix(in srgb, var(--color-status-warning) 5%, transparent); border-color: color-mix(in srgb, var(--color-status-warning) 15%, transparent); }
+  .state-done    { background-color: color-mix(in srgb, var(--color-status-success) 6%, transparent); border-color: color-mix(in srgb, var(--color-status-success) 15%, transparent); }
+  .state-failed  { background-color: color-mix(in srgb, var(--color-status-error) 6%, transparent); border-color: color-mix(in srgb, var(--color-status-error) 15%, transparent); }
+
+  /* ── Chain left border ── */
+  .chain-border-running   { border-left-color: var(--color-status-warning); }
+  .chain-border-done      { border-left-color: var(--color-status-success); }
+  .chain-border-failed    { border-left-color: var(--color-status-error); }
+  .chain-border-cancelled { border-left-color: var(--color-app-muted); }
 }

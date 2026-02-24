@@ -59,7 +59,7 @@ const ScheduleViz = ({ goal, color }) => {
 const GoalCard = ({ goal, domain, color, onSave, onDelete, domains, tasks }) => {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalEditMode, setModalEditMode] = useState(false)
-  const resolvedColor = domain?.color || domain?.Color?.String || color || "#9C8E7A"
+  const resolvedColor = domain?.color || domain?.Color?.String || color || 'var(--color-domain-default)'
   const domainName = domain?.name || domain?.Name
   const pct = Math.min(Math.round((goal.Progress || 0) * 100), 100)
   const type = goal.Type || "binary"

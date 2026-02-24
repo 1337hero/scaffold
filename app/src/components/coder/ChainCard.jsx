@@ -11,10 +11,10 @@ const formatElapsed = (secs) => {
 }
 
 const borderColor = {
-  running: "border-l-[#C47D3A]",
-  done: "border-l-[#5A9E6F]",
-  failed: "border-l-[#C4617A]",
-  cancelled: "border-l-app-muted",
+  running: "chain-border-running",
+  done: "chain-border-done",
+  failed: "chain-border-failed",
+  cancelled: "chain-border-cancelled",
 }
 
 const ChainCard = ({ task, stepLogs = {}, currentAction, stepProgress }) => {
@@ -41,19 +41,19 @@ const ChainCard = ({ task, stepLogs = {}, currentAction, stepProgress }) => {
       {/* Header */}
       <div class="flex items-center gap-2.5 mb-2.5">
         {task.status === "running" && (
-          <div class="flex items-center gap-1.5 font-mono text-[11px] text-[#C47D3A]">
+          <div class="flex items-center gap-1.5 font-mono text-[11px] text-status-running">
             <span class="pulse-dot" />
             running
           </div>
         )}
         {task.status === "done" && (
-          <div class="flex items-center gap-1.5 font-mono text-[11px] text-[#5A9E6F]">
+          <div class="flex items-center gap-1.5 font-mono text-[11px] text-status-done">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12" /></svg>
             done
           </div>
         )}
         {task.status === "failed" && (
-          <div class="flex items-center gap-1.5 font-mono text-[11px] text-[#C4617A]">
+          <div class="flex items-center gap-1.5 font-mono text-[11px] text-status-failed">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             failed
             {task.failed_step && <> · {task.failed_step}</>}
@@ -70,7 +70,7 @@ const ChainCard = ({ task, stepLogs = {}, currentAction, stepProgress }) => {
             type="button"
             onClick={() => killMutation.mutate()}
             disabled={killMutation.isPending}
-            class="ml-auto px-2.5 py-0.5 border border-[#C4617A]/20 rounded-md bg-transparent text-[#C4617A]/55 font-mono text-[10px] uppercase tracking-wide cursor-pointer hover:bg-[#C4617A]/5 hover:text-[#C4617A]/90 transition-all"
+            class="ml-auto px-2.5 py-0.5 border border-status-error/20 rounded-md bg-transparent text-status-error/55 font-mono text-[10px] uppercase tracking-wide cursor-pointer hover:bg-status-error/5 hover:text-status-error/90 transition-all"
           >
             Kill
           </button>
@@ -91,12 +91,12 @@ const ChainCard = ({ task, stepLogs = {}, currentAction, stepProgress }) => {
 
       {/* Current action strip (running only) */}
       {isRunning && currentAction && (
-        <div class="flex items-center gap-2.5 px-3.5 py-2.5 bg-[#C47D3A]/5 border border-[#C47D3A]/15 rounded-[10px] mb-3.5">
-          <span class="w-[13px] h-[13px] border-2 border-[#C47D3A]/20 border-t-[#C47D3A] rounded-full animate-spin shrink-0" />
-          <span class="coder-action-text font-mono text-xs text-[#C47D3A] truncate">
+        <div class="flex items-center gap-2.5 px-3.5 py-2.5 bg-accent/5 border border-accent/15 rounded-[10px] mb-3.5">
+          <span class="w-[13px] h-[13px] border-2 border-accent/20 border-t-accent rounded-full animate-spin shrink-0" />
+          <span class="coder-action-text font-mono text-xs text-status-running truncate">
             {currentAction.input}
           </span>
-          <span class="ml-auto font-mono text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#C47D3A]/8 text-[#C47D3A] opacity-70">
+          <span class="ml-auto font-mono text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-accent/8 text-status-running opacity-70">
             {currentAction.step}
           </span>
         </div>
@@ -104,7 +104,7 @@ const ChainCard = ({ task, stepLogs = {}, currentAction, stepProgress }) => {
 
       {/* Summary (done) */}
       {task.status === "done" && task.summary && (
-        <div class="flex items-center gap-2 px-3.5 py-2.5 rounded-[10px] mt-1 bg-[#5A9E6F]/6 border border-[#5A9E6F]/15 font-mono text-xs text-[#5A9E6F]">
+        <div class="flex items-center gap-2 px-3.5 py-2.5 rounded-[10px] mt-1 bg-status-done/6 border border-status-done/15 font-mono text-xs text-status-done">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><polyline points="20 6 9 17 4 12" /></svg>
           <span class="line-clamp-2">{task.summary}</span>
         </div>
@@ -112,7 +112,7 @@ const ChainCard = ({ task, stepLogs = {}, currentAction, stepProgress }) => {
 
       {/* Error (failed) */}
       {task.status === "failed" && task.error && (
-        <div class="flex items-center gap-2 px-3.5 py-2.5 rounded-[10px] mt-1 bg-[#C4617A]/6 border border-[#C4617A]/15 font-mono text-xs text-[#C4617A]">
+        <div class="flex items-center gap-2 px-3.5 py-2.5 rounded-[10px] mt-1 bg-status-error/6 border border-status-error/15 font-mono text-xs text-status-error">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           <span class="line-clamp-2">{task.error}</span>
         </div>

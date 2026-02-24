@@ -2,8 +2,7 @@ import { useState, useEffect } from "preact/hooks"
 import { useQuery } from "@tanstack/react-query"
 import { searchQuery, domainsQuery } from "@/api/queries.js"
 import { nullable } from "@/utils/nullable.js"
-
-const TYPE_COLORS = { goal: "#5A9E6F", task: "#f59e0b", note: "#8b5cf6" }
+import { typeColor } from "@/constants/colors.js"
 
 const FILTERS = [
   { id: "", label: "All" },
@@ -29,7 +28,7 @@ const SearchIcon = ({ size = 24 }) => (
 function ResultItem({ result, domains }) {
   const domainId = nullable(result.DomainID)
   const domain = domainId ? domains.find((d) => d.ID === domainId) : null
-  const color = TYPE_COLORS[result.Type] || "#9C8E7A"
+  const color = typeColor(result.Type)
   const href = domainId ? `#/notebooks/${domainId}` : null
 
   const card = (
@@ -49,7 +48,7 @@ function ResultItem({ result, domains }) {
       {domain && (
         <span
           class="text-[9px] mono uppercase px-1.5 py-0.5 rounded bg-black/5 opacity-60 shrink-0"
-          style={{ color: TYPE_COLORS["goal"] }}
+          style={{ color: typeColor('goal') }}
         >
           {domain.Name}
         </span>

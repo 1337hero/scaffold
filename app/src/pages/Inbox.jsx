@@ -7,6 +7,7 @@ import {
   archiveInboxCapture,
 } from "@/api/queries.js"
 import InboxItem from "@/components/inbox/InboxItem.jsx"
+import { GROUP_DOTS } from "@/constants/colors.js"
 
 const Inbox = () => {
   const queryClient = useQueryClient()
@@ -45,9 +46,9 @@ const Inbox = () => {
   const unprocessed = items.filter((i) => i.Processed === 0)
 
   const GROUPS = [
-    { key: "tasks",  label: "Tasks",  dot: "#d29922", types: ["task"] },
-    { key: "goals",  label: "Goals",  dot: "#58a6ff", types: ["goal"] },
-    { key: "notes",  label: "Notes",  dot: "#8b949e", types: ["note", "link", "video", "idea", "article"] },
+    { key: "tasks",  label: "Tasks",  dot: GROUP_DOTS.tasks, types: ["task"] },
+    { key: "goals",  label: "Goals",  dot: GROUP_DOTS.goals, types: ["goal"] },
+    { key: "notes",  label: "Notes",  dot: GROUP_DOTS.notes, types: ["note", "link", "video", "idea", "article"] },
   ]
 
   const grouped = GROUPS.map(g => ({

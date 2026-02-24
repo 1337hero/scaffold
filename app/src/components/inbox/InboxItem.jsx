@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks"
 import { cn } from "@/lib/utils.js"
 import { dispatchCoderTask } from "@/api/queries.js"
+import { typeColor } from "@/constants/colors.js"
 
 const TYPE_OPTIONS = ["task", "note", "goal"]
 const PRIORITY_OPTIONS = ["high", "normal", "low"]
@@ -13,8 +14,6 @@ const inputClass =
   "py-2.5 px-3 bg-black/5 border border-app-border rounded-xl text-sm w-full outline-none focus:border-app-ink/30 transition-all"
 const selectClass =
   "py-2.5 px-3 bg-black/5 border border-app-border rounded-xl text-sm w-full outline-none focus:border-app-ink/30 transition-all appearance-none cursor-pointer"
-
-const TYPE_COLORS = { goal: "#5A9E6F", task: "#f59e0b", note: "#8b5cf6" }
 
 function formatTime(ts) {
   if (!ts) return ""
@@ -46,7 +45,7 @@ function inferInitialDomain(item) {
 }
 
 function TypeBadge({ type }) {
-  const color = TYPE_COLORS[type] || "#9C8E7A"
+  const color = typeColor(type)
   return (
     <span
       class="text-[9px] mono uppercase px-2 py-0.5 rounded bg-black/5 font-bold shrink-0"

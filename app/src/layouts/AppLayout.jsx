@@ -33,7 +33,7 @@ function RouteView({ route, param }) {
       );
     case "search":
       return <Search />;
-    case "coder":
+    case "agents":
       return <Coder />;
     default:
       return <Dashboard />;

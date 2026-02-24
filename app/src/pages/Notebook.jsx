@@ -18,21 +18,8 @@ import InlineCreate from "@/components/notebooks/InlineCreate.jsx"
 import NoteItem from "@/components/notebooks/NoteItem.jsx"
 import TaskItem from "@/components/notebooks/TaskItem.jsx"
 import { nullable } from "@/utils/nullable.js"
+import { domainColor } from "@/constants/colors.js"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-
-function domainColor(domain) {
-  if (domain?.Color?.Valid) return domain.Color.String
-  const colors = {
-    "Work/Business": "#5B8DB8",
-    "Personal Projects": "#8B6BB1",
-    Homelife: "#C47D3A",
-    "Personal Development": "#5A9E6F",
-    Relationships: "#C4617A",
-    Finances: "#3D9E9E",
-    Hobbies: "#C4663A",
-  }
-  return colors[domain?.Name] || "#9C8E7A"
-}
 
 const ChevronLeftIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -46,14 +33,6 @@ const BookOpenIcon = () => (
     <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
   </svg>
 )
-
-const DRIFT_COLORS = {
-  active: "#27ae60",
-  drifting: "#f39c12",
-  neglected: "#e74c3c",
-  cold: "#95a5a6",
-  overactive: "#3498db",
-}
 
 const Notebook = ({ domainId, onBack }) => {
   const queryClient = useQueryClient()
@@ -144,8 +123,6 @@ const Notebook = ({ domainId, onBack }) => {
   const health = healthData.find((h) => h.ID === domain.ID)
   const healthScore = health?.HealthScore ?? 0
   const driftState = (health?.State || "active").toLowerCase()
-  const driftColor = DRIFT_COLORS[driftState] || DRIFT_COLORS.active
-
   const [taskTab, setTaskTab] = useState("open")
   const recurringTasks = tasks.filter((t) => t.Recurring?.Valid && t.Recurring.String)
   const openTasks = tasks.filter((t) => t.Status !== "done")
@@ -298,7 +275,7 @@ const Notebook = ({ domainId, onBack }) => {
 
         {/* Stats sidebar */}
         <div class="lg:col-span-4 space-y-8">
-          <div class="p-6 bg-app-ink text-[#F5F0E8] rounded-3xl shadow-xl">
+          <div class="p-6 bg-app-ink text-app-bg rounded-3xl shadow-xl">
             <h3 class="text-xs font-bold mono uppercase tracking-widest opacity-40 mb-4">
               Domain Stats
             </h3>

@@ -147,15 +147,15 @@ const Coder = () => {
   return (
     <div>
       <div class="mb-9">
-        <h2 class="text-[28px] font-bold tracking-tight">Coder</h2>
+        <h2 class="text-[28px] font-bold tracking-tight">Agents</h2>
         <p class="text-sm text-app-muted mt-1">
-          Autonomous coding chains dispatched from Signal or the web
+          Autonomous chains dispatched from Signal or the web
         </p>
       </div>
 
       {isError && (
-        <div class="border border-[#C4617A]/20 rounded-[14px] p-3 mb-4 bg-[#C4617A]/5">
-          <p class="text-[#C4617A] text-xs font-mono">
+        <div class="border border-status-error/20 rounded-[14px] p-3 mb-4 bg-status-error/5">
+          <p class="text-status-error text-xs font-mono">
             Failed to load tasks: {error?.message || "unknown error"}
           </p>
         </div>
@@ -166,7 +166,7 @@ const Coder = () => {
         {runningTask ? (
           <>
             <span class="pulse-dot" />
-            <span class="font-mono text-[11px] text-[#C47D3A] font-medium">
+            <span class="font-mono text-[11px] text-status-running font-medium">
               1 chain running
             </span>
             <span class="text-app-border">·</span>
@@ -181,7 +181,7 @@ const Coder = () => {
             <span class="w-2 h-2 rounded-full bg-app-muted shrink-0" />
             <span class="font-mono text-[11px] text-app-muted">idle</span>
             <span class="text-app-border">·</span>
-            <span class="font-mono text-[11px] text-app-muted">scaffold-coder ready · no active chains</span>
+            <span class="font-mono text-[11px] text-app-muted">ready · no active chains</span>
           </>
         )}
       </div>
@@ -202,7 +202,7 @@ const Coder = () => {
               value={dispatchTask}
               onInput={(e) => setDispatchTask(e.currentTarget.value)}
               placeholder="Describe the task..."
-              class="flex-1 bg-input-bg border border-app-border rounded-lg px-3 py-2 text-sm text-app-ink font-mono placeholder:text-app-muted/40 outline-none focus:border-[#C47D3A]/40"
+              class="flex-1 bg-input-bg border border-app-border rounded-lg px-3 py-2 text-sm text-app-ink font-mono placeholder:text-app-muted/40 outline-none focus:border-accent/40"
             />
             <select
               value={dispatchChain}
@@ -221,23 +221,23 @@ const Coder = () => {
               value={dispatchCwd}
               onInput={(e) => setDispatchCwd(e.currentTarget.value)}
               placeholder="Working directory (optional, defaults to scaffold root)"
-              class="flex-1 bg-input-bg border border-app-border rounded-lg px-3 py-2 text-[11px] font-mono text-app-muted placeholder:text-app-muted/40 outline-none focus:border-[#C47D3A]/40"
+              class="flex-1 bg-input-bg border border-app-border rounded-lg px-3 py-2 text-[11px] font-mono text-app-muted placeholder:text-app-muted/40 outline-none focus:border-accent/40"
             />
             <button
               type="submit"
               disabled={!dispatchTask.trim() || dispatchMutation.isPending}
-              class="px-4 py-2 rounded-lg bg-[#C47D3A] text-white text-[11px] font-mono font-semibold hover:bg-[#B06A2E] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              class="px-4 py-2 rounded-lg bg-accent text-white text-[11px] font-mono font-semibold hover:bg-accent-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
               {dispatchMutation.isPending ? "Sending..." : "Dispatch"}
             </button>
           </div>
           {dispatchMutation.isError && (
-            <p class="text-[11px] text-[#C4617A] font-mono">
+            <p class="text-[11px] text-status-error font-mono">
               {dispatchMutation.error?.message || "dispatch failed"}
             </p>
           )}
           {dispatchMutation.isSuccess && (
-            <p class="text-[11px] text-[#5A9E6F] font-mono">Dispatched</p>
+            <p class="text-[11px] text-status-done font-mono">Dispatched</p>
           )}
         </form>
       </div>

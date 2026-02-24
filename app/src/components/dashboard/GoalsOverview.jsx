@@ -1,20 +1,6 @@
 import { useState } from "preact/hooks"
 import GoalModal from "@/components/notebooks/GoalModal.jsx"
-
-const DOMAIN_COLORS = {
-  "Work/Business": "#5B8DB8",
-  "Personal Projects": "#8B6BB1",
-  "Homelife": "#C47D3A",
-  "Personal Development": "#5A9E6F",
-  "Relationships": "#C4617A",
-  "Finances": "#3D9E9E",
-  "Hobbies": "#C4663A",
-}
-
-function domainColor(name) {
-  if (!name) return "#9C8E7A"
-  return DOMAIN_COLORS[name] || DOMAIN_COLORS[name.toLowerCase()] || "#9C8E7A"
-}
+import { domainColor } from "@/constants/colors.js"
 
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"]

@@ -22,16 +22,16 @@ const StepPipeline = ({ steps }) => {
 }
 
 const iconCls = {
-  done:    "bg-[#5A9E6F]/12 text-[#5A9E6F]",
-  running: "bg-[#C47D3A]/12 text-[#C47D3A] step-icon-active",
-  failed:  "bg-[#C4617A]/10 text-[#C4617A]",
-  pending: "bg-black/4 text-app-muted",
+  done:    "step-done",
+  running: "step-running step-icon-active",
+  failed:  "step-failed",
+  pending: "step-pending",
 }
 
 const nameCls = {
-  done:    "text-[#5A9E6F]",
-  running: "text-[#C47D3A] font-medium",
-  failed:  "text-[#C4617A]",
+  done:    "text-status-done",
+  running: "text-status-running font-medium",
+  failed:  "text-status-failed",
   pending: "text-app-muted opacity-40",
 }
 

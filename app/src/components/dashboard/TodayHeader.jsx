@@ -19,7 +19,7 @@ const TodayHeader = () => {
           <div class="h-2 w-full bg-black/5 rounded-full overflow-hidden">
             <div
               class="h-full rounded-full"
-              style={{ backgroundColor: '#1A1A1A', width: `${progress}%` }}
+              style={{ backgroundColor: 'var(--color-progress-fill)', width: `${progress}%` }}
             />
           </div>
         </div>

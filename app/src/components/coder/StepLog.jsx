@@ -3,16 +3,16 @@ import { useState } from "preact/hooks"
 const badgeStyle = (ev) => {
   if (ev.type === "tool_use") {
     const tool = (ev.tool || "").toLowerCase()
-    if (tool === "bash")  return { label: "cmd",   cls: "bg-[#5B8DB8]/10 text-[#5B8DB8]" }
-    if (tool === "write") return { label: "write", cls: "bg-[#C47D3A]/10 text-[#C47D3A]" }
-    if (tool === "read")  return { label: "read",  cls: "bg-[#5A9E6F]/10 text-[#5A9E6F]" }
-    if (tool === "edit" || tool === "multiedit") return { label: "edit", cls: "bg-[#C47D3A]/10 text-[#C47D3A]" }
-    if (tool === "grep" || tool === "find" || tool === "ls") return { label: tool, cls: "bg-[#5B8DB8]/10 text-[#5B8DB8]" }
+    if (tool === "bash")  return { label: "cmd",   cls: "tool-badge-shell" }
+    if (tool === "write") return { label: "write", cls: "tool-badge-write" }
+    if (tool === "read")  return { label: "read",  cls: "tool-badge-read" }
+    if (tool === "edit" || tool === "multiedit") return { label: "edit", cls: "tool-badge-write" }
+    if (tool === "grep" || tool === "find" || tool === "ls") return { label: tool, cls: "tool-badge-shell" }
     return { label: "tool", cls: "bg-black/5 text-app-muted" }
   }
-  if (ev.type === "tool_result") return { label: "done", cls: "bg-[#5A9E6F]/10 text-[#5A9E6F]" }
-  if (ev.type === "result") return { label: "done", cls: "bg-[#5A9E6F]/10 text-[#5A9E6F]" }
-  if (ev.type === "error") return { label: "error", cls: "bg-[#C4617A]/10 text-[#C4617A]" }
+  if (ev.type === "tool_result") return { label: "done", cls: "tool-badge-result" }
+  if (ev.type === "result") return { label: "done", cls: "tool-badge-result" }
+  if (ev.type === "error") return { label: "error", cls: "tool-badge-error" }
   return null
 }
 
