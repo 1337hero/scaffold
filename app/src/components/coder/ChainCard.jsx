@@ -23,11 +23,11 @@ const ChainCard = ({ task, stepLogs = {}, currentAction, stepProgress }) => {
 
   const killMutation = useMutation({
     mutationFn: () =>
-      fetch(`/api/coder/tasks/${task.id}`, {
+      fetch(`/api/agents/tasks/${task.id}`, {
         method: "DELETE",
         credentials: "include",
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["coder-tasks"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agent-tasks"] }),
   })
 
   const elapsed = task.ended_at

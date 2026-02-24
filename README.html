@@ -100,6 +100,7 @@
         .dot-green { background: var(--accent-green); }
         .dot-amber { background: var(--accent-amber); }
         .dot-violet { background: var(--accent-violet); }
+        .dot-rose { background: var(--accent-rose); }
 
         /* Section */
         section {
@@ -391,6 +392,7 @@
                 <span class="surface-pill"><span class="dot dot-cyan"></span>Desktop UI</span>
                 <span class="surface-pill"><span class="dot dot-green"></span>Cortex Runtime</span>
                 <span class="surface-pill"><span class="dot dot-amber"></span>Session Bus</span>
+                <span class="surface-pill"><span class="dot dot-rose"></span>Agents</span>
                 <span class="surface-pill"><span class="dot dot-violet"></span>SQLite Brain</span>
             </div>
         </div>
@@ -406,7 +408,7 @@
                                                     <span class="arrow">↑</span>
 <span class="label">Session Bus</span> <span class="arrow">──→</span> <span class="accent">Cross-agent messaging</span> <span class="arrow">──┘</span>
                                                     <span class="arrow">↑</span>
-<span class="label">Coder</span> <span class="arrow">──→</span> <span class="accent">Chain runner</span> (claude subprocs) <span class="arrow">──┘</span></div>
+<span class="label">Agents</span> <span class="arrow">──→</span> <span class="accent">Chain runner</span> (pi subprocs) <span class="arrow">──┘</span></div>
         </section>
 
         <!-- Current Status -->
@@ -459,7 +461,7 @@
                 </div>
                 <div class="status-item">
                     <span class="phase-tag phase-done">CODE</span>
-                    <span class="desc">scaffold-coder — chain runner (scout→planner→worker→reviewer), SSE live stream, <code>#/coder</code> UI, <code>dispatch_code_task</code> agent tool</span>
+                    <span class="desc">scaffold-worker — YAML-driven chain runner, config-driven prompts, per-step tool restrictions, SSE live stream, <code>#/agents</code> UI, <code>dispatch_code_task</code> agent tool</span>
                 </div>
                 <div class="status-item">
                     <span class="phase-tag phase-planned">3A</span>
@@ -510,7 +512,7 @@
                         <tr><td><code>update_task</code></td><td>Update task; status=done triggers completion logic</td></tr>
                         <tr><td><code>list_tasks</code></td><td>Filtered task list</td></tr>
                         <tr><td><code>create_note</code></td><td>Create note</td></tr>
-                        <tr><td><code>dispatch_code_task</code></td><td>Dispatch coding chain to scaffold-coder (implement/fix/spec/single); async, results via session bus</td></tr>
+                        <tr><td><code>dispatch_code_task</code></td><td>Dispatch coding chain to scaffold-worker (chains defined in coder.yaml); async, results via session bus</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -630,12 +632,15 @@
             </div>
 
             <div class="api-group">
-                <div class="api-group-title">Coder</div>
+                <div class="api-group-title">Agents</div>
                 <div class="api-list">
-                    <div class="api-route"><span class="method method-get">GET</span><span class="route-path">/api/coder/tasks</span></div>
-                    <div class="api-route"><span class="method method-get">GET</span><span class="route-path">/api/coder/tasks/{id}</span></div>
-                    <div class="api-route"><span class="method method-delete">DEL</span><span class="route-path">/api/coder/tasks/{id}</span></div>
-                    <div class="api-route"><span class="method method-get">GET</span><span class="route-path">/api/coder/stream &nbsp;(SSE)</span></div>
+                    <div class="api-route"><span class="method method-get">GET</span><span class="route-path">/api/agents/tasks</span></div>
+                    <div class="api-route"><span class="method method-get">GET</span><span class="route-path">/api/agents/tasks/{id}</span></div>
+                    <div class="api-route"><span class="method method-delete">DEL</span><span class="route-path">/api/agents/tasks/{id}</span></div>
+                    <div class="api-route"><span class="method method-get">GET</span><span class="route-path">/api/agents/tasks/{id}/steps/{step_num}/events</span></div>
+                    <div class="api-route"><span class="method method-post">POST</span><span class="route-path">/api/agents/dispatch</span></div>
+                    <div class="api-route"><span class="method method-get">GET</span><span class="route-path">/api/agents/chains</span></div>
+                    <div class="api-route"><span class="method method-get">GET</span><span class="route-path">/api/agents/stream &nbsp;(SSE)</span></div>
                 </div>
             </div>
         </section>
@@ -646,16 +651,17 @@
             <h3>YAML files in config/</h3>
             <div class="config-grid">
                 <div class="config-item"><div class="name">agent.yaml</div><div class="purpose">Agent identity, behavior rules, response model/tokens</div></div>
-                <div class="config-item"><div class="name">tools.yaml</div><div class="purpose">13 provider-agnostic tool schemas</div></div>
+                <div class="config-item"><div class="name">tools.yaml</div><div class="purpose">14 provider-agnostic tool schemas</div></div>
                 <div class="config-item"><div class="name">triage.yaml</div><div class="purpose">Capture triage prompt and model</div></div>
                 <div class="config-item"><div class="name">cortex.yaml</div><div class="purpose">10 maintenance task intervals and thresholds</div></div>
                 <div class="config-item"><div class="name">llm.yaml</div><div class="purpose">Provider registry, route/profile model selection</div></div>
                 <div class="config-item"><div class="name">embedding.yaml</div><div class="purpose">Ollama embedding config (nomic-embed-text, 768-dim)</div></div>
                 <div class="config-item"><div class="name">google.yaml</div><div class="purpose">Google OAuth2 client config (calendar)</div></div>
                 <div class="config-item"><div class="name">webhooks.yaml</div><div class="purpose">Webhook auth tokens</div></div>
-                <div class="config-item"><div class="name">coder.yaml</div><div class="purpose">scaffold-coder: CWD allowlist for chain runs</div></div>
+                <div class="config-item"><div class="name">coder.yaml</div><div class="purpose">Agent chains: chain definitions, step prompts, CWD allowlist, max_concurrent</div></div>
                 <div class="config-item"><div class="name">coder-skill.md</div><div class="purpose">Base skill injected into every coder step prompt</div></div>
                 <div class="config-item"><div class="name">coder-skills/{step}.md</div><div class="purpose">Optional per-step skill overrides (scout, planner, worker, reviewer)</div></div>
+                <div class="config-item"><div class="name">coder-prompts/{step}.md</div><div class="purpose">Per-step prompt templates (scout, planner, worker, reviewer, verify)</div></div>
             </div>
 
             <h3>Environment (daemon/.env)</h3>
@@ -695,6 +701,7 @@
                         <tr><td><code>cortex.bulletin</code></td><td>Memory bulletin synthesis</td></tr>
                         <tr><td><code>cortex.semantic</code></td><td>Consolidation decisions</td></tr>
                         <tr><td><code>cortex.observations</code></td><td>Observation extraction</td></tr>
+                        <tr><td><code>coder.worker</code></td><td>Agent chain step execution (pi RPC)</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -755,10 +762,10 @@
 <span class="cmd">journalctl</span> <span class="flag">--user</span> -u scaffold-daemon.service -f</pre>
         </section>
 
-        <!-- scaffold-coder -->
+        <!-- Agents (scaffold-worker) -->
         <section>
-            <h2>scaffold-coder</h2>
-            <p>Goroutine inside the daemon that picks up <code>code_task</code> messages from the session bus and runs chains of <code>claude</code> subprocesses. One chain at a time (semaphore=1); bus queues extras naturally.</p>
+            <h2>Agents (scaffold-worker)</h2>
+            <p>Goroutine inside the daemon that picks up <code>code_task</code> messages from the session bus and runs YAML-defined chains of <code>pi</code> subprocesses. Concurrency controlled by <code>max_concurrent</code> in coder.yaml; bus queues extras naturally.</p>
 
             <div class="table-wrap">
                 <table>
@@ -773,35 +780,37 @@
             </div>
 
             <h3>Run Directory</h3>
-<pre>/tmp/scaffold-coder/{uuid}/
+<pre>/tmp/scaffold-worker/{uuid}/
   task.md          ← original task
   status.json      ← {chain, status, started_at, ended_at, …}
   steps/
     1-scout/
       prompt.md    ← rendered prompt (skill + template)
-      events.jsonl ← append-only claude stream events
+      events.jsonl ← append-only pi stream events
       output.md    ← step output → fed to next step
     2-planner/ …
     3-worker/  …
     4-reviewer/ …</pre>
 
             <h3>Session Bus Protocol</h3>
-<pre><span class="comment"># Signal agent → coder</span>
+<pre><span class="comment"># Signal agent → scaffold-worker</span>
 { "type": "code_task", "task": "implement goal recurrence",
   "chain": "implement", "cwd": "/home/mikekey/Builds/scaffold",
   "reply_to": "scaffold-agent" }
 
-<span class="comment"># Coder → Signal agent on completion</span>
+<span class="comment"># scaffold-worker → Signal agent on completion</span>
 { "type": "coder_result", "task_id": "uuid", "chain": "implement",
   "status": "done", "summary": "PR #48 opened", "elapsed_s": 422 }</pre>
 
-            <h3>SSE Events (GET /api/coder/stream)</h3>
+            <h3>SSE Events (GET /api/agents/stream)</h3>
 <pre>event: chain_started  data: { task_id, chain, task, steps }
 event: step_started   data: { task_id, step, step_num, step_total }
 event: step_event     data: { task_id, step, type, tool?, input? }
 event: step_done      data: { task_id, step, elapsed_s }
 event: chain_done     data: { task_id, status, summary, elapsed_s }
 event: chain_failed   data: { task_id, failed_step, error, elapsed_s }</pre>
+
+            <p>Chains are defined in <code>config/coder.yaml</code>. Add new chains by editing YAML + creating a prompt .md file in <code>config/coder-prompts/</code>. No Go rebuild needed.</p>
         </section>
 
         <!-- Docs -->
@@ -812,12 +821,12 @@ event: chain_failed   data: { task_id, failed_step, error, elapsed_s }</pre>
                 <li><code>docs/hybrid-memory-system-spec.md</code> — Phase 3A: hybrid FTS5 + vector search</li>
                 <li><code>docs/plans/2026-02-22-session-bus-agent-integration.md</code> — session bus integration</li>
                 <li><code>docs/plans/2026-02-22-session-bus-mvp.md</code> — session bus MVP</li>
-                <li><code>specs/code-agent.md</code> — scaffold-coder implementation spec</li>
+                <li><code>specs/code-agent.md</code> — scaffold-worker / agents implementation spec</li>
             </ul>
         </section>
 
         <footer>
-            <p>Scaffold README — updated Feb 23, 2026 · scaffold-coder added</p>
+            <p>Scaffold README — updated Feb 23, 2026 · Phase 3: config-driven agents</p>
         </footer>
     </div>
 </body>

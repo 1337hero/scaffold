@@ -1,4 +1,4 @@
-package coder
+package agents
 
 import (
 	"bufio"
@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,31 +21,35 @@ import (
 )
 
 const (
-	sessionID  = "scaffold-coder"
-	runBaseDir = "/tmp/scaffold-coder"
+	sessionID  = "scaffold-worker"
+	runBaseDir = "/tmp/scaffold-worker"
 	maxRecent  = 20
 )
 
-// Config holds coder configuration.
+// Config holds agent runner configuration.
 type Config struct {
 	AllowedPaths  []string
+	DefaultCWD    string
+	MaxConcurrent int
+	PromptsDir    string
 	SkillPath     string // path to coder-skill.md
 	StepSkillsDir string // path to coder-skills/ dir
 	PiBinary      string // path to pi binary, default "pi"
 	Provider      string // LLM provider for pi (anthropic, openai, etc.)
 	Model         string // model ID for pi
 	APIKeyEnv     string // env var name holding the API key
+	Chains        map[string]Chain
 }
 
 // Coder listens for code_task messages on the session bus and runs chains.
 type Coder struct {
 	bus *sessionbus.Bus
 	hub *SSEHub
-	sem chan struct{} // semaphore(1) — one chain at a time
+	sem chan struct{}
 	cfg Config
 
 	mu     sync.RWMutex
-	active *Task
+	active map[string]*Task
 	recent []*Task
 }
 
@@ -97,17 +102,32 @@ type CoderResultMessage struct {
 
 // New creates a Coder. Call Start(ctx) to begin consuming the bus.
 func New(bus *sessionbus.Bus, cfg Config) *Coder {
+	maxC := cfg.MaxConcurrent
+	if maxC < 1 {
+		maxC = 1
+	}
 	return &Coder{
-		bus: bus,
-		hub: newSSEHub(),
-		sem: make(chan struct{}, 1),
-		cfg: cfg,
+		bus:    bus,
+		hub:    newSSEHub(),
+		sem:    make(chan struct{}, maxC),
+		cfg:    cfg,
+		active: make(map[string]*Task),
 	}
 }
 
 // Hub returns the SSE hub for API handler use.
 func (c *Coder) Hub() *SSEHub {
 	return c.hub
+}
+
+// ChainNames returns sorted chain names for API consumers.
+func (c *Coder) ChainNames() []string {
+	names := make([]string, 0, len(c.cfg.Chains))
+	for k := range c.cfg.Chains {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Start begins the bus consumer loop in a goroutine.
@@ -120,9 +140,9 @@ func (c *Coder) ListTasks() []*Task {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	out := make([]*Task, 0)
-	if c.active != nil {
-		out = append(out, c.active)
+	out := make([]*Task, 0, len(c.active)+len(c.recent))
+	for _, t := range c.active {
+		out = append(out, t)
 	}
 	out = append(out, c.recent...)
 	return out
@@ -133,8 +153,8 @@ func (c *Coder) GetTask(id string) (*Task, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if c.active != nil && c.active.ID == id {
-		return c.active, true
+	if t, ok := c.active[id]; ok {
+		return t, true
 	}
 	for _, t := range c.recent {
 		if t.ID == id {
@@ -149,8 +169,8 @@ func (c *Coder) KillTask(id string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.active != nil && c.active.ID == id {
-		c.active.cancel()
+	if t, ok := c.active[id]; ok {
+		t.cancel()
 		return true
 	}
 	return false
@@ -160,7 +180,7 @@ func (c *Coder) KillTask(id string) bool {
 func (c *Coder) HasActive() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.active != nil
+	return len(c.active) > 0
 }
 
 func (c *Coder) loop(ctx context.Context) {
@@ -183,7 +203,7 @@ func (c *Coder) loop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			log.Printf("coder: poll error: %v", err)
+			log.Printf("agents: poll error: %v", err)
 			select {
 			case <-ctx.Done():
 				return
@@ -195,11 +215,11 @@ func (c *Coder) loop(ctx context.Context) {
 		for _, env := range envelopes {
 			var msg CodeTaskMessage
 			if err := json.Unmarshal([]byte(env.Message), &msg); err != nil {
-				log.Printf("coder: bad message from %s: %v", env.FromSessionID, err)
+				log.Printf("agents: bad message from %s: %v", env.FromSessionID, err)
 				continue
 			}
 			if msg.Type != "code_task" {
-				log.Printf("coder: ignoring message type %q", msg.Type)
+				log.Printf("agents: ignoring message type %q", msg.Type)
 				continue
 			}
 			c.sem <- struct{}{}
@@ -214,10 +234,10 @@ func (c *Coder) loop(ctx context.Context) {
 func (c *Coder) register(ctx context.Context) {
 	if _, err := c.bus.Register(ctx, sessionbus.RegisterRequest{
 		SessionID: sessionID,
-		Provider:  "coder",
-		Name:      "Scaffold Coder",
+		Provider:  "agents",
+		Name:      "Scaffold Worker",
 	}); err != nil {
-		log.Printf("coder: register on bus: %v", err)
+		log.Printf("agents: register on bus: %v", err)
 	}
 }
 
@@ -227,27 +247,29 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 		chain = "implement"
 	}
 
-	chainDef, ok := builtinChains[chain]
+	chainDef, ok := c.cfg.Chains[chain]
 	if !ok {
-		log.Printf("coder: unknown chain %q", chain)
+		log.Printf("agents: unknown chain %q", chain)
 		return
 	}
 
 	cwd := strings.TrimSpace(msg.CWD)
 	if cwd == "" {
-		if len(c.cfg.AllowedPaths) > 0 {
-			cwd = c.cfg.AllowedPaths[0]
-		} else {
-			wd, err := os.Getwd()
-			if err != nil {
-				log.Printf("coder: resolve cwd: %v", err)
-				return
-			}
-			cwd = wd
+		cwd = c.cfg.DefaultCWD
+	}
+	if cwd == "" && len(c.cfg.AllowedPaths) > 0 {
+		cwd = c.cfg.AllowedPaths[0]
+	}
+	if cwd == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			log.Printf("agents: resolve cwd: %v", err)
+			return
 		}
+		cwd = wd
 	}
 	if !c.isAllowedPath(cwd) {
-		log.Printf("coder: cwd %q not in allowlist", cwd)
+		log.Printf("agents: cwd %q not in allowlist", cwd)
 		return
 	}
 
@@ -273,7 +295,7 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 	}
 
 	c.mu.Lock()
-	c.active = task
+	c.active[taskID] = task
 	c.mu.Unlock()
 
 	defer func() {
@@ -282,7 +304,7 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 		task.EndedAt = &ended
 
 		c.mu.Lock()
-		c.active = nil
+		delete(c.active, taskID)
 		c.recent = append([]*Task{task}, c.recent...)
 		if len(c.recent) > maxRecent {
 			c.recent = c.recent[:maxRecent]
@@ -292,12 +314,12 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 
 	runDir, err := initRunDir(runBaseDir, taskID)
 	if err != nil {
-		log.Printf("coder: init run dir: %v", err)
+		log.Printf("agents: init run dir: %v", err)
 		return
 	}
 	defer func() {
 		if err := runDir.Close(); err != nil {
-			log.Printf("coder: close run dir root: %v", err)
+			log.Printf("agents: close run dir root: %v", err)
 		}
 	}()
 	task.RunDir = runDir.AbsPath
@@ -323,7 +345,7 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 		"steps":   stepNames,
 	})
 
-	log.Printf("coder: chain %s started (task_id=%s, chain=%s)", msg.Task, taskID, chain)
+	log.Printf("agents: chain %s started (task_id=%s, chain=%s)", msg.Task, taskID, chain)
 
 	started := time.Now()
 	prev := ""
@@ -331,12 +353,18 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 	for i, step := range chainDef.Steps {
 		stepRel, err := runDir.InitStepDir(i, step.Name)
 		if err != nil {
-			log.Printf("coder: init step dir: %v", err)
+			log.Printf("agents: init step dir: %v", err)
 			c.failChain(ctx, task, runDir, step.Name, "failed to create step directory", started, msg.ReplyTo)
 			return
 		}
 
-		prompt := renderPrompt(step.Prompt, msg.Task, prev, runDir.AbsPath)
+		promptTmpl, err := loadPromptFile(c.cfg.PromptsDir, step.PromptFile)
+		if err != nil {
+			log.Printf("agents: load prompt %s: %v", step.PromptFile, err)
+			c.failChain(ctx, task, runDir, step.Name, fmt.Sprintf("load prompt: %v", err), started, msg.ReplyTo)
+			return
+		}
+		prompt := renderPrompt(promptTmpl, msg.Task, prev, runDir.AbsPath)
 		stepSkill := c.loadSkill(step.Name)
 		fullPrompt := combineSkillAndPrompt(baseSkill, stepSkill, prompt)
 		runDir.WritePrompt(stepRel, fullPrompt)
@@ -351,16 +379,16 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 			"step_total": len(chainDef.Steps),
 		})
 
-		log.Printf("coder: step %s/%s started", taskID, step.Name)
+		log.Printf("agents: step %s/%s started", taskID, step.Name)
 
-		output, runErr := c.runStep(taskCtx, taskID, step.Name, runDir, stepRel, fullPrompt, cwd)
+		output, runErr := c.runStep(taskCtx, taskID, step.Name, runDir, stepRel, fullPrompt, cwd, step.Tools)
 		elapsed := time.Since(stepStart).Seconds()
 		task.Steps[i].ElapsedS = elapsed
 
 		if runErr != nil {
 			task.Steps[i].Status = "failed"
 			errMsg := runErr.Error()
-			log.Printf("coder: step %s/%s failed: %v", taskID, step.Name, runErr)
+			log.Printf("agents: step %s/%s failed: %v", taskID, step.Name, runErr)
 			c.failChain(ctx, task, runDir, step.Name, errMsg, started, msg.ReplyTo)
 			return
 		}
@@ -373,7 +401,7 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 			"step":      step.Name,
 			"elapsed_s": elapsed,
 		})
-		log.Printf("coder: step %s/%s done (%.1fs)", taskID, step.Name, elapsed)
+		log.Printf("agents: step %s/%s done (%.1fs)", taskID, step.Name, elapsed)
 	}
 
 	elapsed := time.Since(started).Seconds()
@@ -397,7 +425,7 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 		"elapsed_s": elapsed,
 	})
 
-	log.Printf("coder: chain done (task_id=%s, elapsed=%.1fs)", taskID, elapsed)
+	log.Printf("agents: chain done (task_id=%s, elapsed=%.1fs)", taskID, elapsed)
 
 	c.sendResult(ctx, msg.ReplyTo, CoderResultMessage{
 		Type:     "coder_result",
@@ -458,21 +486,26 @@ func (c *Coder) sendResult(ctx context.Context, replyTo string, result CoderResu
 		ToSessionID:   replyTo,
 		Message:       string(data),
 	}); err != nil {
-		log.Printf("coder: send result to %s: %v", replyTo, err)
+		log.Printf("agents: send result to %s: %v", replyTo, err)
 	}
 }
 
-func (c *Coder) runStep(ctx context.Context, taskID, stepName string, runDir *RunDir, stepRel, prompt, cwd string) (string, error) {
+func (c *Coder) runStep(ctx context.Context, taskID, stepName string, runDir *RunDir, stepRel, prompt, cwd string, tools []string) (string, error) {
 	piBin := c.cfg.PiBinary
 	if piBin == "" {
 		piBin = "pi"
+	}
+
+	toolSet := "read,write,edit,bash,grep,find,ls"
+	if len(tools) > 0 {
+		toolSet = strings.Join(tools, ",")
 	}
 
 	args := []string{
 		"--mode", "rpc",
 		"--provider", c.cfg.Provider,
 		"--model", c.cfg.Model,
-		"--tools", "read,write,edit,bash,grep,find,ls",
+		"--tools", toolSet,
 		"--no-session",
 	}
 

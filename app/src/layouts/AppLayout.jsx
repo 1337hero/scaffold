@@ -44,13 +44,13 @@ function AuthenticatedShell() {
   const [captureOpen, setCaptureOpen] = useState(false);
   const { route, param } = useRoute();
   const { data: inboxCount = 0 } = useQuery(inboxCountQuery);
-  const { data: coderTasks = [] } = useQuery({
-    queryKey: ["coder-tasks"],
+  const { data: agentTasks = [] } = useQuery({
+    queryKey: ["agent-tasks"],
     queryFn: () =>
-      fetch("/api/coder/tasks", { credentials: "include" }).then((r) => r.json()),
+      fetch("/api/agents/tasks", { credentials: "include" }).then((r) => r.json()),
     refetchInterval: 10_000,
   });
-  const coderActive = (coderTasks ?? []).some((t) => t.status === "running");
+  const coderActive = (agentTasks ?? []).some((t) => t.status === "running");
 
   const openCapture = () => setCaptureOpen(true);
   const closeCapture = () => setCaptureOpen(false);

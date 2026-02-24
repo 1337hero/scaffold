@@ -20,7 +20,7 @@ import (
 	"scaffold/api"
 	"scaffold/brain"
 	appconfig "scaffold/config"
-	"scaffold/coder"
+	"scaffold/agents"
 	"scaffold/cortex"
 	"scaffold/db"
 	"scaffold/embedding"
@@ -152,7 +152,7 @@ func main() {
 	}
 
 	coderCfg := loadCoderConfig(cfg.configDir, appCfg.LLM)
-	coderSvc := coder.New(sessionBus, coderCfg)
+	coderSvc := agents.New(sessionBus, coderCfg)
 
 	var embedder embedding.Embedder
 	switch strings.ToLower(strings.TrimSpace(appCfg.Embedding.Provider)) {
@@ -224,7 +224,7 @@ func main() {
 		LoginRateLimitMax:    cfg.loginRateLimitMax,
 	})
 	srv.SetSessionBus(sessionBus)
-	srv.SetCoder(coderSvc)
+	srv.SetAgents(coderSvc)
 	if ingestService != nil {
 		srv.SetIngestor(ingestService)
 	}
@@ -481,48 +481,89 @@ func loadConfig() config {
 	}
 }
 
-func loadCoderConfig(configDir string, llmCfg appconfig.LLMConfig) coder.Config {
-	type coderYAML struct {
-		AllowedPaths []string `yaml:"allowed_paths"`
+func loadCoderConfig(configDir string, llmCfg appconfig.LLMConfig) agents.Config {
+	type stepYAML struct {
+		Name   string   `yaml:"name"`
+		Prompt string   `yaml:"prompt"`
+		Tools  []string `yaml:"tools"`
 	}
-	cfg := coder.Config{
+	type chainYAML struct {
+		Steps []stepYAML `yaml:"steps"`
+	}
+	type coderYAML struct {
+		AllowedPaths  []string             `yaml:"allowed_paths"`
+		DefaultCWD    string               `yaml:"default_cwd"`
+		MaxConcurrent int                  `yaml:"max_concurrent"`
+		Chains        map[string]chainYAML `yaml:"chains"`
+	}
+
+	cfg := agents.Config{
+		PromptsDir:    filepath.Join(configDir, "coder-prompts"),
 		SkillPath:     filepath.Join(configDir, "coder-skill.md"),
 		StepSkillsDir: filepath.Join(configDir, "coder-skills"),
+		Chains:        make(map[string]agents.Chain),
 	}
+
 	data, err := os.ReadFile(filepath.Join(configDir, "coder.yaml"))
 	if err != nil {
-		log.Printf("coder: no coder.yaml found, using defaults")
+		log.Printf("agents: no coder.yaml found, using defaults")
 	} else {
 		var y coderYAML
 		if err := yaml.Unmarshal(data, &y); err != nil {
-			log.Printf("coder: parse coder.yaml: %v", err)
+			log.Printf("agents: parse coder.yaml: %v", err)
 		} else {
 			cfg.AllowedPaths = y.AllowedPaths
-		}
-	}
+			cfg.DefaultCWD = y.DefaultCWD
+			cfg.MaxConcurrent = y.MaxConcurrent
 
-	// Resolve coder.worker LLM route → pi provider/model
-	route, ok := llmCfg.Routes["coder.worker"]
-	if ok {
-		profile, pOk := llmCfg.Profiles[route.Profile]
-		if pOk {
-			provider, prOk := llmCfg.Providers[profile.Provider]
-			if prOk {
-				cfg.Provider = provider.Type
-				cfg.Model = profile.Model
-				cfg.APIKeyEnv = provider.APIKeyEnv
-				log.Printf("coder: using %s/%s via %s", cfg.Provider, cfg.Model, cfg.APIKeyEnv)
+			for name, ch := range y.Chains {
+				steps := make([]agents.Step, len(ch.Steps))
+				for i, s := range ch.Steps {
+					steps[i] = agents.Step{
+						Name:       s.Name,
+						PromptFile: s.Prompt,
+						Tools:      s.Tools,
+					}
+				}
+				cfg.Chains[name] = agents.Chain{Steps: steps}
 			}
 		}
 	}
+
+	if len(cfg.Chains) == 0 {
+		log.Printf("agents: no chains defined in coder.yaml")
+	} else {
+		log.Printf("agents: loaded %d chains from config", len(cfg.Chains))
+	}
+
+	// Resolve coder.worker LLM route → pi provider/model
+	cfg.Provider, cfg.Model, cfg.APIKeyEnv = resolveLLMRoute("coder.worker", llmCfg)
 	if cfg.Provider == "" {
 		cfg.Provider = "anthropic"
 		cfg.Model = "claude-sonnet-4-6"
 		cfg.APIKeyEnv = "ANTHROPIC_API_KEY"
-		log.Printf("coder: no coder.worker route, defaulting to %s/%s", cfg.Provider, cfg.Model)
+		log.Printf("agents: no coder.worker route, defaulting to %s/%s", cfg.Provider, cfg.Model)
+	} else {
+		log.Printf("agents: using %s/%s via %s", cfg.Provider, cfg.Model, cfg.APIKeyEnv)
 	}
 
 	return cfg
+}
+
+func resolveLLMRoute(routeName string, llmCfg appconfig.LLMConfig) (provider, model, apiKeyEnv string) {
+	route, ok := llmCfg.Routes[routeName]
+	if !ok {
+		return "", "", ""
+	}
+	profile, ok := llmCfg.Profiles[route.Profile]
+	if !ok {
+		return "", "", ""
+	}
+	prov, ok := llmCfg.Providers[profile.Provider]
+	if !ok {
+		return "", "", ""
+	}
+	return prov.Type, profile.Model, prov.APIKeyEnv
 }
 
 func defaultIngestDir(configDir string) string {

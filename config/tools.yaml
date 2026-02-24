@@ -306,7 +306,7 @@ tools:
 
   - name: dispatch_code_task
     description: |
-      Dispatch a coding task to scaffold-coder. Runs a chain of specialized agents
+      Dispatch a coding task to scaffold-worker. Runs a chain of specialized agents
       asynchronously — scout, plan, implement, review. Results delivered to your
       session on completion. Use chain="spec" to plan only, "fix" for small changes,
       "single" for a raw one-shot agent.
@@ -318,8 +318,7 @@ tools:
           description: Full description of what to build or fix
         chain:
           type: string
-          enum: [implement, fix, spec, single]
-          description: "Chain to run. Default: implement"
+          description: "Chain name to run (see config/coder.yaml). Default: implement"
         cwd:
           type: string
           description: "Repo path to work in (must be an allowed path). Default: /home/mikekey/Builds/scaffold"

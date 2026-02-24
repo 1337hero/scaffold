@@ -63,6 +63,13 @@ routes:
     profile: respond_sonnet
     required: false
 
+  # Per-step route overrides (optional). If set, the step uses this
+  # provider/model instead of coder.worker defaults.
+  # coder.step.scout:
+  #   profile: background_haiku
+  # coder.step.planner:
+  #   profile: background_haiku
+
 startup:
   verify_required_routes: true
   warmup_routes:

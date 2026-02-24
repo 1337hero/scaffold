@@ -1,3 +1,38 @@
+default_cwd: /home/mikekey/Builds/scaffold
+max_concurrent: 1
+
 allowed_paths:
   - /home/mikekey/Builds/scaffold
   - /home/mikekey/Builds
+
+chains:
+  implement:
+    steps:
+      - name: scout
+        prompt: scout.md
+        tools: [read, grep, find, ls, glob]
+      - name: planner
+        prompt: planner.md
+        tools: [read, grep, find, ls, glob]
+      - name: worker
+        prompt: worker.md
+      - name: reviewer
+        prompt: reviewer.md
+  fix:
+    steps:
+      - name: worker
+        prompt: worker.md
+      - name: verify
+        prompt: verify.md
+  spec:
+    steps:
+      - name: scout
+        prompt: scout.md
+        tools: [read, grep, find, ls, glob]
+      - name: planner
+        prompt: planner.md
+        tools: [read, grep, find, ls, glob]
+  single:
+    steps:
+      - name: worker
+        prompt: worker.md

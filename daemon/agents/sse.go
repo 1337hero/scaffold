@@ -1,4 +1,4 @@
-package coder
+package agents
 
 import (
 	"encoding/json"
@@ -37,7 +37,7 @@ func (h *SSEHub) subscribe() (chan []byte, func()) {
 func (h *SSEHub) Broadcast(eventName string, data any) {
 	payload, err := json.Marshal(data)
 	if err != nil {
-		log.Printf("coder sse: marshal %s: %v", eventName, err)
+		log.Printf("agents sse: marshal %s: %v", eventName, err)
 		return
 	}
 	msg := append([]byte("event: "+eventName+"\ndata: "), payload...)

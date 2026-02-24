@@ -5,18 +5,18 @@ import (
 	"net/http"
 	"time"
 
-	"scaffold/coder"
+	"scaffold/agents"
 	"scaffold/sessionbus"
 )
 
-func (s *Server) handleCoderTasks(w http.ResponseWriter, r *http.Request) {
-	tasks := s.coder.ListTasks()
+func (s *Server) handleAgentTasks(w http.ResponseWriter, r *http.Request) {
+	tasks := s.agents.ListTasks()
 	writeJSON(w, http.StatusOK, tasks)
 }
 
-func (s *Server) handleCoderTask(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAgentTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	task, ok := s.coder.GetTask(id)
+	task, ok := s.agents.GetTask(id)
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "task not found"})
 		return
@@ -24,16 +24,16 @@ func (s *Server) handleCoderTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, task)
 }
 
-func (s *Server) handleCoderTaskKill(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAgentTaskKill(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !s.coder.KillTask(id) {
+	if !s.agents.KillTask(id) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "task not found or not running"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
-func (s *Server) handleCoderDispatch(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAgentDispatch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Task  string `json:"task"`
 		Chain string `json:"chain"`
@@ -44,7 +44,7 @@ func (s *Server) handleCoderDispatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg := coder.CodeTaskMessage{
+	msg := agents.CodeTaskMessage{
 		Type:  "code_task",
 		Task:  req.Task,
 		Chain: req.Chain,
@@ -54,7 +54,7 @@ func (s *Server) handleCoderDispatch(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := s.sessionBus.Send(r.Context(), sessionbus.SendRequest{
 		FromSessionID: "scaffold-ui",
-		ToSessionID:   "scaffold-coder",
+		ToSessionID:   "scaffold-worker",
 		Message:       string(data),
 	}); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -63,17 +63,17 @@ func (s *Server) handleCoderDispatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "dispatched"})
 }
 
-func (s *Server) handleCoderStepEvents(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAgentStepEvents(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	stepNum := r.PathValue("step_num")
 
-	_, ok := s.coder.GetTask(id)
+	_, ok := s.agents.GetTask(id)
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "task not found"})
 		return
 	}
 
-	events, err := s.coder.ReadStepEvents(id, stepNum)
+	events, err := s.agents.ReadStepEvents(id, stepNum)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "events not found"})
 		return
@@ -82,12 +82,15 @@ func (s *Server) handleCoderStepEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, events)
 }
 
-func (s *Server) handleCoderStream(w http.ResponseWriter, r *http.Request) {
-	// Disable write deadline for SSE — this is a long-lived connection.
+func (s *Server) handleAgentStream(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
 	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
 		writeInternalError(w, err)
 		return
 	}
-	s.coder.Hub().ServeSSE(w, r)
+	s.agents.Hub().ServeSSE(w, r)
+}
+
+func (s *Server) handleAgentChains(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.agents.ChainNames())
 }

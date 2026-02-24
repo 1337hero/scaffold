@@ -276,11 +276,18 @@ export function processInboxItem(id, data) { return putJSON(`/api/inbox/${id}/pr
 export function archiveInboxCapture(id) { return apiFetch(`/api/inbox/${id}/archive`, { method: "POST" }) }
 export function createCapture(text) { return postJSON("/api/capture", { text }) }
 
-// Coder
-export function dispatchCoderTask({ task, chain = "single", cwd = "" }) {
-  return postJSON("/api/coder/dispatch", { task, chain, cwd })
+// Agents
+
+export function dispatchAgentTask({ task, chain = "single", cwd = "" }) {
+  return postJSON("/api/agents/dispatch", { task, chain, cwd })
 }
 
 export function fetchStepEvents(taskId, stepNum) {
-  return apiFetch(`/api/coder/tasks/${taskId}/steps/${stepNum}/events`)
+  return apiFetch(`/api/agents/tasks/${taskId}/steps/${stepNum}/events`)
+}
+
+export const agentChainsQuery = {
+  queryKey: ["agent-chains"],
+  queryFn: () => apiFetch("/api/agents/chains"),
+  staleTime: 5 * 60 * 1000,
 }

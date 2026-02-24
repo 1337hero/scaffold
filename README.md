@@ -21,7 +21,7 @@ Core build phases complete, LifeOS layer operational:
 - `Notebooks` Domain-scoped notebooks with goals/tasks/notes tabs
 - `Search` Global search across memories, goals, tasks, notes
 - `Session Bus` In-memory cross-agent messaging with TTL, queues, long-poll
-- `Coder` scaffold-coder: chain runner (scout→planner→worker→reviewer), SSE live stream, `#/coder` UI panel, `dispatch_code_task` agent tool
+- `Agents` scaffold-worker: YAML-driven chain runner, config-driven prompts/skills, per-step tool restrictions, SSE live stream, `#/agents` UI panel, `dispatch_code_task` agent tool
 - `Planned` Phase 3A: hybrid memory search (FTS5 + vector retrieval with score fusion)
 
 ## What Is Running
@@ -32,16 +32,16 @@ Systemd user units:
 
 Daemon responsibilities:
 - Reads Signal messages, stores `conversation_log`, generates replies via tool-use agent (14 tools)
-- Hosts API for web UI — dashboard, inbox, desk, notebooks, search, capture, calendar, coder
+- Hosts API for web UI — dashboard, inbox, desk, notebooks, search, capture, calendar, agents
 - Hosts session bus API for cross-agent coordination (`/api/session-bus/*`)
 - Runs Cortex scheduler (9 tasks) and bulletin generation in background
-- Runs scaffold-coder goroutine — consumes `code_task` from session bus, runs `claude` chains, streams via SSE
+- Runs scaffold-worker goroutine — consumes `code_task` from session bus, runs YAML-defined chains via `pi` subprocesses, streams via SSE
 - Manages Google Calendar OAuth2 tokens and event proxying
 - Persists state in SQLite (`daemon/scaffold.db` by default, configurable)
 
 Frontend:
 - `app` is Preact + Vite + Tailwind
-- Hash routing: `#/dashboard` (default), `#/inbox`, `#/notebooks`, `#/notebooks/{id}`, `#/search`, `#/coder`
+- Hash routing: `#/dashboard` (default), `#/inbox`, `#/notebooks`, `#/notebooks/{id}`, `#/search`, `#/agents`
 - Talks to daemon API (default `127.0.0.1:46873`)
 - Built frontend (`app/dist`) can be served directly by daemon on the same port
 
@@ -49,10 +49,10 @@ Frontend:
 
 Five active surfaces over one brain:
 - `Agent` (Signal conversation + 14 tool calls)
-- `Desktop UI` (Dashboard, Inbox, Notebooks, Search, Coder, Capture)
+- `Desktop UI` (Dashboard, Inbox, Notebooks, Search, Agents, Capture)
 - `Cortex` (9 periodic maintenance and synthesis tasks)
 - `Session Bus` (cross-agent coordination with long-poll)
-- `Coder` (chain runner: scout→planner→worker→reviewer via `claude` subprocs)
+- `Agents` (YAML-driven chain runner via `pi` subprocesses, registered as `scaffold-worker`)
 
 Shared storage and mutation boundary:
 - SQLite tables: `memories`, `edges`, `captures`, `desk`, `domains`, `goals`, `tasks`, `task_completions`, `notes`, `conversation_log`, `sessions`, `memory_centrality`, `memories_fts`, `memory_embeddings`, `embedding_jobs`, `oauth_tokens`, `ingestion_files`, `ingestion_progress`
@@ -122,11 +122,14 @@ Authenticated — session bus:
 - `POST /api/session-bus/send`
 - `POST /api/session-bus/poll`
 
-Authenticated — coder:
-- `GET /api/coder/tasks`
-- `GET /api/coder/tasks/{id}`
-- `DELETE /api/coder/tasks/{id}`
-- `GET /api/coder/stream` (SSE)
+Authenticated — agents:
+- `GET /api/agents/tasks`
+- `GET /api/agents/tasks/{id}`
+- `DELETE /api/agents/tasks/{id}`
+- `GET /api/agents/tasks/{id}/steps/{step_num}/events`
+- `GET /api/agents/chains`
+- `GET /api/agents/stream` (SSE)
+- `POST /api/agents/dispatch`
 
 ## Agent Tools
 
@@ -145,7 +148,7 @@ Authenticated — coder:
 | `update_task` | Update task; status=done triggers completion logic |
 | `list_tasks` | Filtered task list |
 | `create_note` | Create note |
-| `dispatch_code_task` | Dispatch coding chain to scaffold-coder (implement/fix/spec/single) |
+| `dispatch_code_task` | Dispatch coding chain to scaffold-worker (chains defined in coder.yaml) |
 
 ## Cortex Tasks
 
@@ -173,8 +176,9 @@ YAML files in `config/`:
 - `embedding.yaml` (Ollama embedding provider config — nomic-embed-text, 768-dim)
 - `google.yaml` (Google OAuth2 client config — client_id, client_secret, calendar_id)
 - `webhooks.yaml` (webhook auth tokens)
-- `coder.yaml` (scaffold-coder: CWD allowlist)
-- `coder-skill.md` (base skill injected into every coder step prompt)
+- `coder.yaml` (agent chains: chain definitions, step prompts, CWD allowlist, max_concurrent)
+- `coder-prompts/{step}.md` (per-step prompt templates: scout, planner, worker, reviewer, verify)
+- `coder-skill.md` (base skill injected into every agent step prompt)
 - `coder-skills/{step}.md` (optional per-step skill overrides)
 
 Environment in `daemon/.env`:
@@ -291,17 +295,17 @@ bun run dev
 bun run build
 ```
 
-## scaffold-coder Quick Reference
+## Agents (scaffold-worker) Quick Reference
 
-Chains: `implement` (scout→planner→worker→reviewer) · `fix` (worker→verify) · `spec` (scout→planner) · `single` (worker)
+Chains defined in `config/coder.yaml`. Default 4: `implement` (scout→planner→worker→reviewer) · `fix` (worker→verify) · `spec` (scout→planner) · `single` (worker). Add new chains by editing YAML + creating a prompt .md in `config/coder-prompts/`.
 
 Trigger via Signal: `implement issue #47 — add X` → agent calls `dispatch_code_task`
 
-Run dirs: `/tmp/scaffold-coder/{uuid}/` — `task.md`, `status.json`, `steps/N-{name}/{prompt.md,events.jsonl,output.md}`
+Run dirs: `/tmp/scaffold-worker/{uuid}/` — `task.md`, `status.json`, `steps/N-{name}/{prompt.md,events.jsonl,output.md}`
 
-Session bus flow: `code_task` → `scaffold-coder` → runs chain → `coder_result` → `scaffold-agent`
+Session bus flow: `code_task` → `scaffold-worker` → runs chain → `coder_result` → `scaffold-agent`
 
-Web UI: `#/coder` — live step pipeline + SSE event log + kill button
+Web UI: `#/agents` — live step pipeline + SSE event log + kill button + dynamic chain select
 
 ## Key Docs
 
@@ -309,4 +313,4 @@ Web UI: `#/coder` — live step pipeline + SSE event log + kill button
 - `docs/hybrid-memory-system-spec.md` (Phase 3A — hybrid FTS5 + vector search)
 - `docs/plans/2026-02-22-session-bus-agent-integration.md` (cross-agent session bus integration + usage)
 - `docs/plans/2026-02-22-session-bus-mvp.md`
-- `specs/code-agent.md` (scaffold-coder implementation spec)
+- `specs/code-agent.md` (scaffold-worker / agents implementation spec)

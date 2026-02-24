@@ -891,13 +891,13 @@ func handleDispatchCodeTask(ctx context.Context, database *db.DB, b *Brain, para
 
 	if _, err := b.sessionBus.Send(ctx, sessionbus.SendRequest{
 		FromSessionID: "scaffold-agent",
-		ToSessionID:   "scaffold-coder",
+		ToSessionID:   "scaffold-worker",
 		Message:       string(data),
 	}); err != nil {
 		return "", fmt.Errorf("dispatch_code_task: %w", err)
 	}
 
-	return fmt.Sprintf("Code task dispatched (chain=%s). Check #/coder in the web UI for live progress. Results delivered on completion.", p.Chain), nil
+	return fmt.Sprintf("Code task dispatched (chain=%s). Check #/agents in the web UI for live progress. Results delivered on completion.", p.Chain), nil
 }
 
 func handleListTasks(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {

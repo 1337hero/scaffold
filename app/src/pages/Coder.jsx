@@ -1,18 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "preact/hooks"
 import ChainCard from "@/components/coder/ChainCard.jsx"
-import { dispatchCoderTask, fetchStepEvents } from "@/api/queries.js"
+import { agentChainsQuery, dispatchAgentTask, fetchStepEvents } from "@/api/queries.js"
 
-const coderTasksQuery = {
-  queryKey: ["coder-tasks"],
+const agentTasksQuery = {
+  queryKey: ["agent-tasks"],
   queryFn: () =>
-    fetch("/api/coder/tasks", { credentials: "include" }).then((r) => r.json()),
+    fetch("/api/agents/tasks", { credentials: "include" }).then((r) => r.json()),
   refetchInterval: 10_000,
 }
 
 const Coder = () => {
   const queryClient = useQueryClient()
-  const { data: rawTasks, isError, error } = useQuery(coderTasksQuery)
+  const { data: rawTasks, isError, error } = useQuery(agentTasksQuery)
+  const { data: chainOptions = [] } = useQuery(agentChainsQuery)
   const tasks = rawTasks ?? []
 
   // stepLogs: { taskId: { stepName: [event, ...] } }
@@ -28,15 +29,15 @@ const Coder = () => {
   const [dispatchCwd, setDispatchCwd] = useState("")
 
   const dispatchMutation = useMutation({
-    mutationFn: (params) => dispatchCoderTask(params),
+    mutationFn: (params) => dispatchAgentTask(params),
     onSuccess: () => {
       setDispatchTask("")
-      queryClient.invalidateQueries({ queryKey: ["coder-tasks"] })
+      queryClient.invalidateQueries({ queryKey: ["agent-tasks"] })
     },
   })
 
   useEffect(() => {
-    const source = new EventSource("/api/coder/stream")
+    const source = new EventSource("/api/agents/stream")
 
     const appendLog = (taskId, step, event) => {
       setStepLogs((prev) => ({
@@ -49,7 +50,7 @@ const Coder = () => {
     }
 
     source.addEventListener("chain_started", (e) => {
-      queryClient.invalidateQueries({ queryKey: ["coder-tasks"] })
+      queryClient.invalidateQueries({ queryKey: ["agent-tasks"] })
     })
 
     source.addEventListener("step_started", (e) => {
@@ -58,7 +59,7 @@ const Coder = () => {
         ...prev,
         [data.task_id]: { num: data.step_num, total: data.step_total, step: data.step }
       }))
-      queryClient.invalidateQueries({ queryKey: ["coder-tasks"] })
+      queryClient.invalidateQueries({ queryKey: ["agent-tasks"] })
     })
 
     source.addEventListener("step_event", (e) => {
@@ -80,7 +81,7 @@ const Coder = () => {
         delete next[data.task_id]
         return next
       })
-      queryClient.invalidateQueries({ queryKey: ["coder-tasks"] })
+      queryClient.invalidateQueries({ queryKey: ["agent-tasks"] })
     })
 
     source.addEventListener("chain_done", (e) => {
@@ -90,7 +91,7 @@ const Coder = () => {
         delete next[data.task_id]
         return next
       })
-      queryClient.invalidateQueries({ queryKey: ["coder-tasks"] })
+      queryClient.invalidateQueries({ queryKey: ["agent-tasks"] })
     })
 
     source.addEventListener("chain_failed", (e) => {
@@ -105,7 +106,7 @@ const Coder = () => {
         delete next[data.task_id]
         return next
       })
-      queryClient.invalidateQueries({ queryKey: ["coder-tasks"] })
+      queryClient.invalidateQueries({ queryKey: ["agent-tasks"] })
     })
 
     source.onerror = () => {
@@ -209,10 +210,9 @@ const Coder = () => {
               onChange={(e) => setDispatchChain(e.currentTarget.value)}
               class="bg-input-bg border border-app-border rounded-lg px-3 py-2 text-[11px] font-mono text-app-muted outline-none cursor-pointer"
             >
-              <option value="single">single</option>
-              <option value="fix">fix</option>
-              <option value="implement">implement</option>
-              <option value="spec">spec</option>
+              {(chainOptions.length ? chainOptions : ["single"]).map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
           <div class="flex items-center gap-2">

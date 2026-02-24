@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks"
 import { cn } from "@/lib/utils.js"
-import { dispatchCoderTask } from "@/api/queries.js"
+import { dispatchAgentTask } from "@/api/queries.js"
 import { typeColor } from "@/constants/colors.js"
 
 const TYPE_OPTIONS = ["task", "note", "goal"]
@@ -166,7 +166,7 @@ const InboxItem = ({ item, domains, goals, onProcess, onArchive }) => {
     setDispatchSubmitting(true)
     const task = [item.Title, item.Summary].filter(Boolean).join(" — ")
     try {
-      await dispatchCoderTask({ task, chain: dispatchChain })
+      await dispatchAgentTask({ task, chain: dispatchChain })
       setDispatchDone(true)
       setDispatching(false)
     } finally {

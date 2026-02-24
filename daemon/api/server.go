@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"scaffold/brain"
-	"scaffold/coder"
+	"scaffold/agents"
 	"scaffold/config"
 	"scaffold/db"
 	"scaffold/sessionbus"
@@ -39,7 +39,7 @@ type Server struct {
 	brain           *brain.Brain
 	ingestor        Ingestor
 	sessionBus      *sessionbus.Bus
-	coder           *coder.Coder
+	agents          *agents.Coder
 	mux             *http.ServeMux
 	frontendDistDir string
 	apiToken        string
@@ -152,14 +152,15 @@ func (s *Server) SetSessionBus(bus *sessionbus.Bus) {
 	s.sessionBus = bus
 }
 
-func (s *Server) SetCoder(c *coder.Coder) {
-	s.coder = c
-	s.mux.HandleFunc("GET /api/coder/tasks", s.protected(s.handleCoderTasks))
-	s.mux.HandleFunc("GET /api/coder/tasks/{id}", s.protected(s.handleCoderTask))
-	s.mux.HandleFunc("DELETE /api/coder/tasks/{id}", s.protected(s.handleCoderTaskKill))
-	s.mux.HandleFunc("GET /api/coder/tasks/{id}/steps/{step_num}/events", s.protected(s.handleCoderStepEvents))
-	s.mux.HandleFunc("GET /api/coder/stream", s.protected(s.handleCoderStream))
-	s.mux.HandleFunc("POST /api/coder/dispatch", s.protected(s.handleCoderDispatch))
+func (s *Server) SetAgents(c *agents.Coder) {
+	s.agents = c
+	s.mux.HandleFunc("GET /api/agents/tasks", s.protected(s.handleAgentTasks))
+	s.mux.HandleFunc("GET /api/agents/tasks/{id}", s.protected(s.handleAgentTask))
+	s.mux.HandleFunc("DELETE /api/agents/tasks/{id}", s.protected(s.handleAgentTaskKill))
+	s.mux.HandleFunc("GET /api/agents/tasks/{id}/steps/{step_num}/events", s.protected(s.handleAgentStepEvents))
+	s.mux.HandleFunc("GET /api/agents/stream", s.protected(s.handleAgentStream))
+	s.mux.HandleFunc("POST /api/agents/dispatch", s.protected(s.handleAgentDispatch))
+	s.mux.HandleFunc("GET /api/agents/chains", s.protected(s.handleAgentChains))
 }
 
 // EnableFrontendServing configures the daemon to serve built frontend assets
