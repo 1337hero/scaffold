@@ -142,26 +142,52 @@ const Coder = () => {
     })
   }, [tasks.length])
 
+  const runningTask = tasks.find((t) => t.status === "running")
+
   return (
     <div>
-      <div class="mb-8">
-        <h2 class="text-2xl font-serif italic text-[#F5F0E8] font-semibold">
-          Agent Activity
-        </h2>
-        <p class="text-sm text-[#6B5F52] mt-1">
-          Code chains dispatched via Signal. Live step output below.
+      <div class="mb-9">
+        <h2 class="text-[28px] font-bold tracking-tight">Coder</h2>
+        <p class="text-sm text-app-muted mt-1">
+          Autonomous coding chains dispatched from Signal or the web
         </p>
       </div>
 
       {isError && (
-        <div class="border border-[#5A2E2E] rounded-2xl p-5 mb-4 bg-[#2A1A1A]">
-          <p class="text-[#F87171] text-sm font-mono">
+        <div class="border border-[#C4617A]/20 rounded-[14px] p-3 mb-4 bg-[#C4617A]/5">
+          <p class="text-[#C4617A] text-xs font-mono">
             Failed to load tasks: {error?.message || "unknown error"}
           </p>
         </div>
       )}
 
-      <div class="border border-[#2A2318] rounded-2xl p-5 bg-[#18140F] mb-6">
+      {/* Status bar */}
+      <div class="flex items-center gap-3.5 px-[18px] py-3 bg-card-bg border border-app-border rounded-[14px] card-shadow mb-8">
+        {runningTask ? (
+          <>
+            <span class="pulse-dot" />
+            <span class="font-mono text-[11px] text-[#C47D3A] font-medium">
+              1 chain running
+            </span>
+            <span class="text-app-border">·</span>
+            <span class="font-mono text-[11px] text-app-muted">
+              {runningTask.chain}
+              {stepProgress[runningTask.id] && ` · ${stepProgress[runningTask.id].step} step`}
+              {` · ${runningTask.cwd}`}
+            </span>
+          </>
+        ) : (
+          <>
+            <span class="w-2 h-2 rounded-full bg-app-muted shrink-0" />
+            <span class="font-mono text-[11px] text-app-muted">idle</span>
+            <span class="text-app-border">·</span>
+            <span class="font-mono text-[11px] text-app-muted">scaffold-coder ready · no active chains</span>
+          </>
+        )}
+      </div>
+
+      {/* Dispatch form */}
+      <div class="bg-card-bg border border-app-border rounded-[20px] card-shadow p-5 mb-6">
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -176,12 +202,12 @@ const Coder = () => {
               value={dispatchTask}
               onInput={(e) => setDispatchTask(e.currentTarget.value)}
               placeholder="Describe the task..."
-              class="flex-1 bg-[#0D0A07] border border-[#2A2318] rounded-lg px-3 py-2 text-sm text-[#F5F0E8] font-mono placeholder:text-[#3A3228] outline-none focus:border-[#C47D3A]/40"
+              class="flex-1 bg-input-bg border border-app-border rounded-lg px-3 py-2 text-sm text-app-ink font-mono placeholder:text-app-muted/40 outline-none focus:border-[#C47D3A]/40"
             />
             <select
               value={dispatchChain}
               onChange={(e) => setDispatchChain(e.currentTarget.value)}
-              class="bg-[#0D0A07] border border-[#2A2318] rounded-lg px-3 py-2 text-[11px] font-mono text-[#9C8E7A] outline-none cursor-pointer"
+              class="bg-input-bg border border-app-border rounded-lg px-3 py-2 text-[11px] font-mono text-app-muted outline-none cursor-pointer"
             >
               <option value="single">single</option>
               <option value="fix">fix</option>
@@ -195,33 +221,39 @@ const Coder = () => {
               value={dispatchCwd}
               onInput={(e) => setDispatchCwd(e.currentTarget.value)}
               placeholder="Working directory (optional, defaults to scaffold root)"
-              class="flex-1 bg-[#0D0A07] border border-[#2A2318] rounded-lg px-3 py-2 text-[11px] font-mono text-[#9C8E7A] placeholder:text-[#3A3228] outline-none focus:border-[#C47D3A]/40"
+              class="flex-1 bg-input-bg border border-app-border rounded-lg px-3 py-2 text-[11px] font-mono text-app-muted placeholder:text-app-muted/40 outline-none focus:border-[#C47D3A]/40"
             />
             <button
               type="submit"
               disabled={!dispatchTask.trim() || dispatchMutation.isPending}
-              class="px-4 py-2 rounded-lg bg-[#C47D3A]/10 text-[#C47D3A] text-[11px] font-mono font-semibold hover:bg-[#C47D3A]/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              class="px-4 py-2 rounded-lg bg-[#C47D3A] text-white text-[11px] font-mono font-semibold hover:bg-[#B06A2E] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
               {dispatchMutation.isPending ? "Sending..." : "Dispatch"}
             </button>
           </div>
           {dispatchMutation.isError && (
-            <p class="text-[11px] text-[#F87171] font-mono">
+            <p class="text-[11px] text-[#C4617A] font-mono">
               {dispatchMutation.error?.message || "dispatch failed"}
             </p>
           )}
           {dispatchMutation.isSuccess && (
-            <p class="text-[11px] text-[#4ADE80] font-mono">Dispatched</p>
+            <p class="text-[11px] text-[#5A9E6F] font-mono">Dispatched</p>
           )}
         </form>
       </div>
 
+      {/* Section header */}
+      <div class="flex items-center gap-2 mb-[18px]">
+        <span class="font-mono text-[10px] uppercase tracking-[0.12em] opacity-40 whitespace-nowrap">Tasks</span>
+        <div class="h-px flex-1 bg-app-border" />
+      </div>
+
       {tasks.length === 0 ? (
-        <div class="border border-[#2A2318] rounded-2xl p-8 text-center">
-          <p class="text-[#5A4F42] text-sm">No tasks yet.</p>
-          <p class="text-[#3A3228] text-xs mt-2 font-mono">
-            Say "implement issue #47" via Signal to start a chain.
-          </p>
+        <div class="py-16 text-center opacity-35">
+          <p class="font-serif italic text-base">No chains running</p>
+          <span class="font-mono text-[11px] block mt-1.5">
+            Dispatch a task from Signal or the form above
+          </span>
         </div>
       ) : (
         <div>

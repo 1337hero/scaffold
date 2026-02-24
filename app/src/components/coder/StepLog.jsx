@@ -1,39 +1,40 @@
 import { useState } from "preact/hooks"
 
-const eventBadge = (ev) => {
+const badgeStyle = (ev) => {
   if (ev.type === "tool_use") {
     const tool = (ev.tool || "").toLowerCase()
-    if (tool === "bash")  return { label: "cmd",   cls: "bg-[#1A2E1A] text-[#4ADE80] border-[#2A4A2A]" }
-    if (tool === "write") return { label: "write",  cls: "bg-[#1A1A2E] text-[#818CF8] border-[#2A2A4A]" }
-    if (tool === "read")  return { label: "read",   cls: "bg-[#1A2A2E] text-[#38BDF8] border-[#2A3A4A]" }
-    if (tool === "edit" || tool === "multiedit") return { label: "edit", cls: "bg-[#2E2818] text-[#FBD38D] border-[#4A3E28]" }
-    return { label: "tool", cls: "bg-[#2A2A2A] text-[#9C8E7A] border-[#3A3A3A]" }
+    if (tool === "bash")  return { label: "cmd",   cls: "bg-[#5B8DB8]/10 text-[#5B8DB8]" }
+    if (tool === "write") return { label: "write", cls: "bg-[#C47D3A]/10 text-[#C47D3A]" }
+    if (tool === "read")  return { label: "read",  cls: "bg-[#5A9E6F]/10 text-[#5A9E6F]" }
+    if (tool === "edit" || tool === "multiedit") return { label: "edit", cls: "bg-[#C47D3A]/10 text-[#C47D3A]" }
+    if (tool === "grep" || tool === "find" || tool === "ls") return { label: tool, cls: "bg-[#5B8DB8]/10 text-[#5B8DB8]" }
+    return { label: "tool", cls: "bg-black/5 text-app-muted" }
   }
-  if (ev.type === "tool_result") return { label: "done", cls: "bg-[#1E3A2E] text-[#4ADE80] border-[#2A5A3E]" }
-  if (ev.type === "result") return { label: "done",  cls: "bg-[#1E3A2E] text-[#4ADE80] border-[#2A5A3E]" }
-  if (ev.type === "error")  return { label: "error", cls: "bg-[#3A1E1E] text-[#F87171] border-[#5A2E2E]" }
+  if (ev.type === "tool_result") return { label: "done", cls: "bg-[#5A9E6F]/10 text-[#5A9E6F]" }
+  if (ev.type === "result") return { label: "done", cls: "bg-[#5A9E6F]/10 text-[#5A9E6F]" }
+  if (ev.type === "error") return { label: "error", cls: "bg-[#C4617A]/10 text-[#C4617A]" }
   return null
 }
 
-const EventRow = ({ ev }) => {
-  const badge = eventBadge(ev)
+const EventRow = ({ ev, isLatest }) => {
+  const badge = badgeStyle(ev)
 
   if (ev.type === "assistant") {
     return (
-      <div class="text-[11px] text-[#6B5F52] leading-relaxed pl-2 border-l border-[#2A2318] my-0.5">
+      <div class="text-[11px] text-app-muted leading-relaxed pl-2 border-l border-app-border my-0.5">
         {ev.text}
       </div>
     )
   }
 
   return (
-    <div class="flex items-start gap-2 py-0.5">
+    <div class="flex items-baseline gap-2 py-0.5 border-b border-black/[0.025] last:border-b-0 pb-[3px]">
       {badge && (
-        <span class={`shrink-0 inline-block px-1.5 py-0 rounded text-[10px] font-mono border mt-0.5 ${badge.cls}`}>
+        <span class={`shrink-0 inline-block px-1.5 py-px rounded text-[9px] font-bold font-mono uppercase tracking-wide ${badge.cls}`}>
           {badge.label}
         </span>
       )}
-      <span class="text-[11px] font-mono text-[#9C8E7A] truncate">
+      <span class={`text-[11px] font-mono flex-1 ${isLatest ? "text-app-ink" : "text-app-muted"}`}>
         {ev.input || ev.text || ev.result || ""}
       </span>
     </div>
@@ -62,35 +63,46 @@ function stitchEvents(events) {
   return result
 }
 
-const StepLog = ({ step, events = [] }) => {
+const StepLog = ({ steps, stepLogs }) => {
   const [open, setOpen] = useState(false)
 
-  const count = events.length
-  const statusColor = {
-    done:    "text-[#4ADE80]",
-    running: "text-[#C47D3A]",
-    failed:  "text-[#F87171]",
-    pending: "text-[#5A4F42]",
-  }[step.status] || "text-[#5A4F42]"
+  const totalEvents = steps.reduce((n, s) => n + (stepLogs[s.name] || []).length, 0)
+  const totalTools = steps.reduce((n, s) => {
+    return n + (stepLogs[s.name] || []).filter((e) => e.type === "tool_use").length
+  }, 0)
 
   return (
-    <div class="mt-2 border border-[#2A2318] rounded-lg overflow-hidden">
+    <div>
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
-        class="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-white/[0.02] transition-colors"
+        onClick={() => setOpen((o) => !o)}
+        class="flex items-center gap-1.5 bg-transparent border-none p-0 cursor-pointer text-app-muted font-mono text-[10px] uppercase tracking-wide opacity-45 hover:opacity-75 transition-opacity font-medium"
       >
-        <span class={`text-[11px] font-mono ${statusColor}`}>
-          {step.name}: {count} event{count !== 1 ? "s" : ""}
-        </span>
-        <span class="text-[10px] text-[#5A4F42]">{open ? "▾" : "▸"}</span>
+        <svg class={`log-arrow ${open ? "open" : ""}`} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+        {steps.length} step{steps.length !== 1 ? "s" : ""}
+        {" · "}
+        {totalTools} tool call{totalTools !== 1 ? "s" : ""}
+        {" · "}
+        {open ? "collapse" : "expand"} log
       </button>
 
-      {open && count > 0 && (
-        <div class="px-3 pb-3 space-y-0.5 border-t border-[#2A2318]">
-          {stitchEvents(events).map((ev, i) => (
-            <EventRow key={i} ev={ev} />
-          ))}
+      {open && (
+        <div class="flex flex-col gap-0.5 mt-2.5">
+          {steps.map((step) => {
+            const events = stepLogs[step.name] || []
+            if (!events.length) return null
+            const stitched = stitchEvents(events)
+            return (
+              <div key={step.name}>
+                <div class="font-mono text-[9px] uppercase tracking-[0.08em] text-app-muted opacity-40 mt-2 mb-1 first:mt-0">
+                  {step.name}
+                </div>
+                {stitched.map((ev, i) => (
+                  <EventRow key={i} ev={ev} isLatest={i === stitched.length - 1} />
+                ))}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

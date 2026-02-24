@@ -8,45 +8,52 @@ const formatElapsed = (secs) => {
 
 const StepPipeline = ({ steps }) => {
   return (
-    <div class="flex items-center gap-1 flex-wrap my-3">
+    <div class="flex items-center gap-0 mb-4">
       {steps.map((step, i) => (
         <>
           {i > 0 && (
-            <span key={`arrow-${i}`} class="text-[#5A4F42] text-xs">→</span>
+            <span key={`arrow-${i}`} class="text-app-border text-xs mx-2 opacity-80">→</span>
           )}
-          <StepBadge key={step.name} step={step} />
+          <StepNode key={step.name} step={step} />
         </>
       ))}
     </div>
   )
 }
 
-const StepBadge = ({ step }) => {
-  const styles = {
-    done:    "bg-[#1E3A2E] text-[#4ADE80] border-[#2A5A3E]",
-    running: "bg-[#2E2318] text-[#C47D3A] border-[#C47D3A]/40",
-    failed:  "bg-[#3A1E1E] text-[#F87171] border-[#5A2E2E]",
-    pending: "bg-transparent text-[#5A4F42] border-[#3A3228]",
-  }
+const iconCls = {
+  done:    "bg-[#5A9E6F]/12 text-[#5A9E6F]",
+  running: "bg-[#C47D3A]/12 text-[#C47D3A] step-icon-active",
+  failed:  "bg-[#C4617A]/10 text-[#C4617A]",
+  pending: "bg-black/4 text-app-muted",
+}
 
-  const icons = {
-    done:    "✓",
-    running: "●",
-    failed:  "✗",
-    pending: "○",
-  }
+const nameCls = {
+  done:    "text-[#5A9E6F]",
+  running: "text-[#C47D3A] font-medium",
+  failed:  "text-[#C4617A]",
+  pending: "text-app-muted opacity-40",
+}
 
+const icons = {
+  done:    "✓",
+  running: "⟳",
+  failed:  "✗",
+  pending: "○",
+}
+
+const StepNode = ({ step }) => {
   const status = step.status || "pending"
-  const cls = styles[status] || styles.pending
 
   return (
-    <span class={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border ${cls}`}>
-      <span class={status === "running" ? "animate-pulse" : ""}>{icons[status]}</span>
-      {step.name}
-      {(status === "done" || status === "failed") && step.elapsed_s > 0 && (
-        <span class="opacity-50 ml-1">{formatElapsed(step.elapsed_s)}</span>
-      )}
-    </span>
+    <div class="flex items-center gap-1.5 font-mono text-[11px]">
+      <div class={`w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${iconCls[status] || iconCls.pending}`}>
+        {icons[status]}
+      </div>
+      <span class={`text-[10px] ${nameCls[status] || nameCls.pending}`}>
+        {step.name}
+      </span>
+    </div>
   )
 }
 
