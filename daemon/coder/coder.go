@@ -30,6 +30,10 @@ type Config struct {
 	AllowedPaths  []string
 	SkillPath     string // path to coder-skill.md
 	StepSkillsDir string // path to coder-skills/ dir
+	PiBinary      string // path to pi binary, default "pi"
+	Provider      string // LLM provider for pi (anthropic, openai, etc.)
+	Model         string // model ID for pi
+	APIKeyEnv     string // env var name holding the API key
 }
 
 // Coder listens for code_task messages on the session bus and runs chains.
@@ -441,14 +445,27 @@ func (c *Coder) sendResult(ctx context.Context, replyTo string, result CoderResu
 }
 
 func (c *Coder) runStep(ctx context.Context, taskID, stepName, dir, prompt, cwd string) (string, error) {
-	cmd := exec.Command("claude",
-		"--output-format", "stream-json",
-		"--verbose",
-		"--dangerously-skip-permissions",
-		"-p", prompt,
-	)
-	cmd.Dir = cwd
+	piBin := c.cfg.PiBinary
+	if piBin == "" {
+		piBin = "pi"
+	}
 
+	args := []string{
+		"--mode", "rpc",
+		"--provider", c.cfg.Provider,
+		"--model", c.cfg.Model,
+		"--tools", "read,write,edit,bash,grep,find,ls",
+		"--no-session",
+	}
+
+	cmd := exec.Command(piBin, args...)
+	cmd.Dir = cwd
+	cmd.Env = os.Environ()
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return "", fmt.Errorf("stdin pipe: %w", err)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", fmt.Errorf("stdout pipe: %w", err)
@@ -459,12 +476,25 @@ func (c *Coder) runStep(ctx context.Context, taskID, stepName, dir, prompt, cwd 
 	}
 
 	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("start claude: %w", err)
+		return "", fmt.Errorf("start pi: %w", err)
 	}
 
-	// Send SIGTERM on context cancellation
+	// Send prompt as JSON-RPC
+	promptMsg := map[string]string{
+		"id":      "step",
+		"type":    "prompt",
+		"message": prompt,
+	}
+	if err := json.NewEncoder(stdin).Encode(promptMsg); err != nil {
+		return "", fmt.Errorf("write prompt to pi: %w", err)
+	}
+
+	// Context cancellation → abort then sigterm
 	go func() {
 		<-ctx.Done()
+		// Try graceful abort
+		_ = json.NewEncoder(stdin).Encode(map[string]string{"type": "abort", "id": "cancel"})
+		time.Sleep(5 * time.Second)
 		if cmd.Process != nil {
 			_ = cmd.Process.Signal(syscall.SIGTERM)
 		}
@@ -479,6 +509,7 @@ func (c *Coder) runStep(ctx context.Context, taskID, stepName, dir, prompt, cwd 
 	}()
 
 	var lastResult string
+	agentDone := false
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
@@ -490,21 +521,31 @@ func (c *Coder) runStep(ctx context.Context, taskID, stepName, dir, prompt, cwd 
 		}
 
 		appendStepEvent(dir, line)
-		c.parseAndBroadcast(taskID, stepName, line, &lastResult)
+		c.parsePiEvent(taskID, stepName, line, &lastResult)
+
+		// pi RPC is long-lived — break when agent finishes
+		var ev struct{ Type string `json:"type"` }
+		if json.Unmarshal(line, &ev) == nil && ev.Type == "agent_end" {
+			agentDone = true
+			break
+		}
 	}
+
+	// Close stdin so pi exits cleanly
+	stdin.Close()
+	_ = agentDone
 
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
 			return "", fmt.Errorf("step cancelled")
 		}
-		return "", fmt.Errorf("claude exited: %w", err)
+		return "", fmt.Errorf("pi exited: %w", err)
 	}
 
-	// Prefer output.md written by claude
+	// Prefer output.md written by agent
 	if out := readStepOutput(dir); out != "" {
 		return out, nil
 	}
-	// Fall back to result event text
 	if lastResult != "" {
 		writeStepOutput(dir, lastResult)
 		return lastResult, nil
@@ -512,62 +553,73 @@ func (c *Coder) runStep(ctx context.Context, taskID, stepName, dir, prompt, cwd 
 	return "", nil
 }
 
-// parseAndBroadcast parses a single claude stream-json line and emits SSE events.
-func (c *Coder) parseAndBroadcast(taskID, stepName string, line []byte, lastResult *string) {
+// parsePiEvent parses a single pi RPC event line and emits SSE events.
+func (c *Coder) parsePiEvent(taskID, stepName string, line []byte, lastResult *string) {
 	var event struct {
-		Type    string          `json:"type"`
-		Subtype string          `json:"subtype"`
-		Result  string          `json:"result"`
-		Message json.RawMessage `json:"message"`
+		Type                  string          `json:"type"`
+		ToolName              string          `json:"toolName"`
+		Args                  json.RawMessage `json:"args"`
+		AssistantMessageEvent json.RawMessage `json:"assistantMessageEvent"`
+		Messages              json.RawMessage `json:"messages"`
 	}
 	if err := json.Unmarshal(line, &event); err != nil {
 		return
 	}
 
 	switch event.Type {
-	case "result":
-		if event.Result != "" {
-			*lastResult = event.Result
-		}
+	case "tool_execution_start":
+		inputStr := extractToolInput(event.ToolName, event.Args)
 		c.hub.Broadcast("step_event", map[string]any{
 			"task_id": taskID,
 			"step":    stepName,
-			"type":    "result",
-			"text":    event.Result,
+			"type":    "tool_use",
+			"tool":    event.ToolName,
+			"input":   inputStr,
 		})
 
-	case "assistant":
-		var msg struct {
-			Content []struct {
-				Type  string          `json:"type"`
-				Text  string          `json:"text"`
-				Name  string          `json:"name"`
-				Input json.RawMessage `json:"input"`
-			} `json:"content"`
-		}
-		if err := json.Unmarshal(event.Message, &msg); err != nil {
+	case "message_update":
+		if event.AssistantMessageEvent == nil {
 			return
 		}
-		for _, item := range msg.Content {
-			switch item.Type {
-			case "tool_use":
-				inputStr := extractToolInput(item.Name, item.Input)
-				c.hub.Broadcast("step_event", map[string]any{
-					"task_id": taskID,
-					"step":    stepName,
-					"type":    "tool_use",
-					"tool":    item.Name,
-					"input":   inputStr,
-				})
-			case "text":
-				text := strings.TrimSpace(item.Text)
-				if text != "" {
-					c.hub.Broadcast("step_event", map[string]any{
-						"task_id": taskID,
-						"step":    stepName,
-						"type":    "assistant",
-						"text":    text,
-					})
+		var ame struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+		}
+		if err := json.Unmarshal(event.AssistantMessageEvent, &ame); err != nil {
+			return
+		}
+		if ame.Type == "text_delta" && strings.TrimSpace(ame.Delta) != "" {
+			c.hub.Broadcast("step_event", map[string]any{
+				"task_id": taskID,
+				"step":    stepName,
+				"type":    "assistant",
+				"text":    ame.Delta,
+			})
+		}
+
+	case "agent_end":
+		// Extract final assistant text from messages array
+		if event.Messages == nil {
+			return
+		}
+		var msgs []struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal(event.Messages, &msgs); err != nil {
+			return
+		}
+		// Walk backwards to find last assistant text
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].Role == "assistant" {
+				for _, c := range msgs[i].Content {
+					if c.Type == "text" && c.Text != "" {
+						*lastResult = c.Text
+						return
+					}
 				}
 			}
 		}
@@ -630,10 +682,11 @@ func renderPrompt(tmpl, task, previous, chainDir string) string {
 	return r.Replace(tmpl)
 }
 
-// extractToolInput pulls a human-readable input string from a tool_use event.
+// extractToolInput pulls a human-readable input string from a tool args object.
+// Handles both pi tool names (lowercase) and Claude tool names (PascalCase).
 func extractToolInput(toolName string, input json.RawMessage) string {
 	switch toolName {
-	case "Bash":
+	case "bash", "Bash":
 		var p struct{ Command string `json:"command"` }
 		if err := json.Unmarshal(input, &p); err == nil {
 			cmd := p.Command
@@ -642,41 +695,53 @@ func extractToolInput(toolName string, input json.RawMessage) string {
 			}
 			return cmd
 		}
-	case "Read":
-		var p struct{ FilePath string `json:"file_path"` }
-		if err := json.Unmarshal(input, &p); err == nil {
-			return p.FilePath
-		}
-	case "Write":
-		var p struct{ FilePath string `json:"file_path"` }
-		if err := json.Unmarshal(input, &p); err == nil {
-			return p.FilePath
-		}
-	case "Edit", "MultiEdit":
-		var p struct{ FilePath string `json:"file_path"` }
-		if err := json.Unmarshal(input, &p); err == nil {
-			return p.FilePath
-		}
-	case "Glob":
-		var p struct{ Pattern string `json:"pattern"` }
-		if err := json.Unmarshal(input, &p); err == nil {
-			return p.Pattern
-		}
-	case "Grep":
-		var p struct{ Pattern string `json:"pattern"` }
-		if err := json.Unmarshal(input, &p); err == nil {
-			return p.Pattern
-		}
-	case "WebFetch", "WebSearch":
+	case "read", "Read":
 		var p struct {
-			URL   string `json:"url"`
-			Query string `json:"query"`
+			Path     string `json:"path"`
+			FilePath string `json:"file_path"`
 		}
 		if err := json.Unmarshal(input, &p); err == nil {
-			if p.URL != "" {
-				return p.URL
+			if p.Path != "" {
+				return p.Path
 			}
-			return p.Query
+			return p.FilePath
+		}
+	case "write", "Write":
+		var p struct {
+			Path     string `json:"path"`
+			FilePath string `json:"file_path"`
+		}
+		if err := json.Unmarshal(input, &p); err == nil {
+			if p.Path != "" {
+				return p.Path
+			}
+			return p.FilePath
+		}
+	case "edit", "Edit", "MultiEdit":
+		var p struct {
+			Path     string `json:"path"`
+			FilePath string `json:"file_path"`
+		}
+		if err := json.Unmarshal(input, &p); err == nil {
+			if p.Path != "" {
+				return p.Path
+			}
+			return p.FilePath
+		}
+	case "grep", "Grep":
+		var p struct{ Pattern string `json:"pattern"` }
+		if err := json.Unmarshal(input, &p); err == nil {
+			return p.Pattern
+		}
+	case "find", "Glob":
+		var p struct{ Pattern string `json:"pattern"` }
+		if err := json.Unmarshal(input, &p); err == nil {
+			return p.Pattern
+		}
+	case "ls":
+		var p struct{ Path string `json:"path"` }
+		if err := json.Unmarshal(input, &p); err == nil {
+			return p.Path
 		}
 	}
 

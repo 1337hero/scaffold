@@ -9,13 +9,7 @@ providers:
     api_key_env: ANTHROPIC_API_KEY
     timeout_seconds: 30
 
-  openai_main:
-    type: openai
-    api_key_env: OPENAI_API_KEY
-    timeout_seconds: 30
-
-  # Example specialist local provider. Keep this for semantic/offline tasks.
-  # Enable tool use only if your local endpoint supports OpenAI tool calling.
+  # Local semantic/embedding tasks. No tool use.
   ollama_specialist:
     type: openai_compatible
     base_url: http://127.0.0.1:11434/v1
@@ -24,47 +18,50 @@ providers:
     supports_tool_use: false
 
 profiles:
-  respond_default:
-    provider: openai_main
-    model: gpt-5-mini
+  # Conversational — what Mike actually talks to. Don't cheap out.
+  respond_sonnet:
+    provider: anthropic_main
+    model: claude-sonnet-4-6
 
-  triage_default:
-    provider: openai_main
-    model: gpt-5-mini
+  # Background tasks — classification, summarization, structured output.
+  # Haiku is fast, cheap, and plenty capable for these.
+  background_haiku:
+    provider: anthropic_main
+    model: claude-haiku-4-5-20251001
 
-  cortex_default:
-    provider: openai_main
-    model: gpt-5-mini
-
-  # Specialist profile for semantic maintenance.
+  # Local semantic maintenance.
   ollama_semantic:
     provider: ollama_specialist
-    model: qwen2.5:14b-instruct
+    model: qwen3-coder:30b-a3b-q4_K_M
 
 routes:
   brain.respond:
-    profile: respond_default
+    profile: respond_sonnet
     required: true
 
   brain.triage:
-    profile: triage_default
+    profile: background_haiku
     required: true
 
   brain.prioritize:
-    profile: triage_default
+    profile: background_haiku
     required: true
 
   cortex.bulletin:
-    profile: cortex_default
+    profile: background_haiku
     required: true
 
   cortex.semantic:
-    profile: cortex_default
+    profile: ollama_semantic
     required: true
 
   cortex.observations:
-    profile: cortex_default
+    profile: background_haiku
     required: true
+
+  coder.worker:
+    profile: respond_sonnet
+    required: false
 
 startup:
   verify_required_routes: true

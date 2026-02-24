@@ -8,7 +8,7 @@ Requires=scaffold-signal-cli.service
 Type=simple
 WorkingDirectory=%h/Builds/scaffold/daemon
 EnvironmentFile=%h/Builds/scaffold/daemon/.env
-Environment=PATH=/home/mikekey/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/home/mikekey/.bun/bin:/home/mikekey/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/Builds/scaffold/daemon/bin/scaffold-daemon
 Restart=always
 RestartSec=3

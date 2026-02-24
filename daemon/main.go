@@ -151,7 +151,7 @@ func main() {
 		log.Printf("warn: session bus register scaffold-agent failed: %v", err)
 	}
 
-	coderCfg := loadCoderConfig(cfg.configDir)
+	coderCfg := loadCoderConfig(cfg.configDir, appCfg.LLM)
 	coderSvc := coder.New(sessionBus, coderCfg)
 
 	var embedder embedding.Embedder
@@ -481,7 +481,7 @@ func loadConfig() config {
 	}
 }
 
-func loadCoderConfig(configDir string) coder.Config {
+func loadCoderConfig(configDir string, llmCfg appconfig.LLMConfig) coder.Config {
 	type coderYAML struct {
 		AllowedPaths []string `yaml:"allowed_paths"`
 	}
@@ -492,14 +492,36 @@ func loadCoderConfig(configDir string) coder.Config {
 	data, err := os.ReadFile(filepath.Join(configDir, "coder.yaml"))
 	if err != nil {
 		log.Printf("coder: no coder.yaml found, using defaults")
-		return cfg
+	} else {
+		var y coderYAML
+		if err := yaml.Unmarshal(data, &y); err != nil {
+			log.Printf("coder: parse coder.yaml: %v", err)
+		} else {
+			cfg.AllowedPaths = y.AllowedPaths
+		}
 	}
-	var y coderYAML
-	if err := yaml.Unmarshal(data, &y); err != nil {
-		log.Printf("coder: parse coder.yaml: %v", err)
-		return cfg
+
+	// Resolve coder.worker LLM route → pi provider/model
+	route, ok := llmCfg.Routes["coder.worker"]
+	if ok {
+		profile, pOk := llmCfg.Profiles[route.Profile]
+		if pOk {
+			provider, prOk := llmCfg.Providers[profile.Provider]
+			if prOk {
+				cfg.Provider = provider.Type
+				cfg.Model = profile.Model
+				cfg.APIKeyEnv = provider.APIKeyEnv
+				log.Printf("coder: using %s/%s via %s", cfg.Provider, cfg.Model, cfg.APIKeyEnv)
+			}
+		}
 	}
-	cfg.AllowedPaths = y.AllowedPaths
+	if cfg.Provider == "" {
+		cfg.Provider = "anthropic"
+		cfg.Model = "claude-sonnet-4-6"
+		cfg.APIKeyEnv = "ANTHROPIC_API_KEY"
+		log.Printf("coder: no coder.worker route, defaulting to %s/%s", cfg.Provider, cfg.Model)
+	}
+
 	return cfg
 }
 
