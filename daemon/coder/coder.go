@@ -582,6 +582,7 @@ func (c *Coder) parsePiEvent(taskID, stepName string, line []byte, lastResult *s
 		Type                  string          `json:"type"`
 		ToolName              string          `json:"toolName"`
 		Args                  json.RawMessage `json:"args"`
+		Result                json.RawMessage `json:"result"`
 		AssistantMessageEvent json.RawMessage `json:"assistantMessageEvent"`
 		Messages              json.RawMessage `json:"messages"`
 	}
@@ -598,6 +599,16 @@ func (c *Coder) parsePiEvent(taskID, stepName string, line []byte, lastResult *s
 			"type":    "tool_use",
 			"tool":    event.ToolName,
 			"input":   inputStr,
+		})
+
+	case "tool_execution_end":
+		resultStr := extractToolResult(event.ToolName, event.Result)
+		c.hub.Broadcast("step_event", map[string]any{
+			"task_id": taskID,
+			"step":    stepName,
+			"type":    "tool_result",
+			"tool":    event.ToolName,
+			"result":  resultStr,
 		})
 
 	case "message_update":
@@ -800,4 +811,145 @@ func extractToolInput(toolName string, input json.RawMessage) string {
 		s = s[:80] + "..."
 	}
 	return s
+}
+
+// extractToolResult pulls a human-readable result string from a tool result object.
+func extractToolResult(toolName string, result json.RawMessage) string {
+	if result == nil {
+		return ""
+	}
+
+	var str string
+	if err := json.Unmarshal(result, &str); err == nil {
+		if len(str) > 200 {
+			str = str[:200] + "..."
+		}
+		return str
+	}
+
+	var obj struct {
+		Output  string `json:"output"`
+		Content string `json:"content"`
+		Stdout  string `json:"stdout"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(result, &obj); err == nil {
+		out := obj.Output
+		if out == "" {
+			out = obj.Content
+		}
+		if out == "" {
+			out = obj.Stdout
+		}
+		if out == "" {
+			out = obj.Error
+		}
+		if len(out) > 200 {
+			out = out[:200] + "..."
+		}
+		if out != "" {
+			return out
+		}
+	}
+
+	s := string(result)
+	if len(s) > 200 {
+		s = s[:200] + "..."
+	}
+	return s
+}
+
+// ReadStepEvents reads events.jsonl for a given task and step number.
+func (c *Coder) ReadStepEvents(taskID, stepNum string) ([]map[string]any, error) {
+	task, ok := c.GetTask(taskID)
+	if !ok {
+		return nil, fmt.Errorf("task not found")
+	}
+	if task.RunDir == "" {
+		return nil, fmt.Errorf("no run directory")
+	}
+
+	stepsDir := filepath.Join(task.RunDir, "steps")
+	entries, err := os.ReadDir(stepsDir)
+	if err != nil {
+		return nil, fmt.Errorf("read steps dir: %w", err)
+	}
+
+	var stepDir string
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), stepNum+"-") {
+			stepDir = filepath.Join(stepsDir, e.Name())
+			break
+		}
+	}
+	if stepDir == "" {
+		return nil, fmt.Errorf("step %s not found", stepNum)
+	}
+
+	eventsPath := filepath.Join(stepDir, "events.jsonl")
+	data, err := os.ReadFile(eventsPath)
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+
+	events := make([]map[string]any, 0)
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if line == "" {
+			continue
+		}
+		parsed := parseStoredEvent(line)
+		if parsed != nil {
+			events = append(events, parsed)
+		}
+	}
+	return events, nil
+}
+
+// parseStoredEvent converts a raw pi RPC event line into the same shape as SSE step_events.
+func parseStoredEvent(line string) map[string]any {
+	var event struct {
+		Type                  string          `json:"type"`
+		ToolName              string          `json:"toolName"`
+		Args                  json.RawMessage `json:"args"`
+		Result                json.RawMessage `json:"result"`
+		AssistantMessageEvent json.RawMessage `json:"assistantMessageEvent"`
+	}
+	if err := json.Unmarshal([]byte(line), &event); err != nil {
+		return nil
+	}
+
+	switch event.Type {
+	case "tool_execution_start":
+		inputStr := extractToolInput(event.ToolName, event.Args)
+		return map[string]any{
+			"type":  "tool_use",
+			"tool":  event.ToolName,
+			"input": inputStr,
+		}
+	case "tool_execution_end":
+		resultStr := extractToolResult(event.ToolName, event.Result)
+		return map[string]any{
+			"type":   "tool_result",
+			"tool":   event.ToolName,
+			"result": resultStr,
+		}
+	case "message_update":
+		if event.AssistantMessageEvent == nil {
+			return nil
+		}
+		var ame struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+		}
+		if err := json.Unmarshal(event.AssistantMessageEvent, &ame); err != nil {
+			return nil
+		}
+		if ame.Type == "text_delta" && strings.TrimSpace(ame.Delta) != "" {
+			return map[string]any{
+				"type": "assistant",
+				"text": ame.Delta,
+			}
+		}
+	}
+	return nil
 }

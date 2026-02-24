@@ -17,7 +17,7 @@ const statusStyles = {
   cancelled: { dot: "bg-[#6B5F52]",               label: "cancelled",  cls: "text-[#6B5F52]" },
 }
 
-const ChainCard = ({ task, stepLogs = {}, currentAction }) => {
+const ChainCard = ({ task, stepLogs = {}, currentAction, stepProgress }) => {
   const queryClient = useQueryClient()
   const isRunning = task.status === "running"
 
@@ -43,6 +43,14 @@ const ChainCard = ({ task, stepLogs = {}, currentAction }) => {
         <div class="flex items-center gap-2">
           <span class={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
           <span class={`text-xs font-mono ${style.cls}`}>{style.label}</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#2A2318] text-[#9C8E7A] border border-[#3A3228]">
+            {task.chain}
+          </span>
+          {isRunning && stepProgress && (
+            <span class="text-[10px] font-mono text-[#5A4F42]">
+              step {stepProgress.num}/{stepProgress.total}
+            </span>
+          )}
           <span class="text-xs text-[#5A4F42] font-mono ml-1">
             [{formatElapsed(elapsed)}]
           </span>
@@ -66,7 +74,14 @@ const ChainCard = ({ task, stepLogs = {}, currentAction }) => {
       <p class="text-[#F5F0E8] text-sm font-medium mb-1 leading-snug">
         &ldquo;{task.task}&rdquo;
       </p>
-      <p class="text-[10px] text-[#5A4F42] font-mono mb-3">{task.cwd}</p>
+      <p class={`text-[10px] text-[#5A4F42] font-mono ${task.run_dir ? "" : "mb-3"}`}>{task.cwd}</p>
+      {task.run_dir && (
+        <p class="text-[10px] text-[#3A3228] font-mono mb-3 cursor-pointer hover:text-[#5A4F42] transition-colors"
+           title="Click to copy run directory"
+           onClick={() => navigator.clipboard?.writeText(task.run_dir)}>
+          run: {task.run_dir}
+        </p>
+      )}
 
       {/* Step pipeline */}
       <StepPipeline steps={task.steps || []} />

@@ -9,6 +9,7 @@ const eventBadge = (ev) => {
     if (tool === "edit" || tool === "multiedit") return { label: "edit", cls: "bg-[#2E2818] text-[#FBD38D] border-[#4A3E28]" }
     return { label: "tool", cls: "bg-[#2A2A2A] text-[#9C8E7A] border-[#3A3A3A]" }
   }
+  if (ev.type === "tool_result") return { label: "done", cls: "bg-[#1E3A2E] text-[#4ADE80] border-[#2A5A3E]" }
   if (ev.type === "result") return { label: "done",  cls: "bg-[#1E3A2E] text-[#4ADE80] border-[#2A5A3E]" }
   if (ev.type === "error")  return { label: "error", cls: "bg-[#3A1E1E] text-[#F87171] border-[#5A2E2E]" }
   return null
@@ -33,10 +34,32 @@ const EventRow = ({ ev }) => {
         </span>
       )}
       <span class="text-[11px] font-mono text-[#9C8E7A] truncate">
-        {ev.input || ev.text || ""}
+        {ev.input || ev.text || ev.result || ""}
       </span>
     </div>
   )
+}
+
+function stitchEvents(events) {
+  const result = []
+  let accum = null
+  for (const ev of events) {
+    if (ev.type === "assistant") {
+      if (accum) {
+        accum.text += ev.text
+      } else {
+        accum = { ...ev, text: ev.text || "" }
+      }
+    } else {
+      if (accum) {
+        result.push(accum)
+        accum = null
+      }
+      result.push(ev)
+    }
+  }
+  if (accum) result.push(accum)
+  return result
 }
 
 const StepLog = ({ step, events = [] }) => {
@@ -65,7 +88,7 @@ const StepLog = ({ step, events = [] }) => {
 
       {open && count > 0 && (
         <div class="px-3 pb-3 space-y-0.5 border-t border-[#2A2318]">
-          {events.map((ev, i) => (
+          {stitchEvents(events).map((ev, i) => (
             <EventRow key={i} ev={ev} />
           ))}
         </div>

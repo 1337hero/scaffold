@@ -280,3 +280,7 @@ export function createCapture(text) { return postJSON("/api/capture", { text }) 
 export function dispatchCoderTask({ task, chain = "single", cwd = "" }) {
   return postJSON("/api/coder/dispatch", { task, chain, cwd })
 }
+
+export function fetchStepEvents(taskId, stepNum) {
+  return apiFetch(`/api/coder/tasks/${taskId}/steps/${stepNum}/events`)
+}

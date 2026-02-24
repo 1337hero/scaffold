@@ -63,6 +63,25 @@ func (s *Server) handleCoderDispatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "dispatched"})
 }
 
+func (s *Server) handleCoderStepEvents(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	stepNum := r.PathValue("step_num")
+
+	_, ok := s.coder.GetTask(id)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "task not found"})
+		return
+	}
+
+	events, err := s.coder.ReadStepEvents(id, stepNum)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "events not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, events)
+}
+
 func (s *Server) handleCoderStream(w http.ResponseWriter, r *http.Request) {
 	// Disable write deadline for SSE — this is a long-lived connection.
 	rc := http.NewResponseController(w)

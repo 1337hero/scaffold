@@ -1,3 +1,11 @@
+const formatElapsed = (secs) => {
+  const s = Math.floor(secs)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return `${m}m ${rem.toString().padStart(2, "0")}s`
+}
+
 const StepPipeline = ({ steps }) => {
   return (
     <div class="flex items-center gap-1 flex-wrap my-3">
@@ -35,6 +43,9 @@ const StepBadge = ({ step }) => {
     <span class={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border ${cls}`}>
       <span class={status === "running" ? "animate-pulse" : ""}>{icons[status]}</span>
       {step.name}
+      {(status === "done" || status === "failed") && step.elapsed_s > 0 && (
+        <span class="opacity-50 ml-1">{formatElapsed(step.elapsed_s)}</span>
+      )}
     </span>
   )
 }
