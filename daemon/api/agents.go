@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"scaffold/agents"
@@ -44,11 +45,29 @@ func (s *Server) handleAgentDispatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	chain := strings.TrimSpace(req.Chain)
+	if chain == "" {
+		chain = "implement"
+	}
+	if !s.agents.ValidateChain(chain) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "unknown chain: " + chain})
+		return
+	}
+
+	cwd := strings.TrimSpace(req.CWD)
+	if cwd == "" {
+		cwd = s.agents.DefaultCWD()
+	}
+	if cwd != "" && !s.agents.IsAllowedPath(cwd) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "cwd not in allowlist: " + cwd})
+		return
+	}
+
 	msg := agents.CodeTaskMessage{
 		Type:  "code_task",
 		Task:  req.Task,
-		Chain: req.Chain,
-		CWD:   req.CWD,
+		Chain: chain,
+		CWD:   cwd,
 	}
 	data, _ := json.Marshal(msg)
 

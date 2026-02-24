@@ -130,6 +130,28 @@ func (c *Coder) ChainNames() []string {
 	return names
 }
 
+// ValidateChain reports whether chain name exists in config.
+func (c *Coder) ValidateChain(name string) bool {
+	_, ok := c.cfg.Chains[name]
+	return ok
+}
+
+// IsAllowedPath reports whether cwd is under an allowed path.
+func (c *Coder) IsAllowedPath(path string) bool {
+	return c.isAllowedPath(path)
+}
+
+// DefaultCWD returns the configured default working directory.
+func (c *Coder) DefaultCWD() string {
+	if c.cfg.DefaultCWD != "" {
+		return c.cfg.DefaultCWD
+	}
+	if len(c.cfg.AllowedPaths) > 0 {
+		return c.cfg.AllowedPaths[0]
+	}
+	return ""
+}
+
 // Start begins the bus consumer loop in a goroutine.
 func (c *Coder) Start(ctx context.Context) {
 	go c.loop(ctx)
@@ -250,6 +272,12 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 	chainDef, ok := c.cfg.Chains[chain]
 	if !ok {
 		log.Printf("agents: unknown chain %q", chain)
+		c.sendResult(ctx, msg.ReplyTo, CoderResultMessage{
+			Type:   "coder_result",
+			Chain:  chain,
+			Status: "failed",
+			Error:  fmt.Sprintf("unknown chain %q", chain),
+		})
 		return
 	}
 
@@ -270,6 +298,12 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 	}
 	if !c.isAllowedPath(cwd) {
 		log.Printf("agents: cwd %q not in allowlist", cwd)
+		c.sendResult(ctx, msg.ReplyTo, CoderResultMessage{
+			Type:   "coder_result",
+			Chain:  chain,
+			Status: "failed",
+			Error:  fmt.Sprintf("cwd %q not in allowlist", cwd),
+		})
 		return
 	}
 

@@ -13,7 +13,7 @@ const agentTasksQuery = {
 const Coder = () => {
   const queryClient = useQueryClient()
   const { data: rawTasks, isError, error } = useQuery(agentTasksQuery)
-  const { data: chainOptions = [] } = useQuery(agentChainsQuery)
+  const { data: chainOptions = [], isLoading: chainsLoading } = useQuery(agentChainsQuery)
   const tasks = rawTasks ?? []
 
   // stepLogs: { taskId: { stepName: [event, ...] } }
@@ -25,8 +25,14 @@ const Coder = () => {
 
   // dispatch form state
   const [dispatchTask, setDispatchTask] = useState("")
-  const [dispatchChain, setDispatchChain] = useState("single")
+  const [dispatchChain, setDispatchChain] = useState("")
   const [dispatchCwd, setDispatchCwd] = useState("")
+
+  useEffect(() => {
+    if (chainOptions.length && !dispatchChain) {
+      setDispatchChain(chainOptions[0])
+    }
+  }, [chainOptions])
 
   const dispatchMutation = useMutation({
     mutationFn: (params) => dispatchAgentTask(params),
@@ -210,7 +216,7 @@ const Coder = () => {
               onChange={(e) => setDispatchChain(e.currentTarget.value)}
               class="bg-input-bg border border-app-border rounded-lg px-3 py-2 text-[11px] font-mono text-app-muted outline-none cursor-pointer"
             >
-              {(chainOptions.length ? chainOptions : ["single"]).map((c) => (
+              {chainOptions.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -225,7 +231,7 @@ const Coder = () => {
             />
             <button
               type="submit"
-              disabled={!dispatchTask.trim() || dispatchMutation.isPending}
+              disabled={!dispatchTask.trim() || !dispatchChain || chainsLoading || dispatchMutation.isPending}
               class="px-4 py-2 rounded-lg bg-accent text-white text-[11px] font-mono font-semibold hover:bg-accent-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
               {dispatchMutation.isPending ? "Sending..." : "Dispatch"}

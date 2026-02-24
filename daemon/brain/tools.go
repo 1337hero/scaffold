@@ -873,8 +873,8 @@ func handleDispatchCodeTask(ctx context.Context, database *db.DB, b *Brain, para
 	if p.Chain == "" {
 		p.Chain = "implement"
 	}
-	if p.CWD == "" {
-		p.CWD = "/home/mikekey/Builds/scaffold"
+	if p.CWD == "" && b != nil {
+		p.CWD = b.codeDispatchCWD
 	}
 
 	msg := map[string]any{

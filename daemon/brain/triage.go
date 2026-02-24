@@ -26,6 +26,7 @@ type Config struct {
 	RespondMaxTokens int
 	TriageMaxTokens  int
 	Tools            []ToolDefinition
+	CodeDispatchCWD  string
 }
 
 type Brain struct {
@@ -46,6 +47,7 @@ type Brain struct {
 	prioritizeModel  string
 	respondMaxTokens int
 	triageMaxTokens  int
+	codeDispatchCWD  string
 }
 
 func New(apiKey string, database *db.DB, cfg Config) *Brain {
@@ -122,6 +124,7 @@ func NewWithDependencies(database *db.DB, cfg Config, deps Dependencies) *Brain 
 		prioritizeModel:  prioritizeModel,
 		respondMaxTokens: respondMaxTokens,
 		triageMaxTokens:  triageMaxTokens,
+		codeDispatchCWD:  cfg.CodeDispatchCWD,
 	}
 }
 

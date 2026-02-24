@@ -120,6 +120,8 @@ func main() {
 		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteCortexObservations, err)
 	}
 
+	coderCfg := loadCoderConfig(cfg.configDir, appCfg.LLM)
+
 	b := brain.NewWithDependencies(database, brain.Config{
 		AssistantName:    assistantName,
 		UserName:         cfg.userName,
@@ -131,6 +133,7 @@ func main() {
 		RespondMaxTokens: appCfg.Agent.MaxResponseTokens,
 		TriageMaxTokens:  appCfg.Triage.MaxTokens,
 		Tools:            toolDefs,
+		CodeDispatchCWD:  coderCfg.DefaultCWD,
 	}, brain.Dependencies{
 		Responder:            respondResponder,
 		TriageCompletion:     triageCompletion,
@@ -151,7 +154,6 @@ func main() {
 		log.Printf("warn: session bus register scaffold-agent failed: %v", err)
 	}
 
-	coderCfg := loadCoderConfig(cfg.configDir, appCfg.LLM)
 	coderSvc := agents.New(sessionBus, coderCfg)
 
 	var embedder embedding.Embedder

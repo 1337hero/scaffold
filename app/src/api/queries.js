@@ -278,8 +278,18 @@ export function createCapture(text) { return postJSON("/api/capture", { text }) 
 
 // Agents
 
-export function dispatchAgentTask({ task, chain = "single", cwd = "" }) {
-  return postJSON("/api/agents/dispatch", { task, chain, cwd })
+export async function dispatchAgentTask({ task, chain, cwd = "" }) {
+  const res = await fetch("/api/agents/dispatch", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ task, chain, cwd }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || `${res.status} ${res.statusText}`)
+  }
+  return res.json()
 }
 
 export function fetchStepEvents(taskId, stepNum) {
