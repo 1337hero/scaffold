@@ -70,9 +70,7 @@ uploads/
 logs/
 *.log
 specs/
-docs/*
-!docs/plans/
-!docs/plans/**
+docs/
 archive/
 source/
 
