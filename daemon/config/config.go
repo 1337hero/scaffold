@@ -179,7 +179,10 @@ func applyDefaults(cfg *Config) {
 		cfg.Google.CalendarID = "primary"
 	}
 	if len(cfg.Google.Scopes) == 0 {
-		cfg.Google.Scopes = []string{"https://www.googleapis.com/auth/calendar.events.readonly"}
+		cfg.Google.Scopes = []string{
+			"https://www.googleapis.com/auth/calendar.events.readonly",
+			"https://www.googleapis.com/auth/calendar.events",
+		}
 	}
 
 	if cfg.Embedding.Provider == "" {
