@@ -173,6 +173,60 @@ func TestFormatTime(t *testing.T) {
 	}
 }
 
+func TestEventToGCal_TimedEvent(t *testing.T) {
+	e := Event{
+		Title:       "Standup",
+		Start:       "2026-02-20T09:00:00-07:00",
+		End:         "2026-02-20T09:30:00-07:00",
+		Location:    "Zoom",
+		Description: "Daily sync",
+		AllDay:      false,
+	}
+	gcal := eventToGCal(e)
+
+	if gcal.Summary != "Standup" {
+		t.Errorf("Summary: got %q, want %q", gcal.Summary, "Standup")
+	}
+	if gcal.Location != "Zoom" {
+		t.Errorf("Location: got %q, want %q", gcal.Location, "Zoom")
+	}
+	if gcal.Description != "Daily sync" {
+		t.Errorf("Description: got %q, want %q", gcal.Description, "Daily sync")
+	}
+	if gcal.Start == nil || gcal.Start.DateTime != e.Start {
+		t.Errorf("Start.DateTime: got %v, want %q", gcal.Start, e.Start)
+	}
+	if gcal.End == nil || gcal.End.DateTime != e.End {
+		t.Errorf("End.DateTime: got %v, want %q", gcal.End, e.End)
+	}
+	if gcal.Start.Date != "" {
+		t.Errorf("Start.Date should be empty for timed event, got %q", gcal.Start.Date)
+	}
+}
+
+func TestEventToGCal_AllDayEvent(t *testing.T) {
+	e := Event{
+		Title:  "PTO",
+		Start:  "2026-02-20",
+		End:    "2026-02-21",
+		AllDay: true,
+	}
+	gcal := eventToGCal(e)
+
+	if gcal.Summary != "PTO" {
+		t.Errorf("Summary: got %q, want %q", gcal.Summary, "PTO")
+	}
+	if gcal.Start == nil || gcal.Start.Date != e.Start {
+		t.Errorf("Start.Date: got %v, want %q", gcal.Start, e.Start)
+	}
+	if gcal.End == nil || gcal.End.Date != e.End {
+		t.Errorf("End.Date: got %v, want %q", gcal.End, e.End)
+	}
+	if gcal.Start.DateTime != "" {
+		t.Errorf("Start.DateTime should be empty for all-day event, got %q", gcal.Start.DateTime)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchString(s, substr)
 }

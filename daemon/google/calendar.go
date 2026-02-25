@@ -160,6 +160,58 @@ func isDeclined(item *calendar.Event) bool {
 	return false
 }
 
+func eventToGCal(e Event) *calendar.Event {
+	gcal := &calendar.Event{
+		Summary:     e.Title,
+		Location:    e.Location,
+		Description: e.Description,
+	}
+	if e.AllDay {
+		gcal.Start = &calendar.EventDateTime{Date: e.Start}
+		gcal.End = &calendar.EventDateTime{Date: e.End}
+	} else {
+		gcal.Start = &calendar.EventDateTime{DateTime: e.Start}
+		gcal.End = &calendar.EventDateTime{DateTime: e.End}
+	}
+	return gcal
+}
+
+func (c *CalendarClient) CreateEvent(ctx context.Context, calendarID string, event Event) (*Event, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return nil, err
+	}
+	calendarID = normalizeCalendarID(calendarID)
+
+	gcalEvent := eventToGCal(event)
+	created, err := c.service.Events.Insert(calendarID, gcalEvent).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("create event: %w", err)
+	}
+	results := convertEvents([]*calendar.Event{created})
+	if len(results) == 0 {
+		return nil, fmt.Errorf("create event: response was empty or filtered")
+	}
+	return &results[0], nil
+}
+
+func (c *CalendarClient) UpdateEvent(ctx context.Context, calendarID, eventID string, event Event) (*Event, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return nil, err
+	}
+	calendarID = normalizeCalendarID(calendarID)
+
+	gcalEvent := eventToGCal(event)
+	updated, err := c.service.Events.Patch(calendarID, eventID, gcalEvent).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("update event %s: %w", eventID, err)
+	}
+	results := convertEvents([]*calendar.Event{updated})
+	if len(results) == 0 {
+		return nil, fmt.Errorf("update event: response was empty or filtered")
+	}
+	return &results[0], nil
+}
+
 func FormatEvents(events []Event) string {
 	if len(events) == 0 {
 		return "No events found."
