@@ -48,6 +48,9 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if bearer == "" {
+		bearer = r.URL.Query().Get("token")
+	}
+	if bearer == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "bearer token required"})
 		return
 	}
