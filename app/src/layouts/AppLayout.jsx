@@ -43,6 +43,7 @@ function RouteView({ route, param }) {
 function AuthenticatedShell() {
   const [captureOpen, setCaptureOpen] = useState(false);
   const { route, param } = useRoute();
+  const queryClient = useQueryClient();
   const { data: inboxCount = 0 } = useQuery(inboxCountQuery);
   const { data: agentTasks = [] } = useQuery({
     queryKey: ["agent-tasks"],
@@ -55,6 +56,11 @@ function AuthenticatedShell() {
   const openCapture = () => setCaptureOpen(true);
   const closeCapture = () => setCaptureOpen(false);
 
+  const handleLogout = async () => {
+    await fetch("/api/logout", { method: "POST", credentials: "include" });
+    queryClient.invalidateQueries({ queryKey: ["auth"] });
+  };
+
   useKeyboard([
     { key: "Escape", when: () => captureOpen, action: closeCapture },
     { key: "k", meta: true, action: () => (captureOpen ? closeCapture() : openCapture()) },
@@ -66,6 +72,7 @@ function AuthenticatedShell() {
         activeRoute={route}
         onNavigate={navigate}
         onCapture={openCapture}
+        onLogout={handleLogout}
         inboxCount={inboxCount}
         coderActive={coderActive}
       />

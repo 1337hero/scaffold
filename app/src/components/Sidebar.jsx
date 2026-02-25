@@ -1,10 +1,10 @@
 import { agentsNav, dashboard, inbox, areas, search } from "@/constants/nav.js";
 import { cn } from "@/lib/utils.js";
-import { RiAddLine } from "@remixicon/react";
+import { RiAddLine, RiLogoutBoxRLine } from "@remixicon/react";
 
 const navItems = [dashboard, { ...inbox, hasBadge: true }, areas, search, agentsNav];
 
-const Sidebar = ({ activeRoute, onNavigate, onCapture, inboxCount, coderActive }) => {
+const Sidebar = ({ activeRoute, onNavigate, onCapture, onLogout, inboxCount, coderActive }) => {
   return (
     <aside className="fixed left-0 top-0 h-full w-64 border-r border-app-border bg-sidebar-bg z-40 hidden lg:flex flex-col p-6 text-sidebar-text">
       <div className="mb-10">
@@ -51,16 +51,29 @@ const Sidebar = ({ activeRoute, onNavigate, onCapture, inboxCount, coderActive }
         })}
       </nav>
 
-      <button
-        type="button"
-        onClick={onCapture}
-        class="mt-auto flex items-center justify-center gap-2 w-full py-4 bg-accent hover:bg-accent-hover text-white rounded-2xl font-bold shadow-lg shadow-accent/20 transition-all active:scale-95"
-        aria-label="Capture new item"
-      >
-        <RiAddLine size={20} />
-        <span>Capture</span>
-        <span class="text-[10px] opacity-60 mono ml-1">⌘K</span>
-      </button>
+      <div class="mt-auto flex flex-col gap-3">
+        <button
+          type="button"
+          onClick={onLogout}
+          title="Log out"
+          class="flex items-center gap-3 px-4 py-2 rounded-xl text-sidebar-text/50 hover:text-sidebar-text hover:bg-white/5 transition-all duration-200 w-full"
+          aria-label="Log out"
+        >
+          <RiLogoutBoxRLine size={18} class="shrink-0" />
+          <span class="text-sm">Log out</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onCapture}
+          class="flex items-center justify-center gap-2 w-full py-4 bg-accent hover:bg-accent-hover text-white rounded-2xl font-bold shadow-lg shadow-accent/20 transition-all active:scale-95"
+          aria-label="Capture new item"
+        >
+          <RiAddLine size={20} />
+          <span>Capture</span>
+          <span class="text-[10px] opacity-60 mono ml-1">⌘K</span>
+        </button>
+      </div>
     </aside>
   );
 };
