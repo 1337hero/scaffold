@@ -66,8 +66,8 @@ func TestToolsConfig(t *testing.T) {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if len(cfg.Tools.Tools) != 8 {
-		t.Errorf("expected 8 tools, got %d", len(cfg.Tools.Tools))
+	if len(cfg.Tools.Tools) != 18 {
+		t.Errorf("expected 18 tools, got %d", len(cfg.Tools.Tools))
 	}
 
 	names := make(map[string]bool)
@@ -76,13 +76,15 @@ func TestToolsConfig(t *testing.T) {
 	}
 	expected := []string{
 		"save_to_inbox",
-		"get_desk",
 		"search_memories",
-		"update_desk_item",
 		"get_inbox",
 		"get_calendar_events",
+		"create_calendar_event",
+		"update_calendar_event",
 		"list_sessions",
 		"send_to_session",
+		"search_email",
+		"get_email",
 	}
 	for _, name := range expected {
 		if !names[name] {

@@ -122,6 +122,7 @@ Prerequisites: structured logging would make this much cleaner (JSON log output 
 
 ## Backlog
 
+- [ ] User settings panel — change password from the UI instead of editing `.env` + restart. Prerequisite for onboarding.
 - [ ] FasterChat onboarding flow — setup wizard on first boot (if no users exist, route to `/setup` instead of `/login`). Holding until multi-user/sharing story is clearer.
 - [ ] Domain edit surface in UI (PATCH endpoint exists, low priority)
 - [ ] Agent subprocess hardening (seccomp/namespaces for pi process)

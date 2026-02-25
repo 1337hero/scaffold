@@ -16,7 +16,9 @@ import (
 	appconfig "scaffold/config"
 	"scaffold/db"
 	"scaffold/embedding"
+	googlemail "scaffold/google"
 	"scaffold/llm"
+	"scaffold/sessionbus"
 )
 
 const (
@@ -123,6 +125,9 @@ type Cortex struct {
 	bulletin              *BulletinCache
 	tasks                 []*CortexTask
 	once                  sync.Once
+	gmailClient           *googlemail.GmailClient
+	gmailCfg              *googlemail.GmailConfig
+	sessionBus            *sessionbus.Bus
 }
 
 type LLMRoute struct {
@@ -289,9 +294,13 @@ func (c *Cortex) buildTasks() []*CortexTask {
 				log.Printf("cortex: no handler for task %q; skipping", name)
 				continue
 			}
+			interval := time.Duration(taskCfg.IntervalHours) * time.Hour
+			if interval <= 0 && taskCfg.IntervalMinutes > 0 {
+				interval = time.Duration(taskCfg.IntervalMinutes) * time.Minute
+			}
 			tasks = append(tasks, &CortexTask{
 				Name:     name,
-				Interval: time.Duration(taskCfg.IntervalHours) * time.Hour,
+				Interval: interval,
 				Timeout:  time.Duration(taskCfg.TimeoutSeconds) * time.Second,
 				Fn:       taskFn,
 			})
@@ -299,6 +308,18 @@ func (c *Cortex) buildTasks() []*CortexTask {
 	}
 
 	return tasks
+}
+
+func (c *Cortex) SetGmailClient(client *googlemail.GmailClient) {
+	c.gmailClient = client
+}
+
+func (c *Cortex) SetGmailConfig(cfg *googlemail.GmailConfig) {
+	c.gmailCfg = cfg
+}
+
+func (c *Cortex) SetSessionBus(bus *sessionbus.Bus) {
+	c.sessionBus = bus
 }
 
 func (c *Cortex) taskFnForName(name string) func(context.Context) error {
@@ -321,6 +342,10 @@ func (c *Cortex) taskFnForName(name string) func(context.Context) error {
 		return c.runObservations
 	case "drift":
 		return c.runDrift
+	case "gmail_triage":
+		return c.runGmailTriage
+	case "waiting_check":
+		return c.runWaitingCheck
 	default:
 		return nil
 	}

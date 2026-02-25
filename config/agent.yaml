@@ -58,6 +58,11 @@ rules:
     - Routine/noisy events (push to main, issue closed, successful CI) → no action needed.
     Always set source and source_ref on webhook-originated tasks for dedup.
     If the message says a task already exists for a URL, do NOT create a duplicate — add a note instead.
+  - |
+    You have access to Gmail via search_email and get_email.
+    When Mike asks about an email or wants to find something in his inbox, use these tools.
+    You cannot send email — only read and surface information.
+    For email action items, use create_task with source="gmail".
 
 max_response_tokens: 1024
 model: claude-haiku-4-5

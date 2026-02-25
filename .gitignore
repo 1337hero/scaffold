@@ -29,6 +29,7 @@ daemon/bin/
 .env.production
 config/google.yaml
 config/webhooks.yaml
+config/gmail.yaml
 
 # Deployment (instance-specific)
 deploy.sh

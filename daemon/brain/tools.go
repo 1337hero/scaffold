@@ -20,22 +20,26 @@ type ToolHandler func(ctx context.Context, database *db.DB, b *Brain, params jso
 
 func defaultToolRegistry() map[string]ToolHandler {
 	return map[string]ToolHandler{
-		"save_to_inbox":       handleSaveToInbox,
-		"get_desk":            handleGetDesk,
-		"search_memories":     handleSearchMemories,
-		"update_desk_item":    handleUpdateDeskItem,
-		"get_inbox":           handleGetInbox,
-		"get_calendar_events": handleGetCalendarEvents,
-		"send_to_session":     handleSendToSession,
-		"list_sessions":       handleListSessions,
-		"create_goal":         handleCreateGoal,
-		"create_task":         handleCreateTask,
-		"create_note":         handleCreateNote,
-		"update_goal":         handleUpdateGoal,
-		"update_task":         handleUpdateTask,
-		"list_goals":          handleListGoals,
-		"list_tasks":          handleListTasks,
-		"dispatch_code_task":  handleDispatchCodeTask,
+		"save_to_inbox":          handleSaveToInbox,
+		"get_desk":               handleGetDesk,
+		"search_memories":        handleSearchMemories,
+		"update_desk_item":       handleUpdateDeskItem,
+		"get_inbox":              handleGetInbox,
+		"get_calendar_events":    handleGetCalendarEvents,
+		"create_calendar_event":  handleCreateCalendarEvent,
+		"update_calendar_event":  handleUpdateCalendarEvent,
+		"send_to_session":        handleSendToSession,
+		"list_sessions":          handleListSessions,
+		"create_goal":            handleCreateGoal,
+		"create_task":            handleCreateTask,
+		"create_note":            handleCreateNote,
+		"update_goal":            handleUpdateGoal,
+		"update_task":            handleUpdateTask,
+		"list_goals":             handleListGoals,
+		"list_tasks":             handleListTasks,
+		"dispatch_code_task":     handleDispatchCodeTask,
+		"search_email":           handleSearchEmail,
+		"get_email":              handleGetEmail,
 	}
 }
 
@@ -962,4 +966,167 @@ func handleListTasks(ctx context.Context, database *db.DB, b *Brain, params json
 		sb.WriteString(")\n")
 	}
 	return sb.String(), nil
+}
+
+func handleCreateCalendarEvent(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if b == nil || b.calendarClient == nil {
+		return "Google Calendar is not configured. Run: scaffold-daemon auth google", nil
+	}
+
+	var p struct {
+		Title       string `json:"title"`
+		Start       string `json:"start"`
+		End         string `json:"end"`
+		Location    string `json:"location"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("create_calendar_event: bad params: %w", err)
+	}
+	if p.Title == "" || p.Start == "" || p.End == "" {
+		return "", fmt.Errorf("create_calendar_event: title, start, and end are required")
+	}
+
+	event := googlecal.Event{
+		Title:       p.Title,
+		Start:       p.Start,
+		End:         p.End,
+		Location:    p.Location,
+		Description: p.Description,
+	}
+	created, err := b.calendarClient.CreateEvent(ctx, b.calendarClient.CalendarID, event)
+	if err != nil {
+		return "", fmt.Errorf("create_calendar_event: %w", err)
+	}
+	return fmt.Sprintf("Event created: %q on %s (id=%s)", created.Title, created.Start, created.ID), nil
+}
+
+func handleUpdateCalendarEvent(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if b == nil || b.calendarClient == nil {
+		return "Google Calendar is not configured. Run: scaffold-daemon auth google", nil
+	}
+
+	var p struct {
+		EventID     string `json:"event_id"`
+		Title       string `json:"title"`
+		Start       string `json:"start"`
+		End         string `json:"end"`
+		Location    string `json:"location"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("update_calendar_event: bad params: %w", err)
+	}
+	if p.EventID == "" {
+		return "", fmt.Errorf("update_calendar_event: event_id is required")
+	}
+
+	event := googlecal.Event{
+		Title:       p.Title,
+		Start:       p.Start,
+		End:         p.End,
+		Location:    p.Location,
+		Description: p.Description,
+	}
+	updated, err := b.calendarClient.UpdateEvent(ctx, b.calendarClient.CalendarID, p.EventID, event)
+	if err != nil {
+		return "", fmt.Errorf("update_calendar_event: %w", err)
+	}
+	return fmt.Sprintf("Event updated: %q (id=%s)", updated.Title, updated.ID), nil
+}
+
+func handleSearchEmail(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if b == nil || b.gmailClient == nil {
+		return "Gmail is not configured. Run: scaffold-daemon auth google", nil
+	}
+
+	var p struct {
+		Query      string `json:"query"`
+		MaxResults int    `json:"max_results"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("search_email: bad params: %w", err)
+	}
+	if strings.TrimSpace(p.Query) == "" {
+		return "", fmt.Errorf("search_email: query required")
+	}
+	maxResults := p.MaxResults
+	if maxResults <= 0 {
+		maxResults = 5
+	}
+	if maxResults > 20 {
+		maxResults = 20
+	}
+
+	messages, err := b.gmailClient.SearchMessages(ctx, p.Query, maxResults)
+	if err != nil {
+		return "", fmt.Errorf("search_email: %w", err)
+	}
+	if len(messages) == 0 {
+		return fmt.Sprintf("No emails found matching %q.", p.Query), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Found %d email(s) matching %q:\n", len(messages), p.Query))
+	for i, msg := range messages {
+		sb.WriteString(fmt.Sprintf("%d. From: %s\n   Subject: %s\n   Date: %s\n   ID: %s\n   %s\n\n",
+			i+1, msg.From, msg.Subject, msg.Date.Format("2006-01-02 15:04"), msg.ID, msg.Snippet))
+	}
+	return sb.String(), nil
+}
+
+func handleGetEmail(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
+	if b == nil || b.gmailClient == nil {
+		return "Gmail is not configured. Run: scaffold-daemon auth google", nil
+	}
+
+	var p struct {
+		MessageID  string `json:"message_id"`
+		Label      string `json:"label"`
+		MaxResults int    `json:"max_results"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return "", fmt.Errorf("get_email: bad params: %w", err)
+	}
+
+	if strings.TrimSpace(p.MessageID) != "" {
+		msg, err := b.gmailClient.GetMessage(ctx, strings.TrimSpace(p.MessageID))
+		if err != nil {
+			return "", fmt.Errorf("get_email: %w", err)
+		}
+		return fmt.Sprintf("Email:\nFrom: %s\nSubject: %s\nDate: %s\nLabels: %s\n\n%s",
+			msg.From, msg.Subject, msg.Date.Format("2006-01-02 15:04"),
+			strings.Join(msg.Labels, ", "), msg.Body), nil
+	}
+
+	label := strings.TrimSpace(p.Label)
+	if label == "" {
+		label = "INBOX"
+	}
+	maxResults := p.MaxResults
+	if maxResults <= 0 {
+		maxResults = 5
+	}
+	query := fmt.Sprintf("label:%s", quoteGmailQueryValue(label))
+	messages, err := b.gmailClient.SearchMessages(ctx, query, maxResults)
+	if err != nil {
+		return "", fmt.Errorf("get_email: %w", err)
+	}
+	if len(messages) == 0 {
+		return fmt.Sprintf("No emails found in label %q.", label), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Recent emails in %q (%d):\n", label, len(messages)))
+	for i, msg := range messages {
+		sb.WriteString(fmt.Sprintf("%d. From: %s\n   Subject: %s\n   Date: %s\n   ID: %s\n\n",
+			i+1, msg.From, msg.Subject, msg.Date.Format("2006-01-02 15:04"), msg.ID))
+	}
+	return sb.String(), nil
+}
+
+func quoteGmailQueryValue(v string) string {
+	escaped := strings.ReplaceAll(v, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	return fmt.Sprintf(`"%s"`, escaped)
 }

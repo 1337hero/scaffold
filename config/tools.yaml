@@ -313,6 +313,88 @@ tools:
           enum: [today, tomorrow, week]
           description: "Filter by due date window"
 
+  - name: create_calendar_event
+    description: |
+      Create a new event on Google Calendar.
+      Use when Mike asks to schedule something, set up a meeting, or block time.
+    input_schema:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Event title / summary
+        start:
+          type: string
+          description: "Start time in RFC3339 format (e.g. 2026-02-25T14:00:00-07:00)"
+        end:
+          type: string
+          description: "End time in RFC3339 format"
+        location:
+          type: string
+          description: Optional location or video link
+        description:
+          type: string
+          description: Optional event description or notes
+      required: [title, start, end]
+
+  - name: update_calendar_event
+    description: |
+      Update an existing Google Calendar event by ID.
+      Pass only the fields you want to change.
+    input_schema:
+      type: object
+      properties:
+        event_id:
+          type: string
+          description: Google Calendar event ID (from get_calendar_events)
+        title:
+          type: string
+        start:
+          type: string
+          description: "New start time in RFC3339 format"
+        end:
+          type: string
+          description: "New end time in RFC3339 format"
+        location:
+          type: string
+        description:
+          type: string
+      required: [event_id]
+
+  - name: search_email
+    description: |
+      Search Mike's Gmail inbox using a query string.
+      Use Gmail search syntax: from:, subject:, label:, after:, etc.
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "Gmail search query (e.g. 'from:bob@example.com subject:invoice')"
+        max_results:
+          type: integer
+          description: "Max results to return. Default: 5"
+          minimum: 1
+          maximum: 20
+      required: [query]
+
+  - name: get_email
+    description: |
+      Get a specific email by ID, or get recent emails from a Gmail label.
+      Use message_id for a specific email, or label for recent labeled emails.
+    input_schema:
+      type: object
+      properties:
+        message_id:
+          type: string
+          description: Gmail message ID (from search_email results)
+        label:
+          type: string
+          description: "Gmail label name to list recent emails from (e.g. 'FOLLOW UP', 'INBOX')"
+        max_results:
+          type: integer
+          description: "Max results when using label. Default: 5"
+
   - name: dispatch_code_task
     description: |
       Dispatch a coding task to scaffold-worker. Runs a chain of specialized agents

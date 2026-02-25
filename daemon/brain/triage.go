@@ -36,6 +36,7 @@ type Brain struct {
 	db               *db.DB
 	embedder         embedding.Embedder
 	calendarClient   *googlecal.CalendarClient
+	gmailClient      *googlecal.GmailClient
 	sessionBus       *sessionbus.Bus
 	tools            []ToolDefinition
 	toolRegistry     map[string]ToolHandler
@@ -481,6 +482,10 @@ func (b *Brain) SetEmbedder(e embedding.Embedder) {
 
 func (b *Brain) SetCalendarClient(c *googlecal.CalendarClient) {
 	b.calendarClient = c
+}
+
+func (b *Brain) SetGmailClient(c *googlecal.GmailClient) {
+	b.gmailClient = c
 }
 
 func (b *Brain) SetSessionBus(bus *sessionbus.Bus) {

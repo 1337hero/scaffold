@@ -305,6 +305,21 @@ func (db *DB) migrate() error {
 		return fmt.Errorf("apply webhook indexes: %w", err)
 	}
 
+	_, err = db.conn.Exec(`
+		CREATE TABLE IF NOT EXISTS gmail_waiting_threads (
+		  thread_id   TEXT PRIMARY KEY,
+		  subject     TEXT NOT NULL,
+		  task_id     TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+		  context     TEXT,
+		  msg_count   INTEGER NOT NULL DEFAULT 0,
+		  created_at  INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_gmail_waiting_created ON gmail_waiting_threads(created_at);
+	`)
+	if err != nil {
+		return fmt.Errorf("apply gmail schema: %w", err)
+	}
+
 	return nil
 }
 

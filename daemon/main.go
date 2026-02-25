@@ -17,10 +17,10 @@ import (
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 
+	"scaffold/agents"
 	"scaffold/api"
 	"scaffold/brain"
 	appconfig "scaffold/config"
-	"scaffold/agents"
 	"scaffold/cortex"
 	"scaffold/db"
 	"scaffold/embedding"
@@ -169,13 +169,14 @@ func main() {
 	}
 	b.SetEmbedder(embedder)
 
+	var googleGmailClient *googleauth.GmailClient
 	if gcfg := appCfg.Google; gcfg.ClientID != "" {
 		store := &googleauth.DBTokenStore{DB: database, Provider: "google"}
 		existing, err := store.Get()
 		if err != nil {
 			log.Printf("warn: failed to check Google token: %v", err)
 		} else if existing == nil {
-			log.Println("Google Calendar configured but not authenticated. Run: scaffold-daemon auth google")
+			log.Println("Google configured but not authenticated. Run: scaffold-daemon auth google")
 		} else {
 			oauthCfg := googleauth.NewOAuth2Config(gcfg)
 			tokenSource := googleauth.TokenSource(oauthCfg, store)
@@ -186,9 +187,17 @@ func main() {
 				b.SetCalendarClient(calClient)
 				log.Printf("Google Calendar connected (calendar=%s)", gcfg.CalendarID)
 			}
+			gmailClient, err := googleauth.NewGmailClient(context.Background(), tokenSource)
+			if err != nil {
+				log.Printf("warn: Gmail client failed: %v", err)
+			} else {
+				b.SetGmailClient(gmailClient)
+				googleGmailClient = gmailClient
+				log.Println("Gmail client connected")
+			}
 		}
 	} else {
-		log.Println("Google Calendar not configured, skipping")
+		log.Println("Google not configured, skipping")
 	}
 
 	cortexRuntime := cortex.NewWithLLM(database, b, appCfg.Cortex, embedder, cortex.LLMRoutes{
@@ -206,6 +215,13 @@ func main() {
 		},
 	})
 	b.SetBulletinProvider(cortexRuntime.CurrentBulletin)
+	cortexRuntime.SetSessionBus(sessionBus)
+	if googleGmailClient != nil {
+		cortexRuntime.SetGmailClient(googleGmailClient)
+	}
+	if gmailCfg := loadGmailConfig(cfg.configDir); gmailCfg != nil {
+		cortexRuntime.SetGmailConfig(gmailCfg)
+	}
 
 	client := signalcli.NewClient(cfg.signalURL, cfg.agentNumber)
 	var ingestService *ingestion.Service
@@ -263,6 +279,8 @@ func main() {
 	if ingestService != nil {
 		ingestService.Start(ctx)
 	}
+
+	go runProactiveNotifier(ctx, sessionBus, client, cfg.userNumber)
 
 	if err := waitForSignal(client); err != nil {
 		log.Fatalf("signal-cli not ready: %v", err)
@@ -697,6 +715,61 @@ func buildAgentSystemPrompt(cfg *appconfig.Config) string {
 	b.WriteString("\n{{cortex_bulletin}}")
 
 	return b.String()
+}
+
+// runProactiveNotifier drains the scaffold-agent session bus queue and sends
+// messages to the user via Signal. Cortex tasks and agent results push to this
+// queue; the notifier is the single outbound path to Signal.
+func runProactiveNotifier(ctx context.Context, bus *sessionbus.Bus, client *signalcli.Client, userNumber string) {
+	const pollTimeout = 30 * time.Second
+	const sessionID = "scaffold-agent"
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		msgs, err := bus.Poll(ctx, sessionID, 10, pollTimeout)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("notifier: poll error: %v", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		for _, msg := range msgs {
+			text := strings.TrimSpace(msg.Message)
+			if text == "" {
+				continue
+			}
+			sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			if err := client.Send(sendCtx, userNumber, text); err != nil {
+				log.Printf("notifier: send failed: %v", err)
+			} else {
+				log.Printf("notifier: -> %s (len=%d)", userNumber, len(text))
+			}
+			cancel()
+		}
+	}
+}
+
+func loadGmailConfig(configDir string) *googleauth.GmailConfig {
+	data, err := os.ReadFile(filepath.Join(configDir, "gmail.yaml"))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("warn: gmail.yaml read error: %v", err)
+		}
+		return nil
+	}
+	var cfg googleauth.GmailConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		log.Printf("warn: gmail.yaml parse error: %v", err)
+		return nil
+	}
+	log.Printf("Gmail config loaded (%d prefilter rules)", len(cfg.Prefilter.KnownFilers))
+	return &cfg
 }
 
 func handleAuthSubcommand(args []string) {

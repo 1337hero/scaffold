@@ -71,7 +71,9 @@ type BulletinConfig struct {
 
 type TaskConfig struct {
 	IntervalHours   int      `yaml:"interval_hours"`
+	IntervalMinutes int      `yaml:"interval_minutes"`
 	TimeoutSeconds  int      `yaml:"timeout_seconds"`
+	MaxPerRun       int      `yaml:"max_per_run,omitempty"`
 	Factor          float64  `yaml:"factor,omitempty"`
 	ExemptTypes     []string `yaml:"exempt_types,omitempty"`
 	SuppressedDays  int      `yaml:"suppressed_days,omitempty"`
@@ -180,7 +182,6 @@ func applyDefaults(cfg *Config) {
 	}
 	if len(cfg.Google.Scopes) == 0 {
 		cfg.Google.Scopes = []string{
-			"https://www.googleapis.com/auth/calendar.events.readonly",
 			"https://www.googleapis.com/auth/calendar.events",
 		}
 	}
@@ -258,8 +259,8 @@ func validate(cfg *Config) error {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("cortex task name must not be empty")
 		}
-		if task.IntervalHours <= 0 {
-			return fmt.Errorf("cortex task %q interval_hours must be > 0", name)
+		if task.IntervalHours <= 0 && task.IntervalMinutes <= 0 {
+			return fmt.Errorf("cortex task %q must have interval_hours or interval_minutes > 0", name)
 		}
 		if task.TimeoutSeconds <= 0 {
 			return fmt.Errorf("cortex task %q timeout_seconds must be > 0", name)
