@@ -312,10 +312,42 @@ func (c *Cortex) buildTasks() []*CortexTask {
 
 func (c *Cortex) SetGmailClient(client *googlemail.GmailClient) {
 	c.gmailClient = client
+	if c.gmailCfg != nil {
+		go c.validateGmailLabels(context.Background())
+	}
 }
 
 func (c *Cortex) SetGmailConfig(cfg *googlemail.GmailConfig) {
 	c.gmailCfg = cfg
+	if c.gmailClient != nil {
+		go c.validateGmailLabels(context.Background())
+	}
+}
+
+func (c *Cortex) validateGmailLabels(ctx context.Context) {
+	if c.gmailClient == nil || c.gmailCfg == nil {
+		return
+	}
+	labelMap, err := c.gmailClient.ListLabels(ctx)
+	if err != nil {
+		log.Printf("ERROR: gmail label validation failed: %v", err)
+		return
+	}
+	for _, name := range c.gmailCfg.Labels.Status {
+		if _, ok := labelMap[name]; !ok {
+			log.Printf("ERROR: gmail status label %q not found in Gmail account — triage will skip it", name)
+		}
+	}
+	for _, name := range c.gmailCfg.Labels.Domain {
+		if _, ok := labelMap[name]; !ok {
+			log.Printf("ERROR: gmail domain label %q not found in Gmail — triage cannot apply it", name)
+		}
+	}
+	if sys := c.gmailCfg.SystemLabel; sys != "" {
+		if _, ok := labelMap[sys]; !ok {
+			log.Printf("ERROR: gmail system label %q not found in Gmail — create it manually in the Gmail web UI", sys)
+		}
+	}
 }
 
 func (c *Cortex) SetSessionBus(bus *sessionbus.Bus) {

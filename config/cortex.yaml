@@ -40,7 +40,7 @@ tasks:
     timeout_seconds: 15
   gmail_triage:
     interval_minutes: 30
-    timeout_seconds: 120
+    timeout_seconds: 300
     max_per_run: 50
   waiting_check:
     interval_minutes: 30

@@ -23,6 +23,12 @@ type GmailMessage struct {
 	HasUnsubscribe bool
 	GmailCategory  string
 	Date           time.Time
+	Attachments    []string
+}
+
+type MinimalMessage struct {
+	ID     string
+	Labels []string
 }
 
 type GmailClient struct {
@@ -123,6 +129,28 @@ func (c *GmailClient) TrashMessage(ctx context.Context, messageID string) error 
 	return nil
 }
 
+func (c *GmailClient) MarkAsRead(ctx context.Context, messageID string) error {
+	return c.ApplyLabels(ctx, messageID, nil, []string{"UNREAD"})
+}
+
+func (c *GmailClient) GetThreadMinimal(ctx context.Context, threadID string) ([]MinimalMessage, error) {
+	t, err := c.service.Users.Threads.Get(c.userID, threadID).
+		Format("minimal").
+		Context(ctx).
+		Do()
+	if err != nil {
+		return nil, fmt.Errorf("get thread minimal %s: %w", threadID, err)
+	}
+	msgs := make([]MinimalMessage, 0, len(t.Messages))
+	for _, m := range t.Messages {
+		msgs = append(msgs, MinimalMessage{
+			ID:     m.Id,
+			Labels: m.LabelIds,
+		})
+	}
+	return msgs, nil
+}
+
 func (c *GmailClient) SearchMessages(ctx context.Context, query string, maxResults int) ([]GmailMessage, error) {
 	if maxResults <= 0 {
 		maxResults = 10
@@ -144,6 +172,33 @@ func (c *GmailClient) SearchMessages(ctx context.Context, query string, maxResul
 		messages = append(messages, *msg)
 	}
 	return messages, nil
+}
+
+func (c *GmailClient) ListInbox(ctx context.Context, maxResults int) ([]GmailMessage, error) {
+	if maxResults <= 0 {
+		maxResults = 50
+	}
+	resp, err := c.service.Users.Messages.List(c.userID).
+		Q("in:inbox").
+		MaxResults(int64(maxResults)).
+		Context(ctx).
+		Do()
+	if err != nil {
+		return nil, fmt.Errorf("list inbox: %w", err)
+	}
+	messages := make([]GmailMessage, 0, len(resp.Messages))
+	for _, m := range resp.Messages {
+		msg, err := c.GetMessage(ctx, m.Id)
+		if err != nil {
+			continue
+		}
+		messages = append(messages, *msg)
+	}
+	return messages, nil
+}
+
+func GmailPermalink(messageID string) string {
+	return "https://mail.google.com/mail/u/0/#all/" + messageID
 }
 
 func parseGmailMessage(m *gmail.Message) *GmailMessage {
@@ -172,6 +227,7 @@ func parseGmailMessage(m *gmail.Message) *GmailMessage {
 			}
 		}
 		msg.Body = extractPlainText(m.Payload, 500)
+		msg.Attachments = extractAttachmentNames(m.Payload)
 	}
 
 	for _, label := range m.LabelIds {
@@ -206,6 +262,20 @@ func extractPlainText(payload *gmail.MessagePart, limit int) string {
 	}
 
 	return ""
+}
+
+func extractAttachmentNames(payload *gmail.MessagePart) []string {
+	if payload == nil {
+		return nil
+	}
+	var names []string
+	for _, part := range payload.Parts {
+		if part.Filename != "" {
+			names = append(names, part.Filename)
+		}
+		names = append(names, extractAttachmentNames(part)...)
+	}
+	return names
 }
 
 func decodeBase64URL(data string) ([]byte, error) {
