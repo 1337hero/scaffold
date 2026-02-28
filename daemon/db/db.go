@@ -40,16 +40,36 @@ func newID() string {
 	return uuid.New().String()
 }
 
+var localLocation *time.Location
+
+func init() {
+	loc, err := time.LoadLocation("America/Boise")
+	if err != nil {
+		loc = time.UTC
+	}
+	localLocation = loc
+}
+
 func now() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
+func localMidnightUTC() string {
+	now := time.Now().In(localLocation)
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, localLocation)
+	return midnight.UTC().Format(time.RFC3339)
+}
+
+func localYesterday() string {
+	return time.Now().In(localLocation).AddDate(0, 0, -1).Format("2006-01-02")
+}
+
 func today() string {
-	return time.Now().Format("2006-01-02")
+	return time.Now().In(localLocation).Format("2006-01-02")
 }
 
 func tomorrow() string {
-	return time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	return time.Now().In(localLocation).AddDate(0, 0, 1).Format("2006-01-02")
 }
 
 func (db *DB) migrate() error {

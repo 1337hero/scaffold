@@ -15,7 +15,7 @@ func (db *DB) DashboardData() (*Dashboard, error) {
 	}
 
 	overdue, err := db.queryTasks(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.created_at, t.completed_at, d.name
+		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.source, t.source_ref, t.created_at, t.completed_at, d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.status = 'pending' AND t.due_date < ? AND t.due_date IS NOT NULL`,
 		today(),
@@ -35,10 +35,10 @@ func (db *DB) DashboardData() (*Dashboard, error) {
 	}
 
 	doneToday, err := db.queryTasks(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.created_at, t.completed_at, d.name
+		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.source, t.source_ref, t.created_at, t.completed_at, d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.status = 'done' AND t.completed_at >= ?`,
-		today()+"T00:00:00Z",
+		localMidnightUTC(),
 	)
 	if err != nil {
 		return nil, err

@@ -47,7 +47,7 @@ func (db *DB) TodaysDesk() ([]DeskItem, error) {
 func (db *DB) YesterdaysDesk() ([]DeskItem, error) {
 	return db.queryDesk(
 		`SELECT id, memory_id, title, position, status, micro_steps, date, created_at, completed_at, domain_id
-		 FROM desk WHERE date = date('now', '-1 day') ORDER BY position ASC`,
+		 FROM desk WHERE date = ? ORDER BY position ASC`, localYesterday(),
 	)
 }
 

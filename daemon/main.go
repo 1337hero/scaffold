@@ -42,6 +42,7 @@ func main() {
 	}
 
 	log.SetFlags(log.Ltime | log.Lshortfile)
+	log.Printf("timezone: %s", time.Now().Location())
 	log.Println("scaffold daemon starting")
 
 	if err := secureFileIfExists(".env"); err != nil {
