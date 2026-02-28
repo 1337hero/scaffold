@@ -506,9 +506,10 @@ func loadConfig() config {
 
 func loadCoderConfig(configDir string, llmCfg appconfig.LLMConfig) agents.Config {
 	type stepYAML struct {
-		Name   string   `yaml:"name"`
-		Prompt string   `yaml:"prompt"`
-		Tools  []string `yaml:"tools"`
+		Name     string   `yaml:"name"`
+		Prompt   string   `yaml:"prompt"`
+		Tools    []string `yaml:"tools"`
+		Thinking string   `yaml:"thinking"`
 	}
 	type chainYAML struct {
 		Steps []stepYAML `yaml:"steps"`
@@ -546,6 +547,7 @@ func loadCoderConfig(configDir string, llmCfg appconfig.LLMConfig) agents.Config
 						Name:       s.Name,
 						PromptFile: s.Prompt,
 						Tools:      s.Tools,
+						Thinking:   s.Thinking,
 					}
 				}
 				cfg.Chains[name] = agents.Chain{Steps: steps}
@@ -754,6 +756,11 @@ func runProactiveNotifier(ctx context.Context, bus *sessionbus.Bus, client *sign
 			}
 			if err := json.Unmarshal([]byte(text), &typed); err == nil {
 				switch typed.Type {
+				case "coder_result":
+					var result agents.CoderResultMessage
+					if err := json.Unmarshal([]byte(text), &result); err == nil {
+						text = formatCoderResult(result)
+					}
 				case "notification":
 					var notif struct {
 						SubType string `json:"sub_type"`
@@ -774,6 +781,57 @@ func runProactiveNotifier(ctx context.Context, bus *sessionbus.Bus, client *sign
 			cancel()
 		}
 	}
+}
+
+func formatCoderResult(result agents.CoderResultMessage) string {
+	statusIcon := "✓"
+	if result.Status == "failed" || result.Status == "cancelled" {
+		statusIcon = "✗"
+	}
+
+	var elapsedStr string
+	if result.ElapsedS > 60 {
+		mins := int(result.ElapsedS) / 60
+		secs := int(result.ElapsedS) % 60
+		elapsedStr = fmt.Sprintf("%d m %02d s", mins, secs)
+	} else {
+		elapsedStr = fmt.Sprintf("%.1fs", result.ElapsedS)
+	}
+
+	var sb strings.Builder
+	statusText := "done"
+	if result.Status == "failed" {
+		statusText = "failed"
+	} else if result.Status == "cancelled" {
+		statusText = "cancelled"
+	}
+	sb.WriteString(fmt.Sprintf("%s Chain %s: %s (%s)", statusIcon, statusText, result.Chain, elapsedStr))
+
+	if result.TaskDesc != "" {
+		desc := result.TaskDesc
+		if len(desc) > 80 {
+			desc = desc[:77] + "..."
+		}
+		sb.WriteString(fmt.Sprintf("\n\"%s\"", desc))
+	}
+	sb.WriteString("\n")
+
+	if result.Status == "failed" {
+		if result.FailedStep != "" {
+			sb.WriteString(fmt.Sprintf("→ Failed at step: %s", result.FailedStep))
+		}
+		if result.Error != "" {
+			sb.WriteString(fmt.Sprintf("\n→ %s", result.Error))
+		}
+	} else if result.Summary != "" {
+		summary := result.Summary
+		if len(summary) > 200 {
+			summary = summary[:197] + "..."
+		}
+		sb.WriteString(fmt.Sprintf("\n→ %s", summary))
+	}
+
+	return sb.String()
 }
 
 func loadGmailConfig(configDir string) *googleauth.GmailConfig {

@@ -92,6 +92,7 @@ type CodeTaskMessage struct {
 type CoderResultMessage struct {
 	Type       string  `json:"type"`
 	TaskID     string  `json:"task_id"`
+	TaskDesc   string  `json:"task_desc,omitempty"`
 	Chain      string  `json:"chain"`
 	Status     string  `json:"status"` // done, failed, cancelled
 	Summary    string  `json:"summary,omitempty"`
@@ -415,7 +416,7 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 
 		log.Printf("agents: step %s/%s started", taskID, step.Name)
 
-		output, runErr := c.runStep(taskCtx, taskID, step.Name, runDir, stepRel, fullPrompt, cwd, step.Tools)
+		output, runErr := c.runStep(taskCtx, taskID, step.Name, runDir, stepRel, fullPrompt, cwd, step.Tools, step.Thinking)
 		elapsed := time.Since(stepStart).Seconds()
 		task.Steps[i].ElapsedS = elapsed
 
@@ -464,6 +465,7 @@ func (c *Coder) runChain(ctx context.Context, msg CodeTaskMessage) {
 	c.sendResult(ctx, msg.ReplyTo, CoderResultMessage{
 		Type:     "coder_result",
 		TaskID:   taskID,
+		TaskDesc: msg.Task,
 		Chain:    chain,
 		Status:   "done",
 		Summary:  prev,
@@ -499,6 +501,7 @@ func (c *Coder) failChain(ctx context.Context, task *Task, runDir *RunDir, faile
 	c.sendResult(ctx, replyTo, CoderResultMessage{
 		Type:       "coder_result",
 		TaskID:     task.ID,
+		TaskDesc:   task.TaskDesc,
 		Chain:      task.Chain,
 		Status:     "failed",
 		FailedStep: failedStep,
@@ -524,7 +527,7 @@ func (c *Coder) sendResult(ctx context.Context, replyTo string, result CoderResu
 	}
 }
 
-func (c *Coder) runStep(ctx context.Context, taskID, stepName string, runDir *RunDir, stepRel, prompt, cwd string, tools []string) (string, error) {
+func (c *Coder) runStep(ctx context.Context, taskID, stepName string, runDir *RunDir, stepRel, prompt, cwd string, tools []string, thinking string) (string, error) {
 	piBin := c.cfg.PiBinary
 	if piBin == "" {
 		piBin = "pi"
@@ -541,6 +544,9 @@ func (c *Coder) runStep(ctx context.Context, taskID, stepName string, runDir *Ru
 		"--model", c.cfg.Model,
 		"--tools", toolSet,
 		"--no-session",
+	}
+	if thinking != "" {
+		args = append(args, "--thinking", thinking)
 	}
 
 	cmd := exec.Command(piBin, args...)

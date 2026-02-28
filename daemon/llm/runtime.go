@@ -23,6 +23,21 @@ type Runtime struct {
 	providers map[string]provider
 }
 
+// noopProvider is a passthrough for providers the daemon never calls directly
+// (e.g. "local" — Pi resolves the connection via its own config).
+type noopProvider struct{}
+
+func (n *noopProvider) SupportsToolUse() bool           { return false }
+func (n *noopProvider) SupportsCompletionJSON() bool    { return false }
+func (n *noopProvider) SupportsCompletionText() bool    { return false }
+func (n *noopProvider) NewResponder() (ToolUseResponder, error) {
+	return nil, fmt.Errorf("local provider: daemon does not call this directly")
+}
+func (n *noopProvider) NewCompletion() (CompletionClient, error) {
+	return nil, fmt.Errorf("local provider: daemon does not call this directly")
+}
+func (n *noopProvider) HealthCheck() HealthChecker { return nil }
+
 type provider interface {
 	SupportsToolUse() bool
 	SupportsCompletionJSON() bool
@@ -189,6 +204,10 @@ func newProvider(cfg appconfig.LLMProviderConfig, factories map[string]ProviderF
 			supportsToolUse:  cfg.SupportsToolUse,
 			nativeJSONFormat: false,
 		}, nil
+	case "local":
+		// Passthrough — daemon never calls this provider directly.
+		// Pi resolves the connection via its own models.json config.
+		return &noopProvider{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider type %q", providerType)
 	}

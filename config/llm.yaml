@@ -17,6 +17,14 @@ providers:
     timeout_seconds: 90
     supports_tool_use: false
 
+  # Local Vulkan llama-server for Pi agent chains.
+  # Qwen3.5-35B-A3B on GPU 1 (no display), ~106 t/s.
+  # Pi resolves this via ~/.pi/agent/models.json "local" provider.
+  local_vulkan:
+    type: local
+    api_key_env: ""
+    timeout_seconds: 300
+
 profiles:
   # Conversational — what Mike actually talks to. Don't cheap out.
   respond_sonnet:
@@ -33,6 +41,11 @@ profiles:
   ollama_semantic:
     provider: ollama_specialist
     model: qwen3-coder:30b-a3b-q4_K_M
+
+  # Local Qwen via Vulkan llama-server for agent chains.
+  local_worker:
+    provider: local_vulkan
+    model: qwen3.5-35b-a3b
 
 routes:
   brain.respond:
@@ -60,7 +73,7 @@ routes:
     required: true
 
   coder.worker:
-    profile: respond_sonnet
+    profile: local_worker
     required: false
 
   # Per-step route overrides (optional). If set, the step uses this

@@ -11,28 +11,37 @@ chains:
       - name: scout
         prompt: scout.md
         tools: [read, grep, find, ls, glob]
+        thinking: off
       - name: planner
         prompt: planner.md
         tools: [read, grep, find, ls, glob]
+        thinking: off
       - name: worker
         prompt: worker.md
+        thinking: off
       - name: reviewer
         prompt: reviewer.md
+        thinking: off
   fix:
     steps:
       - name: worker
         prompt: worker.md
+        thinking: off
       - name: verify
         prompt: verify.md
+        thinking: off
   spec:
     steps:
       - name: scout
         prompt: scout.md
         tools: [read, grep, find, ls, glob]
+        thinking: off
       - name: planner
         prompt: planner.md
         tools: [read, grep, find, ls, glob]
+        thinking: off
   single:
     steps:
       - name: worker
         prompt: worker.md
+        thinking: off

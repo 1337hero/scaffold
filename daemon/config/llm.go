@@ -20,6 +20,7 @@ const (
 	llmProviderAnthropic        = "anthropic"
 	llmProviderOpenAI           = "openai"
 	llmProviderOpenAICompatible = "openai_compatible"
+	llmProviderLocal            = "local" // passthrough — Pi resolves via models.json
 )
 
 type LLMConfig struct {
@@ -177,6 +178,9 @@ func validateLLM(cfg *Config) error {
 			if strings.TrimSpace(provider.BaseURL) == "" {
 				return fmt.Errorf("llm provider %q base_url is required for type %q", name, provider.Type)
 			}
+		case llmProviderLocal:
+			// Passthrough provider — Pi resolves connection via its own models.json.
+			// No validation needed here.
 		default:
 			return fmt.Errorf("llm provider %q has unsupported type %q", name, provider.Type)
 		}

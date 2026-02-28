@@ -64,10 +64,11 @@ func (s *Server) handleAgentDispatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := agents.CodeTaskMessage{
-		Type:  "code_task",
-		Task:  req.Task,
-		Chain: chain,
-		CWD:   cwd,
+		Type:      "code_task",
+		Task:      req.Task,
+		Chain:     chain,
+		CWD:       cwd,
+		ReplyTo:   "scaffold-agent",
 	}
 	data, _ := json.Marshal(msg)
 
