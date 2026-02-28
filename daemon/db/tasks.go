@@ -181,7 +181,7 @@ func (db *DB) CompleteTask(id string) error {
 	if recurring.Valid {
 		nextDue := bumpDueDate(dueDate, recurring.String)
 		if _, err := tx.Exec(
-			`UPDATE tasks SET status = 'pending', completed_at = NULL, due_date = ? WHERE id = ?`,
+			`UPDATE tasks SET status = 'pending', completed_at = NULL, due_date = ?, is_focus = 0 WHERE id = ?`,
 			nextDue, id,
 		); err != nil {
 			return fmt.Errorf("reset recurring task: %w", err)
@@ -232,9 +232,10 @@ func (db *DB) TodaysTasks() ([]Task, error) {
 		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.source, t.source_ref, t.created_at, t.completed_at, d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.status = 'pending'
-		   AND (t.due_date <= ? OR t.recurring IS NOT NULL OR t.is_focus = 1)
+		   AND (t.due_date <= ? OR (t.recurring IS NOT NULL AND t.due_date IS NULL) OR t.is_focus = 1)
 		 ORDER BY
 		   t.is_focus DESC,
+		   CASE WHEN t.recurring IS NOT NULL AND t.is_focus = 0 THEN 1 ELSE 0 END ASC,
 		   CASE t.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 WHEN 'low' THEN 2 ELSE 1 END ASC,
 		   t.position ASC`,
 		today(),

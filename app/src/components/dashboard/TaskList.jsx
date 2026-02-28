@@ -141,6 +141,11 @@ function CompactTaskItem({ task, onComplete, onSetFocus, isCompleting, domains, 
       >
         {task.Title}
       </span>
+      {task.Recurring.Valid && (
+        <span class="text-[9px] mono uppercase px-1.5 py-0.5 rounded bg-app-muted/10 ml-2">
+          ({task.Recurring.String})
+        </span>
+      )}
       {task.DomainName && (
         <span class="text-[9px] mono uppercase px-1.5 py-0.5 rounded bg-black/5 opacity-60" style={{ color }}>
           {task.DomainName}

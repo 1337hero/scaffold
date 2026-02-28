@@ -270,6 +270,10 @@ func TestCompleteRecurringTask(t *testing.T) {
 	if got.DueDate.String != expectedNext {
 		t.Fatalf("expected due_date bumped to %s, got %s", expectedNext, got.DueDate.String)
 	}
+
+	if got.IsFocus != 0 {
+		t.Fatalf("expected is_focus cleared to 0 after recurring reset, got %d", got.IsFocus)
+	}
 }
 
 func TestCompleteRecurringWeekly(t *testing.T) {
@@ -339,6 +343,15 @@ func TestTodaysTasks(t *testing.T) {
 	}
 
 	if err := database.InsertTask(Task{
+		ID:        "task-recurring-future",
+		Title:     "Recurring with future due",
+		Recurring: sql.NullString{String: "weekly", Valid: true},
+		DueDate:   sql.NullString{String: nextWeek, Valid: true},
+	}); err != nil {
+		t.Fatalf("insert recurring future: %v", err)
+	}
+
+	if err := database.InsertTask(Task{
 		ID:     "task-done-today",
 		Title:  "Already done",
 		Status: "done",
@@ -366,6 +379,67 @@ func TestTodaysTasks(t *testing.T) {
 	}
 	if !ids["task-recurring-today"] {
 		t.Fatal("expected task-recurring-today in today's tasks")
+	}
+}
+
+func TestTodaysTasksRecurringWithDueDate(t *testing.T) {
+	database := newTestDB(t)
+
+	// Recurring with no due_date - should appear (backward compat)
+	if err := database.InsertTask(Task{
+		ID:        "recurring-no-due",
+		Title:     "Daily habit no due",
+		Recurring: sql.NullString{String: "daily", Valid: true},
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Recurring with future due_date - should NOT appear
+	nextWeek := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	if err := database.InsertTask(Task{
+		ID:        "recurring-future-due",
+		Title:     "Weekly with future due",
+		Recurring: sql.NullString{String: "weekly", Valid: true},
+		DueDate:   sql.NullString{String: nextWeek, Valid: true},
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Recurring with today's due_date - should appear
+	if err := database.InsertTask(Task{
+		ID:        "recurring-today-due",
+		Title:     "Daily with today due",
+		Recurring: sql.NullString{String: "daily", Valid: true},
+		DueDate:   sql.NullString{String: today(), Valid: true},
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	tasks, err := database.TodaysTasks()
+	if err != nil {
+		t.Fatalf("todays tasks: %v", err)
+	}
+
+	ids := make(map[string]bool)
+	for _, task := range tasks {
+		ids[task.ID] = true
+	}
+
+	// Should include recurring tasks with no due_date or today's due_date
+	if !ids["recurring-no-due"] {
+		t.Fatal("expected recurring-no-due (no due_date) in today's tasks")
+	}
+	if !ids["recurring-today-due"] {
+		t.Fatal("expected recurring-today-due (today's due) in today's tasks")
+	}
+
+	// Should NOT include recurring task with future due_date
+	if ids["recurring-future-due"] {
+		t.Fatal("expected recurring-future-due (future due) NOT in today's tasks")
+	}
+
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 recurring tasks in today's list, got %d: %v", len(tasks), ids)
 	}
 }
 
