@@ -525,6 +525,12 @@ func (c *Cortex) runPrioritization(ctx context.Context) error {
 		return fmt.Errorf("brain is nil")
 	}
 
+	existing, _ := c.db.TodaysDesk()
+	if len(existing) > 0 {
+		log.Printf("cortex: prioritize skipped (desk already populated for today, %d items)", len(existing))
+		return nil
+	}
+
 	todos, err := c.db.ListTodosByImportance(0.5, 20)
 	if err != nil {
 		return fmt.Errorf("list todos: %w", err)
@@ -605,6 +611,14 @@ func (c *Cortex) runPrune(ctx context.Context) error {
 		report.SkippedReferences,
 		report.EdgeRowsDeleted,
 	)
+
+	deskDeleted, err := c.db.PruneOldDeskItems(7)
+	if err != nil {
+		log.Printf("cortex: prune desk items: %v", err)
+	} else if deskDeleted > 0 {
+		log.Printf("cortex: prune desk_deleted=%d", deskDeleted)
+	}
+
 	return nil
 }
 

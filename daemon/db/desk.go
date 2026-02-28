@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"time"
 )
 
 type DeskItem struct {
@@ -113,6 +114,18 @@ func (db *DB) queryDesk(query string, args ...any) ([]DeskItem, error) {
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+func (db *DB) PruneOldDeskItems(keepDays int) (int64, error) {
+	cutoff := time.Now().AddDate(0, 0, -keepDays).Format("2006-01-02")
+	result, err := db.conn.Exec(
+		`DELETE FROM desk WHERE date < ? AND status IN ('done', 'skipped')`,
+		cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func requireRowsAffected(result sql.Result) error {
