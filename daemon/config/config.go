@@ -10,13 +10,14 @@ import (
 )
 
 type Config struct {
-	Agent     AgentConfig
-	Tools     ToolsConfig
-	Triage    TriageConfig
-	Cortex    CortexConfig
-	Embedding EmbeddingConfig
-	Google    GoogleConfig
-	LLM       LLMConfig
+	Agent         AgentConfig
+	Tools         ToolsConfig
+	Triage        TriageConfig
+	Cortex        CortexConfig
+	Embedding     EmbeddingConfig
+	Google        GoogleConfig
+	LLM           LLMConfig
+	Notifications NotificationsConfig
 }
 
 type GoogleConfig struct {
@@ -80,6 +81,24 @@ type TaskConfig struct {
 	ImportanceFloor float64  `yaml:"importance_floor,omitempty"`
 }
 
+type NotificationsConfig struct {
+	Enabled              bool            `yaml:"enabled"`
+	Briefing             BriefingConfig  `yaml:"briefing"`
+	Reminders            RemindersConfig `yaml:"reminders"`
+	OverdueCooldownHours int             `yaml:"overdue_cooldown_hours"`
+}
+
+type BriefingConfig struct {
+	Enabled  bool     `yaml:"enabled"`
+	Schedule string   `yaml:"schedule"`
+	Days     []string `yaml:"days"`
+}
+
+type RemindersConfig struct {
+	MorningWindow string `yaml:"morning_window"`
+	CheckinWindow string `yaml:"checkin_window"`
+}
+
 func Load(configDir string, userName string) (*Config, error) {
 	cfg := &Config{}
 
@@ -103,6 +122,9 @@ func Load(configDir string, userName string) (*Config, error) {
 	}
 	if err := loadFileOptional(filepath.Join(configDir, "llm.yaml"), &cfg.LLM); err != nil {
 		return nil, fmt.Errorf("load llm.yaml: %w", err)
+	}
+	if err := loadFileOptional(filepath.Join(configDir, "notifications.yaml"), &cfg.Notifications); err != nil {
+		return nil, fmt.Errorf("load notifications.yaml: %w", err)
 	}
 
 	applyDefaults(cfg)
@@ -197,6 +219,22 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Embedding.Dimensions == 0 {
 		cfg.Embedding.Dimensions = 384
+	}
+
+	if cfg.Notifications.OverdueCooldownHours == 0 {
+		cfg.Notifications.OverdueCooldownHours = 48
+	}
+	if cfg.Notifications.Reminders.MorningWindow == "" {
+		cfg.Notifications.Reminders.MorningWindow = "08:30"
+	}
+	if cfg.Notifications.Reminders.CheckinWindow == "" {
+		cfg.Notifications.Reminders.CheckinWindow = "13:00"
+	}
+	if cfg.Notifications.Briefing.Schedule == "" {
+		cfg.Notifications.Briefing.Schedule = "09:00"
+	}
+	if len(cfg.Notifications.Briefing.Days) == 0 {
+		cfg.Notifications.Briefing.Days = []string{"mon", "tue", "wed", "thu", "fri"}
 	}
 
 	applyLLMDefaults(cfg)

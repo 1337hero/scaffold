@@ -45,3 +45,6 @@ tasks:
   waiting_check:
     interval_minutes: 30
     timeout_seconds: 60
+  notifications:
+    interval_minutes: 15
+    timeout_seconds: 30

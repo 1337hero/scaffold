@@ -121,6 +121,7 @@ type Cortex struct {
 	semanticModelName     string
 	observationsModelName string
 	cfg                   appconfig.CortexConfig
+	notifyCfg             *appconfig.NotificationsConfig
 	embedder              embedding.Embedder
 	bulletin              *BulletinCache
 	tasks                 []*CortexTask
@@ -354,6 +355,10 @@ func (c *Cortex) SetSessionBus(bus *sessionbus.Bus) {
 	c.sessionBus = bus
 }
 
+func (c *Cortex) SetNotificationsConfig(cfg *appconfig.NotificationsConfig) {
+	c.notifyCfg = cfg
+}
+
 func (c *Cortex) taskFnForName(name string) func(context.Context) error {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "consolidation":
@@ -378,6 +383,8 @@ func (c *Cortex) taskFnForName(name string) func(context.Context) error {
 		return c.runGmailTriage
 	case "waiting_check":
 		return c.runWaitingCheck
+	case "notifications":
+		return c.runNotifications
 	default:
 		return nil
 	}

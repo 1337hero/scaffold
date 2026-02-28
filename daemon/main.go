@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -217,6 +218,7 @@ func main() {
 	})
 	b.SetBulletinProvider(cortexRuntime.CurrentBulletin)
 	cortexRuntime.SetSessionBus(sessionBus)
+	cortexRuntime.SetNotificationsConfig(&appCfg.Notifications)
 	if googleGmailClient != nil {
 		cortexRuntime.SetGmailClient(googleGmailClient)
 	}
@@ -745,6 +747,24 @@ func runProactiveNotifier(ctx context.Context, bus *sessionbus.Bus, client *sign
 			if text == "" {
 				continue
 			}
+
+			// Try typed message parsing
+			var typed struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal([]byte(text), &typed); err == nil {
+				switch typed.Type {
+				case "notification":
+					var notif struct {
+						SubType string `json:"sub_type"`
+						Text    string `json:"text"`
+					}
+					if err := json.Unmarshal([]byte(text), &notif); err == nil && notif.Text != "" {
+						text = notif.Text
+					}
+				}
+			}
+
 			sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			if err := client.Send(sendCtx, userNumber, text); err != nil {
 				log.Printf("notifier: send failed: %v", err)

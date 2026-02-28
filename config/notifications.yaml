@@ -1,0 +1,15 @@
+enabled: true
+
+# Daily briefing — morning summary of tasks, overdue items, habit progress
+briefing:
+  enabled: false
+  schedule: "09:00"
+  days: [mon, tue, wed, thu, fri]
+
+# Task reminder windows (24h local time)
+reminders:
+  morning_window: "08:30"    # due-today reminders fire here
+  checkin_window: "13:00"    # recurring task check-ins fire here
+
+# Overdue nudge cooldown (hours) — once notified, suppress for this long
+overdue_cooldown_hours: 48

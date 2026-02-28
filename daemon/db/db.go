@@ -343,6 +343,20 @@ func (db *DB) migrate() error {
 
 	_, _ = db.conn.Exec(`ALTER TABLE gmail_waiting_threads ADD COLUMN last_message_id TEXT NOT NULL DEFAULT ''`)
 
+	_, err = db.conn.Exec(`
+		CREATE TABLE IF NOT EXISTS notification_log (
+		  id       TEXT PRIMARY KEY,
+		  ref_type TEXT NOT NULL,
+		  ref_id   TEXT NOT NULL,
+		  sent_at  TEXT NOT NULL,
+		  message  TEXT
+		);
+		CREATE INDEX IF NOT EXISTS idx_notification_log_ref ON notification_log(ref_type, ref_id, sent_at DESC);
+	`)
+	if err != nil {
+		return fmt.Errorf("apply notification_log schema: %w", err)
+	}
+
 	return nil
 }
 
