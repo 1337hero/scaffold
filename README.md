@@ -19,9 +19,11 @@ Not a todo app. Not a second brain. An agent that actually does the cognitive wo
 
 ## Screenshots
 
-| Dashboard | Agents |
-|-----------|--------|
-| ![Dashboard](assets/screenshots/dashboard.jpg) | ![Agents](assets/screenshots/agents.jpg) |
+**DASHBOARD**
+ ![Dashboard](assets/screenshots/dashboard.jpg) 
+ 
+ **AGENTS**
+![Agents](assets/screenshots/agents.jpg)
 
 ## How It Works
 
@@ -105,4 +107,4 @@ Core system is operational. Signal agent, web desktop, cortex scheduler, session
 
 ## License
 
-Personal project. Not open source (yet).
+MIT
