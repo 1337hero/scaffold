@@ -21,7 +21,7 @@ Not a todo app. Not a second brain. An agent that actually does the cognitive wo
 
 | Dashboard | Agents |
 |-----------|--------|
-| ![Dashboard](docs/screenshots/dashboard.jpg) | ![Agents](docs/screenshots/agents.jpg) |
+| ![Dashboard](assets/screenshots/dashboard.jpg) | ![Agents](assets/screenshots/agents.jpg) |
 
 ## How It Works
 
