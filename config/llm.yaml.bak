@@ -50,27 +50,27 @@ profiles:
 routes:
   brain.respond:
     profile: respond_sonnet
-    required: false
+    required: true
 
   brain.triage:
     profile: background_haiku
-    required: false
+    required: true
 
   brain.prioritize:
     profile: background_haiku
-    required: false
+    required: true
 
   cortex.bulletin:
     profile: background_haiku
-    required: false
+    required: true
 
   cortex.semantic:
     profile: ollama_semantic
-    required: false
+    required: true
 
   cortex.observations:
     profile: background_haiku
-    required: false
+    required: true
 
   coder.worker:
     profile: local_worker
@@ -84,5 +84,8 @@ routes:
   #   profile: background_haiku
 
 startup:
-  verify_required_routes: false
-  warmup_routes: []
+  verify_required_routes: true
+  warmup_routes:
+    - brain.respond
+    - brain.triage
+    - cortex.semantic

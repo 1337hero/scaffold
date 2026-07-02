@@ -285,14 +285,18 @@ func main() {
 
 	go runProactiveNotifier(ctx, sessionBus, client, cfg.userNumber)
 
+	signalOK := true
 	if err := waitForSignal(client); err != nil {
-		log.Fatalf("signal-cli not ready: %v", err)
+		log.Printf("WARNING: signal-cli not ready (continuing without Signal): %v", err)
+		signalOK = false
 	}
-	log.Println("signal-cli connected")
 
-	startupMsg := fmt.Sprintf("%s online. Brain active.", assistantName)
-	if err := client.Send(context.Background(), cfg.userNumber, startupMsg); err != nil {
-		log.Printf("warn: startup message failed: %v", err)
+	if signalOK {
+		log.Println("signal-cli connected")
+		startupMsg := fmt.Sprintf("%s online. Brain active.", assistantName)
+		if err := client.Send(context.Background(), cfg.userNumber, startupMsg); err != nil {
+			log.Printf("warn: startup message failed: %v", err)
+		}
 	}
 
 	quit := make(chan os.Signal, 1)
@@ -308,6 +312,13 @@ func main() {
 			log.Printf("warn: API shutdown error: %v", err)
 		}
 	}()
+
+	if !signalOK {
+		log.Printf("API server running on :%s (no Signal)", cfg.apiPort)
+		<-ctx.Done()
+		log.Println("daemon stopped")
+		return
+	}
 
 	log.Printf("listening for messages on %s", cfg.agentNumber)
 	slots := make(chan struct{}, maxInFlightMessages)
