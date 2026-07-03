@@ -87,6 +87,7 @@ func (db *DB) GetNote(id string) (*Note, error) {
 type NoteFilters struct {
 	DomainID      *int
 	GoalID        *string
+	TaskID        *string
 	Tags          string // substring match
 	Kind          *string
 	PersonID      *string
@@ -105,6 +106,10 @@ func (db *DB) ListNotes(f NoteFilters) ([]Note, error) {
 	if f.GoalID != nil {
 		q += ` AND goal_id = ?`
 		args = append(args, *f.GoalID)
+	}
+	if f.TaskID != nil {
+		q += ` AND task_id = ?`
+		args = append(args, *f.TaskID)
 	}
 	if f.Tags != "" {
 		q += ` AND tags LIKE ?`

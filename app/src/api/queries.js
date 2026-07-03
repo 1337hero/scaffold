@@ -238,10 +238,14 @@ function normalizeTask(t) {
     id: t.ID || "",
     title: t.Title || "",
     domainName: t.DomainName || "",
+    domainId: nullableField(t.DomainID),
     dueDate: nullableField(t.DueDate),
     priority: t.Priority || "normal",
     status: t.Status || "pending",
     surface: t.Surface || "life",
+    context: nullableField(t.Context) || "",
+    microSteps: nullableField(t.MicroSteps) || "",
+    recurring: nullableField(t.Recurring),
     projectId: nullableField(t.ProjectID),
     reminderAt: nullableField(t.ReminderAt),
     top3Position: nullableField(t.Top3Position),
@@ -303,3 +307,71 @@ export const top3CandidatesQuery = (surface) => ({
 })
 
 export function setTop3(taskIds) { return putJSON("/api/today/top3", taskIds) }
+
+// Tasks page
+
+function normalizeProjectFull(p) {
+  if (!p || typeof p !== "object") return null
+  return {
+    id: p.ID || "",
+    name: p.Name || "",
+    type: p.Type || "project",
+    surface: p.Surface || "life",
+    status: p.Status || "active",
+    domainId: nullableField(p.DomainID),
+  }
+}
+
+function normalizeNote(n) {
+  if (!n || typeof n !== "object") return null
+  return {
+    id: n.ID || "",
+    title: n.Title || "",
+    content: nullableField(n.Content) || "",
+    kind: n.Kind || "note",
+    tags: nullableField(n.Tags) || "",
+    source: nullableField(n.Source) || "",
+    personId: nullableField(n.PersonID),
+    taskId: nullableField(n.TaskID),
+    reviewAt: nullableField(n.ReviewAt),
+    flagForReview: Boolean(n.FlagForReview),
+    createdAt: n.CreatedAt || "",
+    updatedAt: nullableField(n.UpdatedAt),
+  }
+}
+
+export const tasksListQuery = (surface, status) => ({
+  queryKey: ["tasks-list", surface, status],
+  queryFn: async () => {
+    const data = await apiFetch(`/api/tasks?surface=${surface}&status=${status}`)
+    return ensureArray(data).map(normalizeTask).filter(Boolean)
+  },
+})
+
+export const top3IdsQuery = {
+  queryKey: ["top3-ids"],
+  queryFn: async () => {
+    const data = await apiFetch("/api/tasks?top3=true")
+    return ensureArray(data)
+      .map(normalizeTask)
+      .filter(Boolean)
+      .sort((a, b) => (a.top3Position ?? 0) - (b.top3Position ?? 0))
+      .map((t) => t.id)
+  },
+}
+
+export const projectsListQuery = {
+  queryKey: ["projects-list"],
+  queryFn: async () => {
+    const data = await apiFetch("/api/projects")
+    return ensureArray(data).map(normalizeProjectFull).filter(Boolean)
+  },
+}
+
+export const taskNotesQuery = (taskId) => ({
+  queryKey: ["task-notes", taskId],
+  queryFn: async () => {
+    const data = await apiFetch(`/api/notes?task_id=${taskId}`)
+    return ensureArray(data).map(normalizeNote).filter(Boolean)
+  },
+})

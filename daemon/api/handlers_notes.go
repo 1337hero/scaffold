@@ -45,6 +45,10 @@ func (s *Server) handleNotesList(w http.ResponseWriter, r *http.Request) {
 		goalID = &raw
 	}
 
+	var taskID *string
+	if raw := strings.TrimSpace(q.Get("task_id")); raw != "" {
+		taskID = &raw
+	}
 	var kind *string
 	if raw := strings.TrimSpace(q.Get("kind")); raw != "" {
 		kind = &raw
@@ -70,6 +74,7 @@ func (s *Server) handleNotesList(w http.ResponseWriter, r *http.Request) {
 	notes, err := s.db.ListNotes(db.NoteFilters{
 		DomainID:      domainID,
 		GoalID:        goalID,
+		TaskID:        taskID,
 		Tags:          tags,
 		Kind:          kind,
 		PersonID:      personID,

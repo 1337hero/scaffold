@@ -154,6 +154,43 @@ func TestUpdateTask_ClearTop3Position(t *testing.T) {
 	}
 }
 
+func TestListTasks_StatusAll_ExcludesDeleted(t *testing.T) {
+	db := openTestDB(t)
+	mustInsertTask(t, db, Task{ID: "t1", Title: "pending"})
+	mustInsertTask(t, db, Task{ID: "t2", Title: "done", Status: "done"})
+	mustInsertTask(t, db, Task{ID: "t3", Title: "gone"})
+	if err := db.SoftDeleteTask("t3"); err != nil {
+		t.Fatalf("SoftDeleteTask: %v", err)
+	}
+
+	tasks, err := db.ListTasks(TaskFilters{Status: "all"})
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("got %d tasks, want 2 (deleted excluded)", len(tasks))
+	}
+}
+
+func TestListNotes_FilterByTaskID(t *testing.T) {
+	db := openTestDB(t)
+	mustInsertTask(t, db, Task{ID: "t1", Title: "task"})
+	if err := db.InsertNote(Note{ID: "n1", Title: "linked", TaskID: sql.NullString{String: "t1", Valid: true}}); err != nil {
+		t.Fatalf("InsertNote: %v", err)
+	}
+	if err := db.InsertNote(Note{ID: "n2", Title: "loose"}); err != nil {
+		t.Fatalf("InsertNote: %v", err)
+	}
+
+	notes, err := db.ListNotes(NoteFilters{TaskID: strPtr("t1")})
+	if err != nil {
+		t.Fatalf("ListNotes: %v", err)
+	}
+	if len(notes) != 1 || notes[0].ID != "n1" {
+		t.Fatalf("got %+v, want only n1", notes)
+	}
+}
+
 func TestUpdateTask_NotFound(t *testing.T) {
 	db := openTestDB(t)
 	// requireRowsAffected must surface sql.ErrNoRows so handlers return 404.
