@@ -52,5 +52,7 @@ still broken. Fix it once, where all callers route through.
   rollback. **Check:** (CI + PR gate).
 
 ## Stack notes
-<!-- Build/test/deploy commands, the CI gate, branch/preview model — anything load-bearing and
-     easy to get wrong. Mirror the key ones into .scaffold/memory/STATE.md → "Key files / commands". -->
+> v2 refactor underway — specs/v2-notification-surface.md is the source of truth for architecture. Only the durable stack, commands, and footguns live here.
+
+Footguns
+Go nil slice marshals to JSON null — use make([]T, 0) for API slices; frontend guards with ?? [], never || []. Check: grep API response structs for var x []T.
