@@ -244,6 +244,26 @@ CREATE TABLE IF NOT EXISTS tasks (
 		return fmt.Errorf("apply notification_log schema: %w", err)
 	}
 
+	// v2 schema: new tables
+	if _, err := db.conn.Exec(schemaV2); err != nil {
+		return fmt.Errorf("apply v2 schema: %w", err)
+	}
+
+	// v2 schema: new columns on existing tables (safe via IF NOT EXISTS pattern using migrateAddColumn)
+	for _, col := range v2TaskColumns {
+		if err := db.migrateAddColumn("tasks", col.name, col.def); err != nil {
+			return err
+		}
+	}
+	for _, col := range v2NoteColumns {
+		if err := db.migrateAddColumn("notes", col.name, col.def); err != nil {
+			return err
+		}
+	}
+	if err := db.migrateAddColumn("domains", "surface", "TEXT NOT NULL DEFAULT 'life'"); err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -8,22 +8,26 @@ import (
 )
 
 type Task struct {
-	ID          string
-	Title       string
-	DomainID    sql.NullInt64
-	DomainName  string
-	GoalID      sql.NullString
-	Context     sql.NullString
-	DueDate     sql.NullString
-	Recurring   sql.NullString
-	Priority    string
-	Status      string
-	MicroSteps  sql.NullString
-	Notify      int
-	Position    int
-	IsFocus     int
-	CreatedAt   string
-	CompletedAt sql.NullString
+	ID           string
+	Title        string
+	DomainID     sql.NullInt64
+	DomainName   string
+	GoalID       sql.NullString
+	Context      sql.NullString
+	DueDate      sql.NullString
+	Recurring    sql.NullString
+	Priority     string
+	Status       string
+	MicroSteps   sql.NullString
+	Notify       int
+	Position     int
+	IsFocus      int
+	ProjectID    sql.NullString
+	ReminderAt   sql.NullString
+	Surface      string
+	Top3Position sql.NullInt64
+	CreatedAt    string
+	CompletedAt  sql.NullString
 }
 
 func (db *DB) InsertTask(t Task) error {
@@ -39,20 +43,28 @@ func (db *DB) InsertTask(t Task) error {
 	if t.Priority == "" {
 		t.Priority = "normal"
 	}
+	if t.Surface == "" {
+		t.Surface = "life"
+	}
 
 	_, err := db.conn.Exec(
-		`INSERT INTO tasks (id, title, domain_id, goal_id, context, due_date, recurring, priority, status, micro_steps, notify, position, created_at, completed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO tasks (id, title, domain_id, goal_id, context, due_date, recurring, priority, status, micro_steps, notify, position, created_at, completed_at, project_id, reminder_at, surface, top3_position)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Title, t.DomainID, t.GoalID, t.Context, t.DueDate, t.Recurring,
 		t.Priority, t.Status, t.MicroSteps, t.Notify, t.Position,
 		t.CreatedAt, t.CompletedAt,
+		t.ProjectID, t.ReminderAt, t.Surface, t.Top3Position,
 	)
 	return err
 }
 
 func (db *DB) GetTask(id string) (*Task, error) {
 	row := db.conn.QueryRow(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.created_at, t.completed_at, d.name
+		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
+		        t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
+		        t.created_at, t.completed_at,
+		        t.project_id, t.reminder_at, t.surface, t.top3_position,
+		        d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.id = ?`, id,
 	)
@@ -61,7 +73,9 @@ func (db *DB) GetTask(id string) (*Task, error) {
 	var domainName sql.NullString
 	err := row.Scan(&t.ID, &t.Title, &t.DomainID, &t.GoalID, &t.Context, &t.DueDate,
 		&t.Recurring, &t.Priority, &t.Status, &t.MicroSteps, &t.Notify, &t.Position, &t.IsFocus,
-		&t.CreatedAt, &t.CompletedAt, &domainName)
+		&t.CreatedAt, &t.CompletedAt,
+		&t.ProjectID, &t.ReminderAt, &t.Surface, &t.Top3Position,
+		&domainName)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -104,7 +118,11 @@ func (db *DB) ListTasks(domainID *int, goalID *string, status string, due string
 	}
 
 	query := fmt.Sprintf(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.created_at, t.completed_at, d.name
+		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
+		        t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
+		        t.created_at, t.completed_at,
+		        t.project_id, t.reminder_at, t.surface, t.top3_position,
+		        d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE %s ORDER BY t.position ASC, t.due_date ASC`,
 		strings.Join(clauses, " AND "),
@@ -118,6 +136,7 @@ var taskUpdateFields = map[string]bool{
 	"due_date": true, "recurring": true, "priority": true, "status": true,
 	"micro_steps": true, "notify": true, "position": true, "is_focus": true,
 	"completed_at": true,
+	"project_id": true, "reminder_at": true, "surface": true, "top3_position": true,
 }
 
 func (db *DB) UpdateTask(id string, updates map[string]any) error {
@@ -227,7 +246,11 @@ func (db *DB) SoftDeleteTask(id string) error {
 
 func (db *DB) TodaysTasks() ([]Task, error) {
 	return db.queryTasks(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.created_at, t.completed_at, d.name
+		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
+		        t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
+		        t.created_at, t.completed_at,
+		        t.project_id, t.reminder_at, t.surface, t.top3_position,
+		        d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.status = 'pending'
 		   AND (t.due_date <= ? OR (t.recurring IS NOT NULL AND t.due_date IS NULL) OR t.is_focus = 1)
@@ -266,7 +289,11 @@ func (db *DB) ClearFocus() error {
 
 func (db *DB) TasksByGoal(goalID string) ([]Task, error) {
 	return db.queryTasks(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.created_at, t.completed_at, d.name
+		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
+		        t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
+		        t.created_at, t.completed_at,
+		        t.project_id, t.reminder_at, t.surface, t.top3_position,
+		        d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.goal_id = ? ORDER BY t.position ASC`,
 		goalID,
@@ -286,7 +313,9 @@ func (db *DB) queryTasks(query string, args ...any) ([]Task, error) {
 		var domainName sql.NullString
 		if err := rows.Scan(&t.ID, &t.Title, &t.DomainID, &t.GoalID, &t.Context, &t.DueDate,
 			&t.Recurring, &t.Priority, &t.Status, &t.MicroSteps, &t.Notify, &t.Position, &t.IsFocus,
-			&t.CreatedAt, &t.CompletedAt, &domainName); err != nil {
+			&t.CreatedAt, &t.CompletedAt,
+			&t.ProjectID, &t.ReminderAt, &t.Surface, &t.Top3Position,
+			&domainName); err != nil {
 			return nil, err
 		}
 		if domainName.Valid {
