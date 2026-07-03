@@ -111,6 +111,29 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	s.mux.HandleFunc("GET /api/people/{id}/interactions", s.protected(s.handleInteractionsList))
 	s.mux.HandleFunc("POST /api/people/{id}/interactions", s.protected(s.handleInteractionCreate))
 
+	// Projects
+	s.mux.HandleFunc("GET /api/projects", s.protected(s.handleProjectsList))
+	s.mux.HandleFunc("POST /api/projects", s.protected(s.handleProjectCreate))
+	s.mux.HandleFunc("GET /api/projects/slipping", s.protected(s.handleProjectsSlipping))
+	s.mux.HandleFunc("GET /api/areas/slipping", s.protected(s.handleAreasSlipping))
+	s.mux.HandleFunc("GET /api/projects/{id}", s.protected(s.handleProjectGet))
+	s.mux.HandleFunc("PATCH /api/projects/{id}", s.protected(s.handleProjectPatch))
+	s.mux.HandleFunc("DELETE /api/projects/{id}", s.protected(s.handleProjectDelete))
+	// Milestones (nested under project)
+	s.mux.HandleFunc("GET /api/projects/{id}/milestones", s.protected(s.handleMilestonesList))
+	s.mux.HandleFunc("POST /api/projects/{id}/milestones", s.protected(s.handleMilestoneCreate))
+	s.mux.HandleFunc("PATCH /api/milestones/{id}", s.protected(s.handleMilestonePatch))
+	s.mux.HandleFunc("DELETE /api/milestones/{id}", s.protected(s.handleMilestoneDelete))
+	// Checklists (nested under project)
+	s.mux.HandleFunc("GET /api/projects/{id}/checklists", s.protected(s.handleChecklistsList))
+	s.mux.HandleFunc("POST /api/projects/{id}/checklists", s.protected(s.handleChecklistCreate))
+	s.mux.HandleFunc("POST /api/projects/{id}/checklists/clone", s.protected(s.handleChecklistClone))
+	s.mux.HandleFunc("PATCH /api/checklists/{id}", s.protected(s.handleChecklistPatch))
+	s.mux.HandleFunc("GET /api/checklists/templates", s.protected(s.handleChecklistTemplatesList))
+	// Activity (nested under project)
+	s.mux.HandleFunc("GET /api/projects/{id}/activity", s.protected(s.handleActivityList))
+	s.mux.HandleFunc("POST /api/projects/{id}/activity", s.protected(s.handleActivityCreate))
+
 	return s
 }
 
