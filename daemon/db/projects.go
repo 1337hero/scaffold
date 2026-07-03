@@ -641,3 +641,25 @@ func (db *DB) resetRetainer(projectID string) (bool, error) {
 }
 
 // resetChecklistItems is above
+
+// execer covers both *sql.DB and *sql.Tx for the Exec call bumpProjectActivity needs.
+type execer interface {
+	Exec(string, ...any) (sql.Result, error)
+}
+
+// bumpProjectActivity sets the project's last_activity_at to today (forward-only).
+// Used by task write paths so AreasSlipping sees all task edits, not just manual
+// activity logs. A no-op when the project does not exist (no error).
+func bumpProjectActivity(e execer, projectID string) error {
+	today := time.Now().In(localLocation).Format("2006-01-02")
+	_, err := e.Exec(
+		`UPDATE projects
+		   SET last_activity_at = CASE
+		         WHEN last_activity_at IS NULL OR ? > last_activity_at THEN ?
+		         ELSE last_activity_at END,
+		       updated_at = ?
+		 WHERE id = ?`,
+		today, today, now(), projectID,
+	)
+	return err
+}
