@@ -8,12 +8,8 @@ import (
 )
 
 const (
-	LLMRouteBrainRespond       = "brain.respond"
-	LLMRouteBrainTriage        = "brain.triage"
-	LLMRouteBrainPrioritize    = "brain.prioritize"
-	LLMRouteCortexBulletin     = "cortex.bulletin"
-	LLMRouteCortexSemantic     = "cortex.semantic"
-	LLMRouteCortexObservations = "cortex.observations"
+	LLMRouteBrainRespond   = "brain.respond"
+	LLMRouteCortexBulletin = "cortex.bulletin"
 )
 
 const (
@@ -90,10 +86,6 @@ func applyLLMDefaults(cfg *Config) {
 			Provider: defaultProvider,
 			Model:    cfg.Agent.Model,
 		}
-		cfg.LLM.Profiles["triage_default"] = LLMProfileConfig{
-			Provider: defaultProvider,
-			Model:    cfg.Triage.Model,
-		}
 		cfg.LLM.Profiles["cortex_default"] = LLMProfileConfig{
 			Provider: defaultProvider,
 			Model:    cfg.Cortex.Bulletin.Model,
@@ -106,32 +98,8 @@ func applyLLMDefaults(cfg *Config) {
 			Required: true,
 		}
 	}
-	if _, ok := cfg.LLM.Routes[LLMRouteBrainTriage]; !ok {
-		cfg.LLM.Routes[LLMRouteBrainTriage] = LLMRouteConfig{
-			Profile:  "triage_default",
-			Required: true,
-		}
-	}
-	if _, ok := cfg.LLM.Routes[LLMRouteBrainPrioritize]; !ok {
-		cfg.LLM.Routes[LLMRouteBrainPrioritize] = LLMRouteConfig{
-			Profile:  "triage_default",
-			Required: true,
-		}
-	}
 	if _, ok := cfg.LLM.Routes[LLMRouteCortexBulletin]; !ok {
 		cfg.LLM.Routes[LLMRouteCortexBulletin] = LLMRouteConfig{
-			Profile:  "cortex_default",
-			Required: true,
-		}
-	}
-	if _, ok := cfg.LLM.Routes[LLMRouteCortexSemantic]; !ok {
-		cfg.LLM.Routes[LLMRouteCortexSemantic] = LLMRouteConfig{
-			Profile:  "cortex_default",
-			Required: true,
-		}
-	}
-	if _, ok := cfg.LLM.Routes[LLMRouteCortexObservations]; !ok {
-		cfg.LLM.Routes[LLMRouteCortexObservations] = LLMRouteConfig{
 			Profile:  "cortex_default",
 			Required: true,
 		}

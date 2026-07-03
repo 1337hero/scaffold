@@ -7,12 +7,6 @@ bulletin:
   model: claude-haiku-4-5
 
 tasks:
-  prioritize:
-    interval_hours: 24
-    timeout_seconds: 120
-  session_cleanup:
-    interval_hours: 24
-    timeout_seconds: 15
   consolidation:
     interval_hours: 6
     timeout_seconds: 60
@@ -26,25 +20,3 @@ tasks:
     timeout_seconds: 15
     suppressed_days: 30
     importance_floor: 0.1
-  reindex:
-    interval_hours: 12
-    timeout_seconds: 30
-  embedding_backfill:
-    interval_hours: 6
-    timeout_seconds: 300
-  observations:
-    interval_hours: 24
-    timeout_seconds: 120
-  drift:
-    interval_hours: 6
-    timeout_seconds: 15
-  gmail_triage:
-    interval_minutes: 30
-    timeout_seconds: 300
-    max_per_run: 50
-  waiting_check:
-    interval_minutes: 30
-    timeout_seconds: 60
-  notifications:
-    interval_minutes: 15
-    timeout_seconds: 30

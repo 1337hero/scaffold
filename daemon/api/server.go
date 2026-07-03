@@ -1,11 +1,9 @@
 package api
 
 import (
-	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -17,10 +15,7 @@ import (
 	"time"
 
 	"scaffold/brain"
-	"scaffold/agents"
-	"scaffold/config"
 	"scaffold/db"
-	"scaffold/sessionbus"
 )
 
 // AuthConfig holds all auth-related configuration for the API server.
@@ -37,9 +32,6 @@ type AuthConfig struct {
 type Server struct {
 	db              *db.DB
 	brain           *brain.Brain
-	ingestor        Ingestor
-	sessionBus      *sessionbus.Bus
-	agents          *agents.Coder
 	mux             *http.ServeMux
 	frontendDistDir string
 	apiToken        string
@@ -49,14 +41,6 @@ type Server struct {
 	cookieSecure    bool
 	cookieDomain    string
 	loginLimiter    *rateLimiter
-	webhookCfg      *config.WebhookConfig
-	webhookLimiter  *rateLimiter
-}
-
-type Ingestor interface {
-	Upload(ctx context.Context, filename string, r io.Reader) (string, error)
-	IngestNow(ctx context.Context) error
-	Directory() string
 }
 
 func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *Server {
@@ -90,39 +74,15 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 
 	// Authenticated routes
 	s.mux.HandleFunc("POST /api/logout", s.protected(s.handleLogout))
-	s.mux.HandleFunc("GET /api/inbox", s.protected(s.handleInbox))
-	s.mux.HandleFunc("POST /api/inbox/{id}/confirm", s.protected(s.handleInboxConfirm))
-	s.mux.HandleFunc("POST /api/inbox/{id}/override", s.protected(s.handleInboxOverride))
-	s.mux.HandleFunc("POST /api/inbox/{id}/archive", s.protected(s.handleInboxArchive))
-	s.mux.HandleFunc("GET /api/memories", s.protected(s.handleMemories))
-	s.mux.HandleFunc("GET /api/desk", s.protected(s.handleDesk))
-	s.mux.HandleFunc("PATCH /api/desk/{id}", s.protected(s.handleDeskPatch))
-	s.mux.HandleFunc("POST /api/desk/{id}/defer", s.protected(s.handleDeskDefer))
-	s.mux.HandleFunc("POST /api/capture", s.protected(s.handleCapture))
 	s.mux.HandleFunc("POST /api/webhook", s.handleWebhook)
-	s.mux.HandleFunc("POST /api/ingest", s.protected(s.handleIngestUpload))
 	s.mux.HandleFunc("GET /api/domains", s.protected(s.handleDomains))
 	s.mux.HandleFunc("GET /api/domains/health", s.protected(s.handleDomainsHealth))
-	s.mux.HandleFunc("GET /api/domains/dump", s.protected(s.handleDomainsDump))
 	s.mux.HandleFunc("GET /api/domains/{id}", s.protected(s.handleDomainDetail))
 	s.mux.HandleFunc("POST /api/domains", s.protected(s.handleDomainCreate))
 	s.mux.HandleFunc("PATCH /api/domains/{id}", s.protected(s.handleDomainPatch))
 	s.mux.HandleFunc("DELETE /api/domains/{id}", s.protected(s.handleDomainDelete))
-	s.mux.HandleFunc("GET /api/dashboard", s.protected(s.handleDashboard))
 	s.mux.HandleFunc("GET /api/search", s.protected(s.handleSearch))
-	s.mux.HandleFunc("PUT /api/inbox/{id}/process", s.protected(s.handleInboxProcess))
 	s.mux.HandleFunc("GET /api/calendar/upcoming", s.protected(s.handleCalendarEvents))
-	s.mux.HandleFunc("POST /api/session-bus/register", s.protected(s.handleSessionBusRegister))
-	s.mux.HandleFunc("GET /api/session-bus/sessions", s.protected(s.handleSessionBusSessions))
-	s.mux.HandleFunc("POST /api/session-bus/send", s.protected(s.handleSessionBusSend))
-	s.mux.HandleFunc("POST /api/session-bus/poll", s.protected(s.handleSessionBusPoll))
-
-	// Goals
-	s.mux.HandleFunc("GET /api/goals", s.protected(s.handleGoalsList))
-	s.mux.HandleFunc("GET /api/goals/{id}", s.protected(s.handleGoalGet))
-	s.mux.HandleFunc("POST /api/goals", s.protected(s.handleGoalCreate))
-	s.mux.HandleFunc("PUT /api/goals/{id}", s.protected(s.handleGoalUpdate))
-	s.mux.HandleFunc("DELETE /api/goals/{id}", s.protected(s.handleGoalDelete))
 
 	// Tasks
 	s.mux.HandleFunc("GET /api/tasks", s.protected(s.handleTasksList))
@@ -144,24 +104,7 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	return s
 }
 
-func (s *Server) SetIngestor(ingestor Ingestor) {
-	s.ingestor = ingestor
-}
 
-func (s *Server) SetSessionBus(bus *sessionbus.Bus) {
-	s.sessionBus = bus
-}
-
-func (s *Server) SetAgents(c *agents.Coder) {
-	s.agents = c
-	s.mux.HandleFunc("GET /api/agents/tasks", s.protected(s.handleAgentTasks))
-	s.mux.HandleFunc("GET /api/agents/tasks/{id}", s.protected(s.handleAgentTask))
-	s.mux.HandleFunc("DELETE /api/agents/tasks/{id}", s.protected(s.handleAgentTaskKill))
-	s.mux.HandleFunc("GET /api/agents/tasks/{id}/steps/{step_num}/events", s.protected(s.handleAgentStepEvents))
-	s.mux.HandleFunc("GET /api/agents/stream", s.protected(s.handleAgentStream))
-	s.mux.HandleFunc("POST /api/agents/dispatch", s.protected(s.handleAgentDispatch))
-	s.mux.HandleFunc("GET /api/agents/chains", s.protected(s.handleAgentChains))
-}
 
 // EnableFrontendServing configures the daemon to serve built frontend assets
 // from distDir on all non-/api routes, with SPA fallback to index.html.
@@ -308,8 +251,6 @@ func (s *Server) protected(next http.HandlerFunc) http.HandlerFunc {
 
 // authorizedByCookie validates the session cookie and touches it on success.
 func (s *Server) authorizedByCookie(r *http.Request) (bool, error) {
-	// AUTH BYPASS — just looking at the UI
-	return true, nil
 	cookie, err := r.Cookie("session")
 	if err != nil {
 		return false, nil

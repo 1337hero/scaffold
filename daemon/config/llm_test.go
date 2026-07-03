@@ -23,7 +23,7 @@ func TestApplyLLMDefaults_ZeroValue(t *testing.T) {
 		t.Errorf("api_key_env: got %q, want ANTHROPIC_API_KEY", p.APIKeyEnv)
 	}
 
-	for _, name := range []string{"respond_default", "triage_default", "cortex_default"} {
+	for _, name := range []string{"respond_default", "cortex_default"} {
 		if _, ok := cfg.LLM.Profiles[name]; !ok {
 			t.Errorf("missing default profile %q", name)
 		}
@@ -31,11 +31,7 @@ func TestApplyLLMDefaults_ZeroValue(t *testing.T) {
 
 	allRoutes := []string{
 		LLMRouteBrainRespond,
-		LLMRouteBrainTriage,
-		LLMRouteBrainPrioritize,
 		LLMRouteCortexBulletin,
-		LLMRouteCortexSemantic,
-		LLMRouteCortexObservations,
 	}
 	for _, r := range allRoutes {
 		if _, ok := cfg.LLM.Routes[r]; !ok {
@@ -65,16 +61,8 @@ func TestApplyLLMDefaults_PartialRoutes(t *testing.T) {
 		t.Error("existing route Required flag was overwritten")
 	}
 
-	for _, r := range []string{
-		LLMRouteBrainTriage,
-		LLMRouteBrainPrioritize,
-		LLMRouteCortexBulletin,
-		LLMRouteCortexSemantic,
-		LLMRouteCortexObservations,
-	} {
-		if _, ok := cfg.LLM.Routes[r]; !ok {
-			t.Errorf("missing filled-in route %q", r)
-		}
+	if _, ok := cfg.LLM.Routes[LLMRouteCortexBulletin]; !ok {
+		t.Errorf("missing filled-in route %q", LLMRouteCortexBulletin)
 	}
 }
 
@@ -186,12 +174,8 @@ func validLLMConfig() *Config {
 			"p": {Provider: "prov", Model: "m"},
 		},
 		Routes: map[string]LLMRouteConfig{
-			LLMRouteBrainRespond:       {Profile: "p"},
-			LLMRouteBrainTriage:        {Profile: "p"},
-			LLMRouteBrainPrioritize:    {Profile: "p"},
-			LLMRouteCortexBulletin:     {Profile: "p"},
-			LLMRouteCortexSemantic:     {Profile: "p"},
-			LLMRouteCortexObservations: {Profile: "p"},
+			LLMRouteBrainRespond:   {Profile: "p"},
+			LLMRouteCortexBulletin: {Profile: "p"},
 		},
 	}
 	return cfg

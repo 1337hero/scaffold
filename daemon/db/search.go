@@ -3,7 +3,6 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -49,96 +48,6 @@ func (db *DB) SearchFTS(query string, topK int) ([]ScoredMemory, error) {
 		results = append(results, sm)
 	}
 	return results, rows.Err()
-}
-
-func (db *DB) SearchHybrid(query string, embedding []float32, embeddingModel string, topK int) ([]ScoredMemory, error) {
-	if strings.TrimSpace(query) == "" {
-		return nil, fmt.Errorf("search query must not be empty")
-	}
-	embeddingModel = strings.TrimSpace(embeddingModel)
-
-	ftsResults, ftsErr := db.SearchFTS(query, topK*3)
-
-	vecEnabled := len(embedding) > 0 && embeddingModel != ""
-	var vecResults []ScoredMemory
-	var vecErr error
-	if vecEnabled {
-		vecResults, vecErr = db.NearestNeighbors(embedding, topK*3, nil, embeddingModel)
-	}
-
-	if ftsErr != nil && (!vecEnabled || vecErr != nil) {
-		if ftsErr != nil {
-			return nil, ftsErr
-		}
-		return nil, vecErr
-	}
-	if ftsErr != nil && len(vecResults) == 0 {
-		return nil, ftsErr
-	}
-
-	if len(vecResults) == 0 {
-		if len(ftsResults) > topK {
-			ftsResults = ftsResults[:topK]
-		}
-		return ftsResults, nil
-	}
-
-	if len(ftsResults) == 0 {
-		if len(vecResults) > topK {
-			vecResults = vecResults[:topK]
-		}
-		return vecResults, nil
-	}
-
-	maxFTS := 0.0
-	for _, r := range ftsResults {
-		if r.FTSScore > maxFTS {
-			maxFTS = r.FTSScore
-		}
-	}
-
-	type combined struct {
-		mem      Memory
-		ftsScore float64
-		vecScore float64
-	}
-	byID := make(map[string]*combined)
-
-	for _, r := range ftsResults {
-		normScore := r.FTSScore
-		if maxFTS > 0 {
-			normScore = r.FTSScore / maxFTS
-		}
-		byID[r.ID] = &combined{mem: r.Memory, ftsScore: normScore}
-	}
-
-	for _, r := range vecResults {
-		if c, ok := byID[r.ID]; ok {
-			c.vecScore = r.VectorScore
-		} else {
-			byID[r.ID] = &combined{mem: r.Memory, vecScore: r.VectorScore}
-		}
-	}
-
-	results := make([]ScoredMemory, 0, len(byID))
-	for _, c := range byID {
-		fused := ftsWeight*c.ftsScore + vectorWeight*c.vecScore
-		results = append(results, ScoredMemory{
-			Memory:      c.mem,
-			FTSScore:    c.ftsScore,
-			VectorScore: c.vecScore,
-			FusedScore:  fused,
-		})
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].FusedScore > results[j].FusedScore
-	})
-
-	if len(results) > topK {
-		results = results[:topK]
-	}
-	return results, nil
 }
 
 func (db *DB) SearchMemoriesLike(query string, memoryType string, limit int) ([]ScoredMemory, error) {

@@ -61,12 +61,11 @@ func (db *DB) NotifiableTasks(today string) ([]Task, error) {
 	return db.queryTasks(
 		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
 		        t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
-		        t.source, t.source_ref, t.created_at, t.completed_at, d.name
+		        t.created_at, t.completed_at, d.name
 		 FROM tasks t
 		 LEFT JOIN domains d ON t.domain_id = d.id
-		 LEFT JOIN goals g ON t.goal_id = g.id
 		 WHERE t.status = 'pending'
-		   AND (t.notify = 1 OR g.notify = 1)
+		   AND t.notify = 1
 		 ORDER BY t.priority ASC, t.due_date ASC`,
 	)
 }
