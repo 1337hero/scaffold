@@ -87,6 +87,23 @@ func (db *DB) InsertProject(p Project) error {
 		p.Status = "active"
 	}
 
+	// Validate enum fields.
+	switch p.Type {
+	case "project", "area", "retainer":
+	default:
+		return fmt.Errorf("invalid project type: %q (must be project|area|retainer)", p.Type)
+	}
+	switch p.Surface {
+	case "life", "business":
+	default:
+		return fmt.Errorf("invalid surface: %q (must be life|business)", p.Surface)
+	}
+	switch p.Status {
+	case "active", "on_hold", "completed", "archived":
+	default:
+		return fmt.Errorf("invalid status: %q (must be active|on_hold|completed|archived)", p.Status)
+	}
+
 	_, err := db.conn.Exec(
 		`INSERT INTO projects (id, name, type, surface, domain_id, status,
 		    start_date, end_date, description, last_activity_at, last_reset_at, created_at, updated_at)
@@ -356,13 +373,13 @@ func resetChecklistItems(jsonItems string) (string, error) {
 		Text      string `json:"text"`
 		Completed bool   `json:"completed"`
 	}
-	if err := unmarshalJSON([]byte(jsonItems), &items); err != nil {
+	if err := json.Unmarshal([]byte(jsonItems), &items); err != nil {
 		return "", err
 	}
 	for i := range items {
 		items[i].Completed = false
 	}
-	b, err := marshalJSON(items)
+	b, err := json.Marshal(items)
 	if err != nil {
 		return "", err
 	}
@@ -623,10 +640,4 @@ func (db *DB) resetRetainer(projectID string) (bool, error) {
 	return true, nil
 }
 
-// unmarshalJSON and marshalJSON wrap encoding/json for internal use.
-func unmarshalJSON(data []byte, v any) error {
-	return json.Unmarshal(data, v)
-}
-func marshalJSON(v any) ([]byte, error) {
-	return json.Marshal(v)
-}
+// resetChecklistItems is above

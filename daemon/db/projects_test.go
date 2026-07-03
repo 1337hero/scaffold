@@ -126,6 +126,27 @@ func TestInsertProjectDefaults(t *testing.T) {
 	}
 }
 
+func TestInsertProject_EnumValidation(t *testing.T) {
+	db := openTestDB(t)
+
+	tests := []struct {
+		name string
+		p    Project
+	}{
+		{"bad type", Project{Name: "x", Type: "retianer"}},
+		{"bad surface", Project{Name: "x", Surface: "bluelife"}},
+		{"bad status", Project{Name: "x", Status: "archvied"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := db.InsertProject(tt.p)
+			if err == nil {
+				t.Fatal("expected error for invalid enum value, got nil")
+			}
+		})
+	}
+}
+
 func TestListProjectsFilter(t *testing.T) {
 	db := openTestDB(t)
 	_ = db.InsertProject(Project{Name: "Client Work", Type: "project", Surface: "business"})
@@ -299,7 +320,7 @@ func TestCloneChecklist(t *testing.T) {
 
 	// Verify items were reset — both should be false.
 	var items []map[string]any
-	if err := unmarshalJSON([]byte(cloned.Items), &items); err != nil {
+	if err := json.Unmarshal([]byte(cloned.Items), &items); err != nil {
 		t.Fatalf("parse cloned items: %v", err)
 	}
 	if len(items) != 2 {

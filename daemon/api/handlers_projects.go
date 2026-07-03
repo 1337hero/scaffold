@@ -273,6 +273,17 @@ func (s *Server) handleMilestoneCreate(w http.ResponseWriter, r *http.Request) {
 		m.Position = *req.Position
 	}
 
+	// Verify project exists before inserting.
+	proj, err := s.db.GetProject(projectID)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if proj == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
+	}
+
 	if err := s.db.InsertMilestone(m); err != nil {
 		writeInternalError(w, err)
 		return
@@ -368,6 +379,17 @@ func (s *Server) handleChecklistCreate(w http.ResponseWriter, r *http.Request) {
 		ProjectID: sql.NullString{String: projectID, Valid: true},
 		Title:     req.Title,
 		Items:     req.Items,
+	}
+
+	// Verify project exists before inserting.
+	proj, err := s.db.GetProject(projectID)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if proj == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
 	}
 
 	if err := s.db.InsertChecklist(c); err != nil {
