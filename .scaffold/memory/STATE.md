@@ -6,20 +6,20 @@ _Last updated: 2026-07-02 (late evening) by PR-39 review session_
 Scaffold — personal agent-driven LifeOS/executive-function system (Go daemon + SQLite brain + Signal agent + Preact web UI). v2 pivots it to a "notification surface with a brain": the agent is a witness, not an optimizer. Spec: `specs/v2-notification-surface.md`.
 
 ## Current focus
-PRD 01 demolition MERGED — PR #39 (closes Issue #21) landed in `v2` at `79b222a`, net −20,228/+479. Fresh v2 database in place and verified. Ready to start PRD 02.
+v2 is now MAINLINE — PR #40 merged v2 into `main` at `4adc4b2`. All forward branches come off `main`. The `v2` branch is retired (deleted local + remote); pre-merge main preserved as tag `v1-archive`. PRD 01 done (PR #39, Issue #21 closed). Ready for PRD 02.
 
 ## Next up
-1. PRD 02: LLM config rework — llama.cpp provider (`llama-server`, openai_compatible), route cortex.bulletin/cortex.semantic to it (new branch off `v2`)
+1. PRD 02: LLM config rework — llama.cpp provider (`llama-server`, openai_compatible), route cortex.bulletin/cortex.semantic to it (branch off `main`)
 2. Re-auth Google Calendar: revoke Scaffold's access at myaccount.google.com/permissions (kills the archived v1 token's Gmail scope), then `cd daemon && ./bin/scaffold-daemon auth google` (fresh grant is calendar-only per config defaults)
 
 ## In flight
 Nothing.
 
 ## Current branch / PR
-`v2` at merge commit `79b222a`; `prd/01-demolition` branch deleted (local + remote). GitHub Issues mirror PRDs (Issue #21 = PRD 01, closed by merge); `specs/` stays canonical.
+Branch model: everything off `main` by PR (guard hook enforces — even docs/STATE commits; note "Closes #NN" auto-close now works again since merges target the default branch). Issues mirror PRDs; `specs/` stays canonical.
 
 ## Last shipped
-79b222a Merge pull request #39 (PRD 01 demolition) into v2
+4adc4b2 Merge pull request #40 (v2 → main, adopt v2 as mainline)
 
 ## Last verified
 - On merged `v2` (79b222a): `go build ./...`, `go vet ./...`, `go test ./...` — all green (5 packages with tests)
