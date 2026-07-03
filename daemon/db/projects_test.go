@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"testing"
 )
 
@@ -411,15 +412,25 @@ func TestAreasSlipping(t *testing.T) {
 func TestResetRetainerChecklists(t *testing.T) {
 	db := openTestDB(t)
 
-	// Create a retainer project with a template checklist.
+	// Create a retainer project with ACTUAL checklists (not templates).
 	_ = db.InsertProject(Project{ID: "retainer", Name: "Monthly Support", Type: "retainer", Surface: "business"})
+
+	// Insert two checklists with some completed items.
 	_ = db.InsertChecklist(Checklist{
-		ID:         "tpl1",
-		ProjectID:  sql.NullString{String: "retainer", Valid: true},
-		Title:      "Monthly Tasks",
-		Items:      `[{"text":"Review logs","completed":true},{"text":"Send report","completed":false}]`,
-		IsTemplate: 1,
+		ID:        "cl1",
+		ProjectID: sql.NullString{String: "retainer", Valid: true},
+		Title:     "Monthly Tasks",
+		Items:     `[{"text":"Review logs","completed":true},{"text":"Send report","completed":false}]`,
 	})
+	_ = db.InsertChecklist(Checklist{
+		ID:        "cl2",
+		ProjectID: sql.NullString{String: "retainer", Valid: true},
+		Title:     "Weekly Review",
+		Items:     `[{"text":"Check uptime","completed":true},{"text":"Backup DB","completed":true}]`,
+	})
+
+	// Also log an activity — should NOT prevent the reset.
+	_ = db.InsertActivity(Activity{ProjectID: "retainer", Description: "Monthly check-in"})
 
 	n, err := db.ResetRetainerChecklists()
 	if err != nil {
@@ -429,26 +440,43 @@ func TestResetRetainerChecklists(t *testing.T) {
 		t.Fatalf("reset count=%d, want 1", n)
 	}
 
-	// Verify a fresh checklist was created.
+	// Verify items were reset in-place.
 	checklists, err := db.ListChecklists("retainer")
 	if err != nil {
 		t.Fatalf("ListChecklists: %v", err)
 	}
-	if len(checklists) != 1 {
-		t.Fatalf("got %d checklists after reset, want 1", len(checklists))
-	}
-	if checklists[0].IsTemplate != 0 {
-		t.Fatalf("cloned checklist has is_template=%d, want 0", checklists[0].IsTemplate)
+	if len(checklists) != 2 {
+		t.Fatalf("got %d checklists after reset, want 2 (no cloning)", len(checklists))
 	}
 
-	// Items should be reset (completed -> false).
-	var items []map[string]any
-	if err := unmarshalJSON([]byte(checklists[0].Items), &items); err != nil {
-		t.Fatalf("parse items: %v", err)
-	}
-	for i, item := range items {
-		if item["completed"].(bool) {
-			t.Fatalf("item %d still completed after reset", i)
+	// Both checklists should have all items reset to completed=false.
+	for _, cl := range checklists {
+		var items []map[string]any
+		if err := json.Unmarshal([]byte(cl.Items), &items); err != nil {
+			t.Fatalf("parse items: %v", err)
 		}
+		for i, item := range items {
+			if item["completed"].(bool) {
+				t.Fatalf("checklist %s item %d still completed after reset", cl.ID, i)
+			}
+		}
+	}
+
+	// Verify last_reset_at was stamped but last_activity_at is unchanged (from InsertActivity).
+	proj, _ := db.GetProject("retainer")
+	if !proj.LastResetAt.Valid || proj.LastResetAt.String == "" {
+		t.Fatalf("last_reset_at not set")
+	}
+	if !proj.LastActivityAt.Valid || proj.LastActivityAt.String == "" {
+		t.Fatalf("last_activity_at wiped by reset")
+	}
+
+	// Second call in same month — should be a no-op.
+	n, err = db.ResetRetainerChecklists()
+	if err != nil {
+		t.Fatalf("second ResetRetainerChecklists: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("second reset returned %d, want 0 (already reset this month)", n)
 	}
 }

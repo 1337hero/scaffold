@@ -21,6 +21,7 @@ type Project struct {
 	EndDate        sql.NullString
 	Description    sql.NullString
 	LastActivityAt sql.NullString
+	LastResetAt    sql.NullString
 	CreatedAt      string
 	UpdatedAt      string
 }
@@ -55,7 +56,7 @@ type Activity struct {
 }
 
 const projectCols = `id, name, type, surface, domain_id, status,
-	start_date, end_date, description, last_activity_at, created_at, updated_at`
+	start_date, end_date, description, last_activity_at, last_reset_at, created_at, updated_at`
 
 const milestoneCols = `id, project_id, title, position, completed, created_at`
 
@@ -88,10 +89,10 @@ func (db *DB) InsertProject(p Project) error {
 
 	_, err := db.conn.Exec(
 		`INSERT INTO projects (id, name, type, surface, domain_id, status,
-		    start_date, end_date, description, last_activity_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		    start_date, end_date, description, last_activity_at, last_reset_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.Name, p.Type, p.Surface, p.DomainID, p.Status,
-		p.StartDate, p.EndDate, p.Description, p.LastActivityAt, p.CreatedAt, p.UpdatedAt,
+		p.StartDate, p.EndDate, p.Description, p.LastActivityAt, p.LastResetAt, p.CreatedAt, p.UpdatedAt,
 	)
 	return err
 }
@@ -101,7 +102,7 @@ func scanProject(s interface {
 }) (Project, error) {
 	var p Project
 	err := s.Scan(&p.ID, &p.Name, &p.Type, &p.Surface, &p.DomainID, &p.Status,
-		&p.StartDate, &p.EndDate, &p.Description, &p.LastActivityAt, &p.CreatedAt, &p.UpdatedAt)
+		&p.StartDate, &p.EndDate, &p.Description, &p.LastActivityAt, &p.LastResetAt, &p.CreatedAt, &p.UpdatedAt)
 	return p, err
 }
 
@@ -521,20 +522,18 @@ func (db *DB) AreasSlipping() ([]Project, error) {
 	)
 }
 
-// ResetRetainerChecklists finds retainer projects whose last activity is from a
-// previous month and clones their active checklists from their own templates
-// (or does nothing if no template exists). Returns the number of retainers reset.
+// ResetRetainerChecklists finds active retainer projects whose checklists haven't
+// been reset this calendar month and resets all checklist items to not completed.
+// Returns the number of retainers whose checklists were reset.
 //
-// This is called from a cron/tick: at the start of each month, iterate retainers,
-// check if last_activity_at is < this month, clone all checklist templates that
-// belong to this project (is_template=1, project_id set).
+// Uses last_reset_at as its own cursor (independent of last_activity_at) so
+// logging billable hours to a retainer doesn't block the month-end reset.
 func (db *DB) ResetRetainerChecklists() (int, error) {
 	rows, err := db.conn.Query(
 		`SELECT id FROM projects
 		 WHERE type = 'retainer' AND status = 'active'
-		   AND (last_activity_at IS NULL
-		        OR julianday(?) - julianday(last_activity_at) >= 28)`, // ~1mo boundary
-		today(),
+		   AND (last_reset_at IS NULL
+		        OR strftime('%Y-%m', 'now') != strftime('%Y-%m', last_reset_at))`,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("query retainers for reset: %w", err)
@@ -555,72 +554,73 @@ func (db *DB) ResetRetainerChecklists() (int, error) {
 
 	reset := 0
 	for _, pid := range projectIDs {
-		n, err := db.resetRetainer(pid)
+		ok, err := db.resetRetainer(pid)
 		if err != nil {
 			return reset, fmt.Errorf("reset retainer %s: %w", pid, err)
 		}
-		reset += n
+		if ok {
+			reset++
+		}
 	}
 	return reset, nil
 }
 
-func (db *DB) resetRetainer(projectID string) (int, error) {
-	// Find template checklists belonging to this project.
-	templates, err := db.conn.Query(
-		`SELECT id, title, items FROM project_checklists
-		 WHERE project_id = ? AND is_template = 1`,
+// resetRetainer resets all non-template checklists on a retainer project by
+// setting every item's completed to false. Stamps last_reset_at so the same
+// month doesn't trigger again. Returns true if any checklist was touched.
+func (db *DB) resetRetainer(projectID string) (bool, error) {
+	// Find non-template checklists for this project.
+	rows, err := db.conn.Query(
+		`SELECT id, items FROM project_checklists
+		 WHERE project_id = ? AND is_template = 0`,
 		projectID,
 	)
 	if err != nil {
-		return 0, err
+		return false, err
 	}
-	defer templates.Close()
+	defer rows.Close()
 
-	type tpl struct {
-		id, title, items string
-	}
-	var tpls []tpl
-	for templates.Next() {
-		var t tpl
-		if err := templates.Scan(&t.id, &t.title, &t.items); err != nil {
-			return 0, err
+	type cl struct{ id, items string }
+	var checklists []cl
+	for rows.Next() {
+		var c cl
+		if err := rows.Scan(&c.id, &c.items); err != nil {
+			return false, err
 		}
-		tpls = append(tpls, t)
+		checklists = append(checklists, c)
 	}
-	if err := templates.Err(); err != nil {
-		return 0, err
-	}
-
-	if len(tpls) == 0 {
-		return 0, nil
+	if err := rows.Err(); err != nil {
+		return false, err
 	}
 
-	// Clone each template into a fresh checklist for this month.
-	today := today()
-	ts := now()
-	for _, t := range tpls {
-		items, err := resetChecklistItems(t.items)
+	if len(checklists) == 0 {
+		return false, nil
+	}
+
+	// Reset items in-place.
+	for _, c := range checklists {
+		resetItems, err := resetChecklistItems(c.items)
 		if err != nil {
-			return 0, err
+			return false, fmt.Errorf("reset items for %s: %w", c.id, err)
 		}
 		if _, err := db.conn.Exec(
-			`INSERT INTO project_checklists (id, project_id, title, items, is_template, created_at)
-			 VALUES (?, ?, ?, ?, 0, ?)`,
-			newID(), projectID, t.title, items, ts,
+			`UPDATE project_checklists SET items = ? WHERE id = ?`,
+			resetItems, c.id,
 		); err != nil {
-			return 0, err
+			return false, fmt.Errorf("update checklist %s: %w", c.id, err)
 		}
 	}
 
-	// Stamp today's date as last_activity_at so we don't double-reset.
+	// Stamp last_reset_at only — don't touch last_activity_at.
+	ts := today()
 	if _, err := db.conn.Exec(
-		`UPDATE projects SET last_activity_at = ?, updated_at = ? WHERE id = ?`,
-		today, ts, projectID,
+		`UPDATE projects SET last_reset_at = ?, updated_at = ? WHERE id = ?`,
+		ts, now(), projectID,
 	); err != nil {
-		return 0, err
+		return false, err
 	}
 
-	return len(tpls), nil
+	return true, nil
 }
 
 // unmarshalJSON and marshalJSON wrap encoding/json for internal use.
