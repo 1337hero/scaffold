@@ -134,8 +134,13 @@ func (db *DB) ListTasks(f TaskFilters) ([]Task, error) {
 		f.Status = "pending"
 	}
 
+	// "all" means every non-deleted task; soft-deleted stay hidden everywhere.
 	clauses := []string{"t.status = ?"}
 	args := []any{f.Status}
+	if f.Status == "all" {
+		clauses = []string{"t.status != 'deleted'"}
+		args = nil
+	}
 
 	if f.DomainID != nil {
 		clauses = append(clauses, "t.domain_id = ?")
