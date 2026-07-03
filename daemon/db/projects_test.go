@@ -401,7 +401,7 @@ func TestProjectsSlipping(t *testing.T) {
 	// Area with no activity — excluded from ProjectsSlipping.
 	_ = db.InsertProject(Project{ID: "area", Name: "Health", Type: "area", Surface: "life"})
 
-	slipping, err := db.ProjectsSlipping()
+	slipping, err := db.ProjectsSlipping(nil)
 	if err != nil {
 		t.Fatalf("ProjectsSlipping: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestAreasSlipping(t *testing.T) {
 	// Project — excluded from AreasSlipping.
 	_ = db.InsertProject(Project{ID: "proj", Name: "Shed", Type: "project", Surface: "life"})
 
-	slipping, err := db.AreasSlipping()
+	slipping, err := db.AreasSlipping(nil)
 	if err != nil {
 		t.Fatalf("AreasSlipping: %v", err)
 	}

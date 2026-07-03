@@ -59,11 +59,7 @@ func (db *DB) NotificationSentSince(refType, refID string, since time.Time) (boo
 
 func (db *DB) NotifiableTasks(today string) ([]Task, error) {
 	return db.queryTasks(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
-		        t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
-		        t.created_at, t.completed_at,
-		        t.project_id, t.reminder_at, t.surface, t.top3_position,
-		        d.name
+		`SELECT ` + taskCols + `
 		 FROM tasks t
 		 LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.status = 'pending'
