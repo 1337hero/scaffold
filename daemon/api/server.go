@@ -137,8 +137,6 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	return s
 }
 
-
-
 // EnableFrontendServing configures the daemon to serve built frontend assets
 // from distDir on all non-/api routes, with SPA fallback to index.html.
 func (s *Server) EnableFrontendServing(distDir string) error {

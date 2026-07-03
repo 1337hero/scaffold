@@ -3,10 +3,16 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
+
+// ErrInvalidEnum is returned when a project create/update sets an enum field
+// (type/surface/status) to an invalid value. API handlers check with errors.Is
+// to return 400 instead of 500.
+var ErrInvalidEnum = errors.New("invalid enum value")
 
 // Project is a v2 organizational unit: project (has end date + milestones),
 // area (ongoing, no end date), retainer (ongoing with monthly checklists).
@@ -91,17 +97,17 @@ func (db *DB) InsertProject(p Project) error {
 	switch p.Type {
 	case "project", "area", "retainer":
 	default:
-		return fmt.Errorf("invalid project type: %q (must be project|area|retainer)", p.Type)
+		return fmt.Errorf("%w: project type %q (must be project|area|retainer)", ErrInvalidEnum, p.Type)
 	}
 	switch p.Surface {
 	case "life", "business":
 	default:
-		return fmt.Errorf("invalid surface: %q (must be life|business)", p.Surface)
+		return fmt.Errorf("%w: surface %q (must be life|business)", ErrInvalidEnum, p.Surface)
 	}
 	switch p.Status {
 	case "active", "on_hold", "completed", "archived":
 	default:
-		return fmt.Errorf("invalid status: %q (must be active|on_hold|completed|archived)", p.Status)
+		return fmt.Errorf("%w: status %q (must be active|on_hold|completed|archived)", ErrInvalidEnum, p.Status)
 	}
 
 	_, err := db.conn.Exec(
@@ -156,6 +162,33 @@ func (db *DB) UpdateProject(id string, updates map[string]any) error {
 	for col, val := range updates {
 		if !projectUpdateCols[col] {
 			return fmt.Errorf("unsupported update column: %s", col)
+		}
+		// Validate enum values on PATCH.
+		switch col {
+		case "type":
+			if s, ok := val.(string); ok {
+				switch s {
+				case "project", "area", "retainer":
+				default:
+					return fmt.Errorf("%w: project type %q", ErrInvalidEnum, s)
+				}
+			}
+		case "surface":
+			if s, ok := val.(string); ok {
+				switch s {
+				case "life", "business":
+				default:
+					return fmt.Errorf("%w: surface %q", ErrInvalidEnum, s)
+				}
+			}
+		case "status":
+			if s, ok := val.(string); ok {
+				switch s {
+				case "active", "on_hold", "completed", "archived":
+				default:
+					return fmt.Errorf("%w: status %q", ErrInvalidEnum, s)
+				}
+			}
 		}
 		setClauses = append(setClauses, col+" = ?")
 		args = append(args, val)
@@ -434,7 +467,7 @@ func (db *DB) ListChecklists(projectID string) ([]Checklist, error) {
 
 func (db *DB) ListChecklistTemplates() ([]Checklist, error) {
 	rows, err := db.conn.Query(
-		`SELECT `+checklistCols+` FROM project_checklists WHERE is_template = 1 ORDER BY title`,
+		`SELECT ` + checklistCols + ` FROM project_checklists WHERE is_template = 1 ORDER BY title`,
 	)
 	if err != nil {
 		return nil, err
@@ -477,16 +510,7 @@ func (db *DB) InsertActivity(a Activity) error {
 	}
 
 	// Bump last_activity_at on the project — only advance, never regress.
-	today := time.Now().In(localLocation).Format("2006-01-02")
-	if _, err := tx.Exec(
-		`UPDATE projects
-		   SET last_activity_at = CASE
-		         WHEN last_activity_at IS NULL OR ? > last_activity_at THEN ?
-		         ELSE last_activity_at END,
-		       updated_at = ?
-		 WHERE id = ?`,
-		today, today, now(), a.ProjectID,
-	); err != nil {
+	if err := bumpProjectActivity(tx, a.ProjectID); err != nil {
 		return fmt.Errorf("update last_activity_at: %w", err)
 	}
 
@@ -550,7 +574,8 @@ func (db *DB) ResetRetainerChecklists() (int, error) {
 		`SELECT id FROM projects
 		 WHERE type = 'retainer' AND status = 'active'
 		   AND (last_reset_at IS NULL
-		        OR strftime('%Y-%m', 'now') != strftime('%Y-%m', last_reset_at))`,
+		        OR strftime('%Y-%m', ?) != strftime('%Y-%m', last_reset_at))`,
+		today(),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("query retainers for reset: %w", err)

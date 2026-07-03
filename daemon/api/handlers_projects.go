@@ -14,8 +14,8 @@ import (
 
 type projectCreateRequest struct {
 	Name        string  `json:"name"`
-	Type        *string `json:"type"`        // project|area|retainer
-	Surface     *string `json:"surface"`     // life|business
+	Type        *string `json:"type"`    // project|area|retainer
+	Surface     *string `json:"surface"` // life|business
 	DomainID    *int64  `json:"domain_id"`
 	Status      *string `json:"status"`
 	StartDate   *string `json:"start_date"`
@@ -124,6 +124,10 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.InsertProject(p); err != nil {
+		if errors.Is(err, db.ErrInvalidEnum) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		writeInternalError(w, err)
 		return
 	}
@@ -202,6 +206,10 @@ func (s *Server) handleProjectPatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.UpdateProject(id, updates); err != nil {
+		if errors.Is(err, db.ErrInvalidEnum) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
 			return

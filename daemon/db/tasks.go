@@ -144,7 +144,7 @@ var taskUpdateFields = map[string]bool{
 	"due_date": true, "recurring": true, "priority": true, "status": true,
 	"micro_steps": true, "notify": true, "position": true, "is_focus": true,
 	"completed_at": true,
-	"project_id": true, "reminder_at": true, "surface": true, "top3_position": true,
+	"project_id":   true, "reminder_at": true, "surface": true, "top3_position": true,
 }
 
 func (db *DB) UpdateTask(id string, updates map[string]any) error {
@@ -269,7 +269,19 @@ func (db *DB) SoftDeleteTask(id string) error {
 	if err != nil {
 		return err
 	}
-	return requireRowsAffected(result)
+	if err := requireRowsAffected(result); err != nil {
+		return err
+	}
+
+	// Bump project activity when deleting a project-assigned task.
+	var projectID sql.NullString
+	if err := db.conn.QueryRow(`SELECT project_id FROM tasks WHERE id = ?`, id).Scan(&projectID); err != nil {
+		return fmt.Errorf("lookup task project_id: %w", err)
+	}
+	if projectID.Valid {
+		return bumpProjectActivity(db.conn, projectID.String)
+	}
+	return nil
 }
 
 func (db *DB) TodaysTasks() ([]Task, error) {
