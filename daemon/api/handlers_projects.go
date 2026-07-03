@@ -475,6 +475,33 @@ func (s *Server) handleChecklistTemplatesList(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, templates)
 }
 
+func (s *Server) handleChecklistTemplateCreate(w http.ResponseWriter, r *http.Request) {
+	var req checklistCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if strings.TrimSpace(req.Title) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "title is required"})
+		return
+	}
+	if strings.TrimSpace(req.Items) == "" {
+		req.Items = "[]"
+	}
+
+	c := db.Checklist{
+		ID:         uuid.New().String(),
+		Title:      req.Title,
+		Items:      req.Items,
+		IsTemplate: 1,
+	}
+	if err := s.db.InsertChecklist(c); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, c)
+}
+
 // --- Activity ---
 
 func (s *Server) handleActivityList(w http.ResponseWriter, r *http.Request) {
