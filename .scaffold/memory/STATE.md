@@ -1,36 +1,36 @@
 # Project State
 
-_Last updated: 2026-07-03 by PRD 06 session_
+_Last updated: 2026-07-03 by PRD 12 session_
 
 ## What this project is
 Scaffold — personal agent-driven LifeOS/executive-function system (Go daemon + SQLite brain + Signal agent + Preact web UI). v2 pivots it to a "notification surface with a brain": the agent is a witness, not an optimizer. Spec: `specs/v2-notification-surface.md`.
 
 ## Current focus
-PRD 06 complete — Facts (facts/fact_edges db layer + 10 API routes). PR #46 open (closes issue #24), awaiting review/merge. PR #45 (PRD 05 Projects) merged.
+PRD 12 complete — Projects page with sidebar, detail view, milestones, checklists, activity log, template cloning. All 12 PRDs shipped: PRDs 01-05 (backend), 06 (Facts), 07 (route mods), 08 (Today/slipping API), 09 (frontend shell), 10 (Today page), 11 (Tasks page), 12 (Projects page). PRs #1–#52, issues #1–#31 closed.
 
 ## Next up
-1. PRD 07 (next in `specs/v2-prds/` order) once PR #46 merges.
+1. PRD 13 — People page (#34).
 2. Re-auth Google Calendar: revoke Scaffold's access at myaccount.google.com/permissions (kills the archived v1 token's Gmail scope), then `cd daemon && ./bin/scaffold-daemon auth google` (fresh grant is calendar-only per config defaults)
 
 ## In flight
-PRD 06 PR #46 open — https://github.com/1337hero/scaffold/pull/46 (Closes #24).
+Nothing — main branch is current.
 
 ## Current branch / PR
-Branch model: everything off `main` by PR. PRD 06 on `feature/prd-06-facts`. PR #46 open: https://github.com/1337hero/scaffold/pull/46
+`main` — no in-flight branch.
 
 ## Last shipped
-PRD 06: Facts — `db/facts.go` (InsertFact with related_entities→edges in tx, Get/Update/Suppress/ListFacts, ProbeFacts bumps retrieval_count, ReasonFacts bridging, RelatedEntities adjacency via shared facts, ContradictingFacts same-entity surface, FeedbackFact single-UPDATE clamp +0.05/-0.10), `api/handlers_facts.go` (10 routes), route registrations in `server.go`. 22 db tests.
+PRD 12: Projects page — `pages/Projects.jsx` (master-detail, hash-routed), `components/projects/{ProjectSidebar,ProjectDetail,MilestoneList,ChecklistCard,ActivityLog,ProjectForm}.jsx`, `POST /api/checklists/templates` route, queries.js extensions (projectDetailQuery, projectTasksQuery, projectActivityQuery, checklistTemplatesQuery, all mutations). 31/31 E2E harness checks green.
 
 ## Last verified
 - `go build ./...`, `go vet ./...`, `go test ./...` — all green (8 packages)
-- gofmt clean on new files; no raw SQL in `api/`; all 10 fact routes `protected`; list methods pre-seed `make([]T,0)`
-- New: trust floor 0.3 on agent ops (probe/reason/related/contradict) but NOT ListFacts (browse surface — quarantined facts stay reviewable, PR documents the call), category enum validated via ErrInvalidEnum, entity keys trimmed on insert/update (exact-match orphan guard), tag filter escapes LIKE wildcards
-- Fresh-context go-reviewer pass on the diff; both real findings fixed with regression tests
+- `bun run build` — green
+- E2E harness (puppeteer on :4009, seeded temp SQLite): 31 checks — sidebar grouping, detail CRUD, template clone, search, area/retainer specifics
 
 ## Known issues / watch list
 - **api package has no tests** — returns with Phase 2 rebuild
 - **v1 daemon incident (2026-07-02 ~14:11-14:12):** stale binary deleted, clean v2 binary rebuilt. systemd units inactive + linked-only.
 - **Database reset 2026-07-02 ~22:19:** v1 scaffold.db archived. Fresh DB created. oauth_tokens empty → calendar re-auth required.
+- **Controlled Preact inputs:** Direct DOM value setting bypasses React state for template selection in ProjectForm — E2E test uses API-based create+clone as workaround. Form UI tested via `page.type()` + button click.
 - v1 frontend (`app/src`) still calls removed `/api/goals` and `/api/dashboard` — full rebuild is Phase 3
 
 ## Key files / commands
@@ -44,3 +44,4 @@ PRD 06: Facts — `db/facts.go` (InsertFact with related_entities→edges in tx,
 | `cd daemon && go test ./...` | backend tests |
 | `cd daemon && go build -o bin/scaffold-daemon .` | build |
 | `cd app && bun run dev` | frontend dev on :4002 |
+| `$SCRATCHPAD/harness/main.go` | E2E verification harness (:4009, seeded DB, puppeteer) |
