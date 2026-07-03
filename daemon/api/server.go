@@ -134,6 +134,18 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	s.mux.HandleFunc("GET /api/projects/{id}/activity", s.protected(s.handleActivityList))
 	s.mux.HandleFunc("POST /api/projects/{id}/activity", s.protected(s.handleActivityCreate))
 
+	// Facts
+	s.mux.HandleFunc("GET /api/facts", s.protected(s.handleFactsList))
+	s.mux.HandleFunc("POST /api/facts", s.protected(s.handleFactCreate))
+	s.mux.HandleFunc("GET /api/facts/probe", s.protected(s.handleFactsProbe))
+	s.mux.HandleFunc("GET /api/facts/reason", s.protected(s.handleFactsReason))
+	s.mux.HandleFunc("GET /api/facts/related", s.protected(s.handleFactsRelated))
+	s.mux.HandleFunc("GET /api/facts/contradict", s.protected(s.handleFactsContradict))
+	s.mux.HandleFunc("GET /api/facts/{id}", s.protected(s.handleFactGet))
+	s.mux.HandleFunc("PATCH /api/facts/{id}", s.protected(s.handleFactPatch))
+	s.mux.HandleFunc("DELETE /api/facts/{id}", s.protected(s.handleFactDelete))
+	s.mux.HandleFunc("POST /api/facts/{id}/feedback", s.protected(s.handleFactFeedback))
+
 	return s
 }
 
