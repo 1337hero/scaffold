@@ -9,16 +9,23 @@ providers:
     api_key_env: ANTHROPIC_API_KEY
     timeout_seconds: 30
 
+  llama_cpp:
+    type: openai_compatible
+    base_url: http://127.0.0.1:8080/v1
+    timeout_seconds: 60
+    supports_tool_use: false
+
 profiles:
   # Conversational — what Mike actually talks to. Don't cheap out.
   respond_sonnet:
     provider: anthropic_main
     model: claude-sonnet-4-6
 
-  # Background tasks — classification, summarization, structured output.
-  background_haiku:
-    provider: anthropic_main
-    model: claude-haiku-4-5-20251001
+  # Background LLM work — runs locally via llama.cpp (llama-server).
+  # Saves cloud spend; only brain.respond uses Sonnet.
+  background_llama:
+    provider: llama_cpp
+    model: qwen2.5-7b-instruct
 
 routes:
   brain.respond:
@@ -26,7 +33,11 @@ routes:
     required: false
 
   cortex.bulletin:
-    profile: background_haiku
+    profile: background_llama
+    required: false
+
+  cortex.semantic:
+    profile: background_llama
     required: false
 
 startup:

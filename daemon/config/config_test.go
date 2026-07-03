@@ -214,24 +214,18 @@ version: 1
 providers:
   local:
     type: openai_compatible
-    base_url: http://127.0.0.1:11434/v1
+    base_url: http://127.0.0.1:8080/v1
 profiles:
   p1:
     provider: local
-    model: qwen2.5:14b
+    model: qwen2.5:7b-instruct
 routes:
   brain.respond:
     profile: p1
     required: true
-  brain.triage:
-    profile: p1
-  brain.prioritize:
-    profile: p1
   cortex.bulletin:
     profile: p1
   cortex.semantic:
-    profile: p1
-  cortex.observations:
     profile: p1
 `
 	if err := os.WriteFile(filepath.Join(dir, "llm.yaml"), []byte(llmYAML), 0o644); err != nil {
@@ -276,7 +270,7 @@ providers:
     type: anthropic
   p2:
     type: openai_compatible
-    base_url: http://127.0.0.1:11434/v1
+    base_url: http://127.0.0.1:8080/v1
 profiles:
   a:
     provider: p1
@@ -289,15 +283,9 @@ routes:
     profile: a
     fallback_profiles: [b]
     lock_provider: true
-  brain.triage:
-    profile: a
-  brain.prioritize:
-    profile: a
   cortex.bulletin:
     profile: a
   cortex.semantic:
-    profile: a
-  cortex.observations:
     profile: a
 `
 	if err := os.WriteFile(filepath.Join(dir, "llm.yaml"), []byte(llmYAML), 0o644); err != nil {

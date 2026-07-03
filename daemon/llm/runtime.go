@@ -27,9 +27,9 @@ type Runtime struct {
 // (e.g. "local" — Pi resolves the connection via its own config).
 type noopProvider struct{}
 
-func (n *noopProvider) SupportsToolUse() bool           { return false }
-func (n *noopProvider) SupportsCompletionJSON() bool    { return false }
-func (n *noopProvider) SupportsCompletionText() bool    { return false }
+func (n *noopProvider) SupportsToolUse() bool        { return false }
+func (n *noopProvider) SupportsCompletionJSON() bool { return false }
+func (n *noopProvider) SupportsCompletionText() bool { return false }
 func (n *noopProvider) NewResponder() (ToolUseResponder, error) {
 	return nil, fmt.Errorf("local provider: daemon does not call this directly")
 }
@@ -87,12 +87,12 @@ func (p *externalProvider) HealthCheck() HealthChecker {
 }
 
 type openAIProvider struct {
-	baseURL                 string
-	apiKey                  string
-	timeout                 time.Duration
-	supportsToolUse         bool
-	nativeJSONFormat        bool
-	useMaxCompletionTokens  bool
+	baseURL                string
+	apiKey                 string
+	timeout                time.Duration
+	supportsToolUse        bool
+	nativeJSONFormat       bool
+	useMaxCompletionTokens bool
 }
 
 func (p *openAIProvider) SupportsToolUse() bool {
@@ -451,7 +451,7 @@ func requirementForRoute(routeName string) routeRequirement {
 	switch routeName {
 	case appconfig.LLMRouteBrainRespond:
 		return routeRequirement{toolUse: true}
-	case appconfig.LLMRouteCortexBulletin:
+	case appconfig.LLMRouteCortexBulletin, appconfig.LLMRouteCortexSemantic:
 		return routeRequirement{completionText: true}
 	default:
 		return routeRequirement{}

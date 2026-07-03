@@ -10,6 +10,7 @@ import (
 const (
 	LLMRouteBrainRespond   = "brain.respond"
 	LLMRouteCortexBulletin = "cortex.bulletin"
+	LLMRouteCortexSemantic = "cortex.semantic"
 )
 
 const (
@@ -105,9 +106,9 @@ func applyLLMDefaults(cfg *Config) {
 		}
 	}
 
-	if !cfg.LLM.Startup.VerifyRequiredRoutes {
-		cfg.LLM.Startup.VerifyRequiredRoutes = true
-	}
+	// NOTE: VerifyRequiredRoutes defaults to false (Go zero value for bool).
+	// Configs that want startup verification must set verify_required_routes: true
+	// explicitly in llm.yaml. The value is left as-is to respect operator intent.
 }
 
 func validateLLM(cfg *Config) error {

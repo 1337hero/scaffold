@@ -359,6 +359,41 @@ func TestBindResponderFailsWhenFactoryReturnsNilResponder(t *testing.T) {
 	}
 }
 
+func TestBindCompletionCortexSemanticResolves(t *testing.T) {
+	cfg := appconfig.LLMConfig{
+		Version: 1,
+		Providers: map[string]appconfig.LLMProviderConfig{
+			"local": {
+				Type:            "openai_compatible",
+				BaseURL:         "http://127.0.0.1:8080/v1",
+				SupportsToolUse: false,
+			},
+		},
+		Profiles: map[string]appconfig.LLMProfileConfig{
+			"background_llama": {Provider: "local", Model: "qwen2.5-7b-instruct"},
+		},
+		Routes: map[string]appconfig.LLMRouteConfig{
+			appconfig.LLMRouteCortexSemantic: {Profile: "background_llama"},
+		},
+	}
+
+	runtime, err := NewRuntimeWithEnv(cfg, nil, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("NewRuntimeWithEnv: %v", err)
+	}
+
+	client, model, err := runtime.BindCompletion(appconfig.LLMRouteCortexSemantic)
+	if err != nil {
+		t.Fatalf("BindCompletion(cortex.semantic): %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected completion client, got nil")
+	}
+	if model != "qwen2.5-7b-instruct" {
+		t.Errorf("expected model qwen2.5-7b-instruct, got %q", model)
+	}
+}
+
 func TestBindCompletionFailsWhenFactoryReturnsNilCompletion(t *testing.T) {
 	cfg := appconfig.LLMConfig{
 		Version: 1,
