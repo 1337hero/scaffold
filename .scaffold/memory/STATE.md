@@ -11,7 +11,7 @@ PRD 01 demolition COMPLETE. PR #39 review findings all closed by sweep commit `b
 ## Next up
 1. Merge PR #39 into `v2`
 2. PRD 02: LLM config rework — llama.cpp provider (`llama-server`, openai_compatible), route cortex.bulletin/cortex.semantic to it
-3. Consider revoking the Gmail scope on the Google OAuth token in `scaffold.db` (v2 never touches Gmail)
+3. Re-auth Google Calendar: revoke Scaffold's access at myaccount.google.com/permissions (kills the archived v1 token's Gmail scope), then `cd daemon && ./bin/scaffold-daemon auth google` (fresh grant is calendar-only per config defaults)
 
 ## In flight
 Nothing. Branch `prd/01-demolition` pushed clean at `bae3308`.
@@ -28,7 +28,8 @@ bae3308 refactor: complete PRD 01 demolition sweep from PR #39 review
 - Rebuilt `daemon/bin/scaffold-daemon` from branch: zero gmail_triage/session-bus symbols
 
 ## Known issues / watch list
-- **v1 daemon incident (2026-07-02 ~14:11-14:12):** a pre-demolition v1 binary ran and triaged Mike's Gmail (labeled "Your payment is scheduled for 07/01/2026" WAITING; captured Tony Bomkamp prison-schedule + $3,104.74 withdrawal emails). Stale binary deleted, clean v2 binary rebuilt in its place. systemd units inactive + linked-only. `scaffold.db` still holds a live Google OAuth token with Gmail scope — see Next up.
+- **v1 daemon incident (2026-07-02 ~14:11-14:12):** a pre-demolition v1 binary ran and triaged Mike's Gmail (labeled "Your payment is scheduled for 07/01/2026" WAITING; captured Tony Bomkamp prison-schedule + $3,104.74 withdrawal emails). Stale binary deleted, clean v2 binary rebuilt in its place. systemd units inactive + linked-only.
+- **Database reset 2026-07-02 ~22:19:** v1 `scaffold.db` archived to `daemon/scaffold.db.v1-archive-2026-07-02` (contains old OAuth refresh token w/ Gmail scope — revoke per Next up, then delete archive when comfortable). Fresh DB created and verified: clean v2-base schema, daemon boots green. `oauth_tokens` empty → calendar re-auth required before calendar features work.
 - v1 frontend (`app/src`) still calls removed `/api/goals` and `/api/dashboard` — already incompatible with demolished API; full rebuild is Phase 3
 - api/brain/cortex/db packages have no test files after PR #39's test deletions — coverage returns with Phase 2 rebuild
 
