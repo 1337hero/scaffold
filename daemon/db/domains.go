@@ -64,6 +64,26 @@ type DomainDrift struct {
 	OpenTaskCount  int
 }
 
+// v2DomainSeed defines the LifeOS and BusinessOS domains for the v2 schema.
+var v2DomainSeed = []struct {
+	Name       string
+	Importance int
+	Surface    string
+}{
+	// LifeOS
+	{"Homelife", 5, "life"},
+	{"Health", 5, "life"},
+	{"Faith", 5, "life"},
+	{"Relationships", 5, "life"},
+	{"Personal Development", 5, "life"},
+	// BusinessOS
+	{"SURF", 5, "business"},
+	{"CISS", 5, "business"},
+	{"1337hero", 5, "business"},
+	{"Consulting", 5, "business"},
+}
+
+// defaultDomains is kept for backward compatibility during migration.
 var defaultDomains = []struct {
 	Name       string
 	Importance int
@@ -84,58 +104,79 @@ func (db *DB) SeedDefaultDomains() error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	for _, d := range defaultDomains {
-		ts := now()
-		_, err := tx.Exec(
-			`INSERT OR IGNORE INTO domains (name, importance, last_touched_at, created_at) VALUES (?, ?, ?, ?)`,
-			d.Name, d.Importance, ts, ts,
-		)
-		if err != nil {
-			return fmt.Errorf("seed domain %q: %w", d.Name, err)
-		}
-	}
+	// Check if v2 domains already seeded (look for surface column presence on any row)
+	var hasSurface bool
+	_ = tx.QueryRow(`SELECT COUNT(*) > 0 FROM pragma_table_info('domains') WHERE name='surface'`).Scan(&hasSurface)
 
-	legacyDomainToDefault := map[string]string{
-		"1337 Hero":  "Work/Business",
-		"Health":     "Personal Development",
-		"Family":     "Relationships",
-		"Faith":      "Personal Development",
-		"Shenandoah": "Personal Projects",
-		"Vera":       "Personal Projects",
-		"Homelab":    "Personal Projects",
-	}
+	useV2 := hasSurface
 
-	for legacy, mapped := range legacyDomainToDefault {
-		legacyID, err := resolveDomainIDTx(tx, legacy)
-		if err != nil {
-			return fmt.Errorf("resolve legacy domain %q: %w", legacy, err)
-		}
-		if legacyID == nil {
-			continue
-		}
-
-		mappedID, err := resolveDomainIDTx(tx, mapped)
-		if err != nil {
-			return fmt.Errorf("resolve mapped domain %q: %w", mapped, err)
-		}
-		if mappedID == nil {
-			return fmt.Errorf("mapped domain %q missing during seed", mapped)
-		}
-		if *legacyID == *mappedID {
-			continue
-		}
-
-		for _, table := range []string{"memories"} {
-			if _, err := tx.Exec(
-				fmt.Sprintf("UPDATE %s SET domain_id = ? WHERE domain_id = ?", table),
-				*mappedID, *legacyID,
-			); err != nil {
-				return fmt.Errorf("reassign %s domain %q->%q: %w", table, legacy, mapped, err)
+	if useV2 {
+		for _, d := range v2DomainSeed {
+			ts := now()
+			_, err := tx.Exec(
+				`INSERT OR IGNORE INTO domains (name, importance, surface, last_touched_at, created_at) VALUES (?, ?, ?, ?, ?)`,
+				d.Name, d.Importance, d.Surface, ts, ts,
+			)
+			if err != nil {
+				return fmt.Errorf("seed v2 domain %q: %w", d.Name, err)
 			}
 		}
+	} else {
+		for _, d := range defaultDomains {
+			ts := now()
+			_, err := tx.Exec(
+				`INSERT OR IGNORE INTO domains (name, importance, last_touched_at, created_at) VALUES (?, ?, ?, ?)`,
+				d.Name, d.Importance, ts, ts,
+			)
+			if err != nil {
+				return fmt.Errorf("seed domain %q: %w", d.Name, err)
+			}
+		}
+	}
 
-		if _, err := tx.Exec(`DELETE FROM domains WHERE id = ?`, *legacyID); err != nil {
-			return fmt.Errorf("delete legacy domain %q: %w", legacy, err)
+	if !useV2 {
+		legacyDomainToDefault := map[string]string{
+			"1337 Hero":  "Work/Business",
+			"Health":     "Personal Development",
+			"Family":     "Relationships",
+			"Faith":      "Personal Development",
+			"Shenandoah": "Personal Projects",
+			"Vera":       "Personal Projects",
+			"Homelab":    "Personal Projects",
+		}
+
+		for legacy, mapped := range legacyDomainToDefault {
+			legacyID, err := resolveDomainIDTx(tx, legacy)
+			if err != nil {
+				return fmt.Errorf("resolve legacy domain %q: %w", legacy, err)
+			}
+			if legacyID == nil {
+				continue
+			}
+
+			mappedID, err := resolveDomainIDTx(tx, mapped)
+			if err != nil {
+				return fmt.Errorf("resolve mapped domain %q: %w", mapped, err)
+			}
+			if mappedID == nil {
+				return fmt.Errorf("mapped domain %q missing during seed", mapped)
+			}
+			if *legacyID == *mappedID {
+				continue
+			}
+
+			for _, table := range []string{"memories"} {
+				if _, err := tx.Exec(
+					fmt.Sprintf("UPDATE %s SET domain_id = ? WHERE domain_id = ?", table),
+					*mappedID, *legacyID,
+				); err != nil {
+					return fmt.Errorf("reassign %s domain %q->%q: %w", table, legacy, mapped, err)
+				}
+			}
+
+			if _, err := tx.Exec(`DELETE FROM domains WHERE id = ?`, *legacyID); err != nil {
+				return fmt.Errorf("delete legacy domain %q: %w", legacy, err)
+			}
 		}
 	}
 
