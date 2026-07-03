@@ -134,6 +134,11 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	s.mux.HandleFunc("GET /api/projects/{id}/activity", s.protected(s.handleActivityList))
 	s.mux.HandleFunc("POST /api/projects/{id}/activity", s.protected(s.handleActivityCreate))
 
+	// Today
+	s.mux.HandleFunc("GET /api/today", s.protected(s.handleToday))
+	s.mux.HandleFunc("PUT /api/today/top3", s.protected(s.handleTop3Set))
+	s.mux.HandleFunc("GET /api/slipping", s.protected(s.handleSlipping))
+
 	// Facts
 	s.mux.HandleFunc("GET /api/facts", s.protected(s.handleFactsList))
 	s.mux.HandleFunc("POST /api/facts", s.protected(s.handleFactCreate))

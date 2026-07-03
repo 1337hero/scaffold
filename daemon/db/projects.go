@@ -541,26 +541,28 @@ func (db *DB) ListActivity(projectID string) ([]Activity, error) {
 // --- Slipping ---
 
 // ProjectsSlipping returns active projects with no activity in 7+ days,
-// excluding areas (checked by AreasSlipping).
-func (db *DB) ProjectsSlipping() ([]Project, error) {
-	return db.queryProjects(
-		`SELECT `+projectCols+` FROM projects
-		 WHERE status = 'active' AND type = 'project'
-		   AND (last_activity_at IS NULL OR julianday(?) - julianday(last_activity_at) >= 7)
-		 ORDER BY last_activity_at NULLS FIRST`,
-		today(),
-	)
+// excluding areas (checked by AreasSlipping). Optionally scoped to a surface.
+func (db *DB) ProjectsSlipping(surface *string) ([]Project, error) {
+	return db.querySlippingProjects("project", 7, surface)
 }
 
 // AreasSlipping returns active areas with no tasks touched in 14+ days.
-func (db *DB) AreasSlipping() ([]Project, error) {
-	return db.queryProjects(
-		`SELECT `+projectCols+` FROM projects
-		 WHERE status = 'active' AND type = 'area'
-		   AND (last_activity_at IS NULL OR julianday(?) - julianday(last_activity_at) >= 14)
-		 ORDER BY last_activity_at NULLS FIRST`,
-		today(),
-	)
+// Optionally scoped to a surface.
+func (db *DB) AreasSlipping(surface *string) ([]Project, error) {
+	return db.querySlippingProjects("area", 14, surface)
+}
+
+func (db *DB) querySlippingProjects(projType string, staleDays int, surface *string) ([]Project, error) {
+	q := `SELECT ` + projectCols + ` FROM projects
+		 WHERE status = 'active' AND type = ?
+		   AND (last_activity_at IS NULL OR julianday(?) - julianday(last_activity_at) >= ?)`
+	args := []any{projType, today(), staleDays}
+	if surface != nil {
+		q += ` AND surface = ?`
+		args = append(args, *surface)
+	}
+	q += ` ORDER BY last_activity_at NULLS FIRST, name`
+	return db.queryProjects(q, args...)
 }
 
 // ResetRetainerChecklists finds active retainer projects whose checklists haven't

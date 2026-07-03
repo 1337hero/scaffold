@@ -332,7 +332,7 @@ func TestPeopleSlipping(t *testing.T) {
 	// Never interacted: excluded (NULL last_interaction_at).
 	_ = db.InsertPerson(Person{ID: "never", Name: "New", Surface: "life"})
 
-	slipping, err := db.PeopleSlipping()
+	slipping, err := db.PeopleSlipping(nil)
 	if err != nil {
 		t.Fatalf("PeopleSlipping: %v", err)
 	}

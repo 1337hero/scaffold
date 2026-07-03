@@ -47,12 +47,13 @@ type Kid struct {
 
 // BirthdayHit is one upcoming birthday or anniversary, self or kid.
 type BirthdayHit struct {
-	PersonID  string `json:"person_id"`
-	Name      string `json:"name"` // person or kid name
-	Kind      string `json:"kind"` // self|kid|anniversary
-	Date      string `json:"date"` // the stored ISO date
-	DaysUntil int    `json:"days_until"`
-	Urgency   string `json:"urgency"` // today|soon|upcoming
+	PersonID     string `json:"person_id"`
+	Name         string `json:"name"` // person or kid name
+	Kind         string `json:"kind"` // self|kid|anniversary
+	Date         string `json:"date"` // the stored ISO date
+	DaysUntil    int    `json:"days_until"`
+	Urgency      string `json:"urgency"`                // today|soon|upcoming
+	Relationship string `json:"relationship,omitempty"` // the person's relationship to Mike
 }
 
 const dateLayout = "2006-01-02"
@@ -256,16 +257,20 @@ func (db *DB) queryPeople(query string, args ...any) ([]Person, error) {
 }
 
 // PeopleSlipping returns non-suppressed people whose last interaction is older
-// than their contact cadence (default 90 days when unset).
-func (db *DB) PeopleSlipping() ([]Person, error) {
-	return db.queryPeople(
-		`SELECT `+personCols+` FROM people
+// than their contact cadence (default 90 days when unset). Optionally scoped
+// to a surface.
+func (db *DB) PeopleSlipping(surface *string) ([]Person, error) {
+	q := `SELECT ` + personCols + ` FROM people
 		 WHERE suppressed_at IS NULL
 		   AND last_interaction_at IS NOT NULL
-		   AND julianday(?) - julianday(last_interaction_at) > COALESCE(contact_cadence_days, 90)
-		 ORDER BY last_interaction_at`,
-		today(),
-	)
+		   AND julianday(?) - julianday(last_interaction_at) > COALESCE(contact_cadence_days, 90)`
+	args := []any{today()}
+	if surface != nil {
+		q += ` AND surface = ?`
+		args = append(args, *surface)
+	}
+	q += ` ORDER BY last_interaction_at`
+	return db.queryPeople(q, args...)
 }
 
 // InsertInteraction logs a touchpoint and bumps the person's last_interaction_at
@@ -353,14 +358,14 @@ func (db *DB) queryInteractions(query string, args ...any) ([]Interaction, error
 // flattened out of the kids JSON via json_each.
 func (db *DB) UpcomingBirthdays(days int) ([]BirthdayHit, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, name, 'self' AS kind, birthday AS d FROM people
+		SELECT id, name, 'self' AS kind, birthday AS d, relationship FROM people
 		  WHERE suppressed_at IS NULL AND birthday IS NOT NULL
 		UNION ALL
-		SELECT id, name, 'anniversary' AS kind, anniversary AS d FROM people
+		SELECT id, name, 'anniversary' AS kind, anniversary AS d, relationship FROM people
 		  WHERE suppressed_at IS NULL AND anniversary IS NOT NULL
 		UNION ALL
 		SELECT p.id, json_extract(k.value, '$.name') AS name, 'kid' AS kind,
-		       json_extract(k.value, '$.birthday') AS d
+		       json_extract(k.value, '$.birthday') AS d, p.relationship
 		  FROM people p, json_each(p.kids) k
 		  WHERE p.suppressed_at IS NULL AND p.kids IS NOT NULL
 	`)
@@ -373,8 +378,8 @@ func (db *DB) UpcomingBirthdays(days int) ([]BirthdayHit, error) {
 	out := make([]BirthdayHit, 0)
 	for rows.Next() {
 		var hit BirthdayHit
-		var name, date sql.NullString
-		if err := rows.Scan(&hit.PersonID, &name, &hit.Kind, &date); err != nil {
+		var name, date, relationship sql.NullString
+		if err := rows.Scan(&hit.PersonID, &name, &hit.Kind, &date, &relationship); err != nil {
 			return nil, err
 		}
 		if !date.Valid {
@@ -386,6 +391,7 @@ func (db *DB) UpcomingBirthdays(days int) ([]BirthdayHit, error) {
 		}
 		hit.Name = name.String
 		hit.Date = date.String
+		hit.Relationship = relationship.String
 		hit.DaysUntil = daysUntil
 		hit.Urgency = urgency
 		out = append(out, hit)

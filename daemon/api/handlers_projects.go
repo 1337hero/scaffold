@@ -539,7 +539,7 @@ func (s *Server) handleActivityCreate(w http.ResponseWriter, r *http.Request) {
 // --- Slipping ---
 
 func (s *Server) handleProjectsSlipping(w http.ResponseWriter, r *http.Request) {
-	projects, err := s.db.ProjectsSlipping()
+	projects, err := s.db.ProjectsSlipping(surfaceParam(r))
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -548,7 +548,7 @@ func (s *Server) handleProjectsSlipping(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleAreasSlipping(w http.ResponseWriter, r *http.Request) {
-	areas, err := s.db.AreasSlipping()
+	areas, err := s.db.AreasSlipping(surfaceParam(r))
 	if err != nil {
 		writeInternalError(w, err)
 		return

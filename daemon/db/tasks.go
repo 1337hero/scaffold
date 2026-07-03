@@ -30,6 +30,13 @@ type Task struct {
 	CompletedAt  sql.NullString
 }
 
+// taskCols is the shared SELECT list for task queries (aliased t, joined d).
+const taskCols = `t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
+	t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
+	t.created_at, t.completed_at,
+	t.project_id, t.reminder_at, t.surface, t.top3_position,
+	d.name`
+
 func (db *DB) InsertTask(t Task) error {
 	if t.ID == "" {
 		t.ID = newID()
@@ -74,11 +81,7 @@ func (db *DB) InsertTask(t Task) error {
 
 func (db *DB) GetTask(id string) (*Task, error) {
 	row := db.conn.QueryRow(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
-		        t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
-		        t.created_at, t.completed_at,
-		        t.project_id, t.reminder_at, t.surface, t.top3_position,
-		        d.name
+		`SELECT `+taskCols+`
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.id = ?`, id,
 	)
@@ -175,11 +178,7 @@ func (db *DB) ListTasks(f TaskFilters) ([]Task, error) {
 	}
 
 	query := fmt.Sprintf(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
-		        t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
-		        t.created_at, t.completed_at,
-		        t.project_id, t.reminder_at, t.surface, t.top3_position,
-		        d.name
+		`SELECT `+taskCols+`
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE %s ORDER BY t.position ASC, t.due_date ASC`,
 		strings.Join(clauses, " AND "),
@@ -353,11 +352,7 @@ func (db *DB) SoftDeleteTask(id string) error {
 
 func (db *DB) TodaysTasks() ([]Task, error) {
 	return db.queryTasks(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
-		        t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
-		        t.created_at, t.completed_at,
-		        t.project_id, t.reminder_at, t.surface, t.top3_position,
-		        d.name
+		`SELECT `+taskCols+`
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.status = 'pending'
 		   AND (t.due_date <= ? OR (t.recurring IS NOT NULL AND t.due_date IS NULL) OR t.is_focus = 1)
@@ -396,11 +391,7 @@ func (db *DB) ClearFocus() error {
 
 func (db *DB) TasksByGoal(goalID string) ([]Task, error) {
 	return db.queryTasks(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring,
-		        t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus,
-		        t.created_at, t.completed_at,
-		        t.project_id, t.reminder_at, t.surface, t.top3_position,
-		        d.name
+		`SELECT `+taskCols+`
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.goal_id = ? ORDER BY t.position ASC`,
 		goalID,
