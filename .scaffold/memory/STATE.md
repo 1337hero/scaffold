@@ -6,18 +6,17 @@ _Last updated: 2026-07-03 by PRD 04 session_
 Scaffold — personal agent-driven LifeOS/executive-function system (Go daemon + SQLite brain + Signal agent + Preact web UI). v2 pivots it to a "notification surface with a brain": the agent is a witness, not an optimizer. Spec: `specs/v2-notification-surface.md`.
 
 ## Current focus
-PRD 04 complete — People CRM db layer + API routes on the feature branch, awaiting push/PR.
+PRD 04 complete — People CRM db layer + API routes. PR #44 open, awaiting review/merge.
 
 ## Next up
-1. Push `feature/prd-04-people-crm` + open PR (not yet pushed).
-2. PRD 05: Projects (db/projects.go — projects/milestones/checklists/activity CRUD + API).
-3. Re-auth Google Calendar: revoke Scaffold's access at myaccount.google.com/permissions (kills the archived v1 token's Gmail scope), then `cd daemon && ./bin/scaffold-daemon auth google` (fresh grant is calendar-only per config defaults)
+1. PRD 05: Projects (db/projects.go — projects/milestones/checklists/activity CRUD + API).
+2. Re-auth Google Calendar: revoke Scaffold's access at myaccount.google.com/permissions (kills the archived v1 token's Gmail scope), then `cd daemon && ./bin/scaffold-daemon auth google` (fresh grant is calendar-only per config defaults)
 
 ## In flight
-PRD 04 committed on `feature/prd-04-people-crm`, local only — needs `git push -u` + `gh pr create`.
+PRD 04 PR #44 open — https://github.com/1337hero/scaffold/pull/44.
 
 ## Current branch / PR
-Branch model: everything off `main` by PR. PRD 04 work is on `feature/prd-04-people-crm`. PR not yet opened.
+Branch model: everything off `main` by PR. PRD 04 on `feature/prd-04-people-crm`. PR #44 open: https://github.com/1337hero/scaffold/pull/44
 
 ## Last shipped
 PRD 04: People CRM — `db/people.go` (Person/Interaction/Kid/BirthdayHit; InsertPerson/GetPerson/ListPeople/UpdatePerson/SuppressPerson/InsertInteraction (tx)/ListInteractions/FollowUpsDue/PeopleSlipping/UpcomingBirthdays), pure `birthdayUrgency` calculator, `api/handlers_people.go` (8 routes), `people.suppressed_at` column added to schema_v2.go + v2PeopleColumns migration. 24 db tests (schema 14 unchanged + 10 new incl. DST + backdated regression).
