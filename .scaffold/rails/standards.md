@@ -54,5 +54,14 @@ still broken. Fix it once, where all callers route through.
 ## Stack notes
 > v2 refactor underway — specs/v2-notification-surface.md is the source of truth for architecture. Only the durable stack, commands, and footguns live here.
 
-Footguns
-Go nil slice marshals to JSON null — use make([]T, 0) for API slices; frontend guards with ?? [], never || []. Check: grep API response structs for var x []T.
+### Footguns
+- Go nil slice marshals to JSON `null` — use `make([]T, 0)` for API slices; frontend guards with
+  `?? []`, never `|| []`. **Check:** grep API response structs for `var x []T`.
+- Long-lived SSE endpoints must clear the write deadline via `http.NewResponseController`.
+  **Check:** (review of any new SSE handler).
+- All writes go through daemon packages (`db`, `brain`, `capture`, `cortex`) — no direct SQL from
+  API handlers. **Check:** grep `api/` for `db.Exec`/raw SQL.
+
+### Review checklists
+- Go diffs: `.scaffold/cookbook/go-review.md`
+- Preact/JSX diffs: `.scaffold/cookbook/react-review.md`
