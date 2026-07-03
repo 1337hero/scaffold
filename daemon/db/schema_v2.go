@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS projects (
     end_date        TEXT,                                -- null for areas
     description     TEXT,
     last_activity_at TEXT,
+    last_reset_at   TEXT,                                -- last retainer checklist reset date
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
@@ -142,4 +143,12 @@ var v2PeopleColumns = []struct {
 	name, def string
 }{
 	{"suppressed_at", "TEXT"},
+}
+
+// v2ProjectsColumns backfills the projects table for databases that were created
+// by PRD 05 before last_reset_at existed.
+var v2ProjectsColumns = []struct {
+	name, def string
+}{
+	{"last_reset_at", "TEXT"},
 }

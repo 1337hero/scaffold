@@ -452,7 +452,7 @@ func TestSchemaV2ProjectsTable(t *testing.T) {
 
 	for _, col := range []string{
 		"id", "name", "type", "surface", "domain_id", "status",
-		"start_date", "end_date", "description", "last_activity_at",
+		"start_date", "end_date", "description", "last_activity_at", "last_reset_at",
 		"created_at", "updated_at",
 	} {
 		ct, _, _, err := pragmaColumnInfo(db.conn, "projects", col)

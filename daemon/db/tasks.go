@@ -55,7 +55,15 @@ func (db *DB) InsertTask(t Task) error {
 		t.CreatedAt, t.CompletedAt,
 		t.ProjectID, t.ReminderAt, t.Surface, t.Top3Position,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Bump project activity when task is assigned to a project.
+	if t.ProjectID.Valid {
+		return bumpProjectActivity(db.conn, t.ProjectID.String)
+	}
+	return nil
 }
 
 func (db *DB) GetTask(id string) (*Task, error) {
@@ -136,7 +144,7 @@ var taskUpdateFields = map[string]bool{
 	"due_date": true, "recurring": true, "priority": true, "status": true,
 	"micro_steps": true, "notify": true, "position": true, "is_focus": true,
 	"completed_at": true,
-	"project_id": true, "reminder_at": true, "surface": true, "top3_position": true,
+	"project_id":   true, "reminder_at": true, "surface": true, "top3_position": true,
 }
 
 func (db *DB) UpdateTask(id string, updates map[string]any) error {
@@ -161,7 +169,19 @@ func (db *DB) UpdateTask(id string, updates map[string]any) error {
 	if err != nil {
 		return err
 	}
-	return requireRowsAffected(result)
+	if err := requireRowsAffected(result); err != nil {
+		return err
+	}
+
+	// Bump project activity if the task belongs to a project.
+	var projectID sql.NullString
+	if err := db.conn.QueryRow(`SELECT project_id FROM tasks WHERE id = ?`, id).Scan(&projectID); err != nil {
+		return fmt.Errorf("lookup task project_id: %w", err)
+	}
+	if projectID.Valid {
+		return bumpProjectActivity(db.conn, projectID.String)
+	}
+	return nil
 }
 
 func (db *DB) CompleteTask(id string) error {
@@ -174,7 +194,8 @@ func (db *DB) CompleteTask(id string) error {
 	var goalID sql.NullString
 	var recurring sql.NullString
 	var dueDate sql.NullString
-	err = tx.QueryRow(`SELECT goal_id, recurring, due_date FROM tasks WHERE id = ?`, id).Scan(&goalID, &recurring, &dueDate)
+	var projectID sql.NullString
+	err = tx.QueryRow(`SELECT goal_id, recurring, due_date, project_id FROM tasks WHERE id = ?`, id).Scan(&goalID, &recurring, &dueDate, &projectID)
 	if err != nil {
 		return fmt.Errorf("lookup task for complete: %w", err)
 	}
@@ -202,6 +223,13 @@ func (db *DB) CompleteTask(id string) error {
 			nextDue, id,
 		); err != nil {
 			return fmt.Errorf("reset recurring task: %w", err)
+		}
+	}
+
+	// Bump project activity when completing a project-assigned task.
+	if projectID.Valid {
+		if err := bumpProjectActivity(tx, projectID.String); err != nil {
+			return fmt.Errorf("bump project activity: %w", err)
 		}
 	}
 
@@ -241,7 +269,19 @@ func (db *DB) SoftDeleteTask(id string) error {
 	if err != nil {
 		return err
 	}
-	return requireRowsAffected(result)
+	if err := requireRowsAffected(result); err != nil {
+		return err
+	}
+
+	// Bump project activity when deleting a project-assigned task.
+	var projectID sql.NullString
+	if err := db.conn.QueryRow(`SELECT project_id FROM tasks WHERE id = ?`, id).Scan(&projectID); err != nil {
+		return fmt.Errorf("lookup task project_id: %w", err)
+	}
+	if projectID.Valid {
+		return bumpProjectActivity(db.conn, projectID.String)
+	}
+	return nil
 }
 
 func (db *DB) TodaysTasks() ([]Task, error) {
