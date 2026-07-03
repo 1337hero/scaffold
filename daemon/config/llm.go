@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	LLMRouteBrainRespond   = "brain.respond"
-	LLMRouteCortexBulletin = "cortex.bulletin"
+	LLMRouteBrainRespond    = "brain.respond"
+	LLMRouteCortexBulletin  = "cortex.bulletin"
+	LLMRouteCortexSemantic  = "cortex.semantic"
 )
 
 const (

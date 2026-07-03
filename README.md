@@ -39,7 +39,7 @@ Five surfaces share one SQLite brain:
 
 ## Stack
 
-Go daemon · SQLite · Preact + Tailwind frontend · Signal for messaging · Multi-provider LLM routing (Anthropic, OpenAI, Ollama) · Ollama embeddings · Google Calendar integration
+Go daemon · SQLite · Preact + Tailwind frontend · Signal for messaging · Multi-provider LLM routing (Anthropic, OpenAI, llama.cpp) · Google Calendar integration
 
 ## Life Domains
 
@@ -61,7 +61,7 @@ The desk is intentionally constrained to **3 items max**. Position 1 is THE ONE 
 - Go 1.25+
 - Bun (frontend)
 - signal-cli (Signal bridge)
-- Ollama (embeddings)
+- llama.cpp (llama-server — local LLM inference)
 
 ### Run
 
@@ -71,6 +71,9 @@ cd daemon
 cp .env.example .env  # fill in your keys
 go build -o bin/scaffold-daemon .
 ./bin/scaffold-daemon
+
+# Local LLM (required for cortex background tasks)
+llama-server --port 8080 --model /path/to/model.gguf
 
 # Frontend
 cd app

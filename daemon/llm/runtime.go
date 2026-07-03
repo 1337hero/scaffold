@@ -453,6 +453,8 @@ func requirementForRoute(routeName string) routeRequirement {
 		return routeRequirement{toolUse: true}
 	case appconfig.LLMRouteCortexBulletin:
 		return routeRequirement{completionText: true}
+	case appconfig.LLMRouteCortexSemantic:
+		return routeRequirement{completionText: true}
 	default:
 		return routeRequirement{}
 	}
