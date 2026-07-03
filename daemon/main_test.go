@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -110,12 +109,5 @@ func TestAnnotateUserMessageWithSignalMetadataNoSummary(t *testing.T) {
 	got := annotateUserMessageWithSignalMetadata("plain text", "")
 	if got != "plain text" {
 		t.Fatalf("expected unchanged text, got %q", got)
-	}
-}
-
-func TestDefaultIngestDirFromConfigDir(t *testing.T) {
-	got := defaultIngestDir(filepath.Join("..", "config"))
-	if !strings.HasSuffix(filepath.ToSlash(got), "/ingest") {
-		t.Fatalf("expected ingest dir suffix /ingest, got %q", got)
 	}
 }

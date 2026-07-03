@@ -2,35 +2,6 @@
 # These map to Go functions in brain/tools.go
 
 tools:
-  - name: save_to_inbox
-    description: |
-      Synthesize a capture from the conversation. Use when something worth
-      saving emerges — an idea, task, decision, or reference. Don't save
-      raw conversation text. Distill.
-    input_schema:
-      type: object
-      properties:
-        title:
-          type: string
-          description: Short title for the capture
-        content:
-          type: string
-          description: The synthesized content to save
-        type:
-          type: string
-          enum: [Todo, Goal, Decision, Idea, Fact, Preference, Event, Observation]
-        importance:
-          type: number
-          description: Importance score 0.0-1.0
-        tags:
-          type: array
-          items:
-            type: string
-        domain:
-          type: string
-          description: "Life domain this belongs to (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies). If unsure, choose the best-fit domain."
-      required: [title, content]
-
   - name: search_memories
     description: Search the knowledge graph for memories matching a query.
     input_schema:
@@ -43,12 +14,6 @@ tools:
           type: string
           description: Optional memory type filter (Todo, Goal, Decision, etc)
       required: [query]
-
-  - name: get_inbox
-    description: Read pending inbox items waiting for review.
-    input_schema:
-      type: object
-      properties: {}
 
   - name: get_calendar_events
     description: |
@@ -68,87 +33,9 @@ tools:
           maximum: 24
       required: [scope]
 
-  - name: list_sessions
-    description: |
-      List currently registered agent sessions on the global session bus.
-      Use this before cross-agent coordination when you do not know target ids.
-    input_schema:
-      type: object
-      properties: {}
-
-  - name: send_to_session
-    description: |
-      Send a message to another session via the global session bus.
-      Optionally wait for one reply message.
-    input_schema:
-      type: object
-      properties:
-        to_session_id:
-          type: string
-          description: Target session id from list_sessions
-        message:
-          type: string
-          description: Message payload to deliver
-        mode:
-          type: string
-          enum: [steer, follow_up]
-          description: Delivery intent label for the recipient
-        from_session_id:
-          type: string
-          description: Optional sender session id; defaults to scaffold-agent
-        from_provider:
-          type: string
-          description: Optional sender provider label
-        from_name:
-          type: string
-          description: Optional sender display name
-        wait_seconds:
-          type: integer
-          minimum: 0
-          maximum: 120
-          description: Optional long-poll timeout for one reply message
-      required: [to_session_id, message]
-
-  - name: create_goal
-    description: |
-      Create a new goal. Goals track outcomes the user wants to achieve.
-      Types: binary (done/not-done), measurable (has target_value), habit (recurring behavior).
-    input_schema:
-      type: object
-      properties:
-        title:
-          type: string
-          description: Goal title
-        domain:
-          type: string
-          description: "Life domain (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies)"
-        context:
-          type: string
-          description: Additional context or notes about the goal
-        due_date:
-          type: string
-          description: "Target date (YYYY-MM-DD)"
-        type:
-          type: string
-          enum: [binary, measurable, habit]
-          description: "Goal type. Default: binary"
-        target_value:
-          type: number
-          description: Target value for measurable goals
-        current_value:
-          type: number
-          description: Current progress value for measurable goals
-        habit_type:
-          type: string
-          description: "Habit frequency type (e.g. daily, weekly)"
-        schedule_days:
-          type: string
-          description: "Comma-separated days for habit goals (e.g. mon,wed,fri)"
-      required: [title]
-
   - name: create_task
     description: |
-      Create a new task. Tasks are concrete action items, optionally linked to a goal.
+      Create a new task. Tasks are concrete action items.
     input_schema:
       type: object
       properties:
@@ -157,10 +44,7 @@ tools:
           description: Task title
         domain:
           type: string
-          description: "Life domain (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies)"
-        goal_id:
-          type: string
-          description: Link task to a goal by ID
+          description: "Life domain"
         context:
           type: string
           description: Additional context or notes
@@ -175,12 +59,6 @@ tools:
           type: string
           enum: [high, normal, low]
           description: "Priority level. Default: normal"
-        source:
-          type: string
-          description: "Origin system (e.g. github, monday). Set for webhook-originated tasks."
-        source_ref:
-          type: string
-          description: "Unique reference URL from origin system. Used for dedup on repeated webhook deliveries."
       required: [title]
 
   - name: create_note
@@ -194,13 +72,7 @@ tools:
           description: Note title
         domain:
           type: string
-          description: "Life domain (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies)"
-        goal_id:
-          type: string
-          description: Link note to a goal by ID
-        task_id:
-          type: string
-          description: Link note to a task by ID
+          description: "Life domain"
         content:
           type: string
           description: Note body content
@@ -210,42 +82,6 @@ tools:
             type: string
           description: Tags for categorization
       required: [title]
-
-  - name: update_goal
-    description: |
-      Update an existing goal. Pass only the fields you want to change.
-      Set status to "done" to mark complete, "abandoned" to soft-delete.
-    input_schema:
-      type: object
-      properties:
-        id:
-          type: string
-          description: Goal ID
-        title:
-          type: string
-        domain:
-          type: string
-          description: "Life domain name to resolve"
-        context:
-          type: string
-        due_date:
-          type: string
-          description: "YYYY-MM-DD"
-        type:
-          type: string
-          enum: [binary, measurable, habit]
-        target_value:
-          type: number
-        current_value:
-          type: number
-        habit_type:
-          type: string
-        schedule_days:
-          type: string
-        status:
-          type: string
-          enum: [active, done, abandoned]
-      required: [id]
 
   - name: update_task
     description: |
@@ -261,9 +97,7 @@ tools:
           type: string
         domain:
           type: string
-          description: "Life domain name to resolve"
-        goal_id:
-          type: string
+          description: "Life domain name"
         context:
           type: string
         due_date:
@@ -280,19 +114,6 @@ tools:
           enum: [pending, in_progress, done, deleted]
       required: [id]
 
-  - name: list_goals
-    description: |
-      List active goals with task progress. Optionally filter by domain.
-    input_schema:
-      type: object
-      properties:
-        domain:
-          type: string
-          description: "Filter by life domain name"
-        status:
-          type: string
-          description: "Filter by status (default: active)"
-
   - name: list_tasks
     description: |
       List tasks with optional filters. Use due filter to scope by time.
@@ -302,9 +123,6 @@ tools:
         domain:
           type: string
           description: "Filter by life domain name"
-        goal_id:
-          type: string
-          description: "Filter tasks linked to a specific goal"
         status:
           type: string
           description: "Filter by status (default: pending)"
@@ -360,57 +178,3 @@ tools:
         description:
           type: string
       required: [event_id]
-
-  - name: search_email
-    description: |
-      Search Mike's Gmail inbox using a query string.
-      Use Gmail search syntax: from:, subject:, label:, after:, etc.
-    input_schema:
-      type: object
-      properties:
-        query:
-          type: string
-          description: "Gmail search query (e.g. 'from:bob@example.com subject:invoice')"
-        max_results:
-          type: integer
-          description: "Max results to return. Default: 5"
-          minimum: 1
-          maximum: 20
-      required: [query]
-
-  - name: get_email
-    description: |
-      Get a specific email by ID, or get recent emails from a Gmail label.
-      Use message_id for a specific email, or label for recent labeled emails.
-    input_schema:
-      type: object
-      properties:
-        message_id:
-          type: string
-          description: Gmail message ID (from search_email results)
-        label:
-          type: string
-          description: "Gmail label name to list recent emails from (e.g. 'FOLLOW UP', 'INBOX')"
-        max_results:
-          type: integer
-          description: "Max results when using label. Default: 5"
-
-  - name: dispatch_code_task
-    description: |
-      Dispatch a coding task to scaffold-worker. Runs a chain of specialized agents
-      asynchronously — scout, plan, implement, review. Results delivered to your
-      session on completion. Use chain="spec" to plan only, "fix" for small changes,
-      "single" for a raw one-shot agent.
-    input_schema:
-      type: object
-      properties:
-        task:
-          type: string
-          description: Full description of what to build or fix
-        chain:
-          type: string
-          description: "Chain name to run (see config/coder.yaml). Default: implement"
-        cwd:
-          type: string
-          description: "Repo path to work in (must be an allowed path). Default: /home/mikekey/Builds/scaffold"
-      required: [task]

@@ -22,8 +22,6 @@ type Task struct {
 	Notify      int
 	Position    int
 	IsFocus     int
-	Source      sql.NullString
-	SourceRef   sql.NullString
 	CreatedAt   string
 	CompletedAt sql.NullString
 }
@@ -43,10 +41,10 @@ func (db *DB) InsertTask(t Task) error {
 	}
 
 	_, err := db.conn.Exec(
-		`INSERT INTO tasks (id, title, domain_id, goal_id, context, due_date, recurring, priority, status, micro_steps, notify, position, source, source_ref, created_at, completed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO tasks (id, title, domain_id, goal_id, context, due_date, recurring, priority, status, micro_steps, notify, position, created_at, completed_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Title, t.DomainID, t.GoalID, t.Context, t.DueDate, t.Recurring,
-		t.Priority, t.Status, t.MicroSteps, t.Notify, t.Position, t.Source, t.SourceRef,
+		t.Priority, t.Status, t.MicroSteps, t.Notify, t.Position,
 		t.CreatedAt, t.CompletedAt,
 	)
 	return err
@@ -54,7 +52,7 @@ func (db *DB) InsertTask(t Task) error {
 
 func (db *DB) GetTask(id string) (*Task, error) {
 	row := db.conn.QueryRow(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.source, t.source_ref, t.created_at, t.completed_at, d.name
+		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.created_at, t.completed_at, d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.id = ?`, id,
 	)
@@ -63,7 +61,7 @@ func (db *DB) GetTask(id string) (*Task, error) {
 	var domainName sql.NullString
 	err := row.Scan(&t.ID, &t.Title, &t.DomainID, &t.GoalID, &t.Context, &t.DueDate,
 		&t.Recurring, &t.Priority, &t.Status, &t.MicroSteps, &t.Notify, &t.Position, &t.IsFocus,
-		&t.Source, &t.SourceRef, &t.CreatedAt, &t.CompletedAt, &domainName)
+		&t.CreatedAt, &t.CompletedAt, &domainName)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -106,7 +104,7 @@ func (db *DB) ListTasks(domainID *int, goalID *string, status string, due string
 	}
 
 	query := fmt.Sprintf(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.source, t.source_ref, t.created_at, t.completed_at, d.name
+		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.created_at, t.completed_at, d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE %s ORDER BY t.position ASC, t.due_date ASC`,
 		strings.Join(clauses, " AND "),
@@ -119,7 +117,7 @@ var taskUpdateFields = map[string]bool{
 	"title": true, "domain_id": true, "goal_id": true, "context": true,
 	"due_date": true, "recurring": true, "priority": true, "status": true,
 	"micro_steps": true, "notify": true, "position": true, "is_focus": true,
-	"source": true, "source_ref": true, "completed_at": true,
+	"completed_at": true,
 }
 
 func (db *DB) UpdateTask(id string, updates map[string]any) error {
@@ -229,7 +227,7 @@ func (db *DB) SoftDeleteTask(id string) error {
 
 func (db *DB) TodaysTasks() ([]Task, error) {
 	return db.queryTasks(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.source, t.source_ref, t.created_at, t.completed_at, d.name
+		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.created_at, t.completed_at, d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.status = 'pending'
 		   AND (t.due_date <= ? OR (t.recurring IS NOT NULL AND t.due_date IS NULL) OR t.is_focus = 1)
@@ -268,7 +266,7 @@ func (db *DB) ClearFocus() error {
 
 func (db *DB) TasksByGoal(goalID string) ([]Task, error) {
 	return db.queryTasks(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.source, t.source_ref, t.created_at, t.completed_at, d.name
+		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.created_at, t.completed_at, d.name
 		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
 		 WHERE t.goal_id = ? ORDER BY t.position ASC`,
 		goalID,
@@ -288,7 +286,7 @@ func (db *DB) queryTasks(query string, args ...any) ([]Task, error) {
 		var domainName sql.NullString
 		if err := rows.Scan(&t.ID, &t.Title, &t.DomainID, &t.GoalID, &t.Context, &t.DueDate,
 			&t.Recurring, &t.Priority, &t.Status, &t.MicroSteps, &t.Notify, &t.Position, &t.IsFocus,
-			&t.Source, &t.SourceRef, &t.CreatedAt, &t.CompletedAt, &domainName); err != nil {
+			&t.CreatedAt, &t.CompletedAt, &domainName); err != nil {
 			return nil, err
 		}
 		if domainName.Valid {
@@ -297,28 +295,4 @@ func (db *DB) queryTasks(query string, args ...any) ([]Task, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
-}
-
-func (db *DB) TaskBySourceRef(ref string) (*Task, error) {
-	row := db.conn.QueryRow(
-		`SELECT t.id, t.title, t.domain_id, t.goal_id, t.context, t.due_date, t.recurring, t.priority, t.status, t.micro_steps, t.notify, t.position, t.is_focus, t.source, t.source_ref, t.created_at, t.completed_at, d.name
-		 FROM tasks t LEFT JOIN domains d ON t.domain_id = d.id
-		 WHERE t.source_ref = ?`, ref,
-	)
-
-	var t Task
-	var domainName sql.NullString
-	err := row.Scan(&t.ID, &t.Title, &t.DomainID, &t.GoalID, &t.Context, &t.DueDate,
-		&t.Recurring, &t.Priority, &t.Status, &t.MicroSteps, &t.Notify, &t.Position, &t.IsFocus,
-		&t.Source, &t.SourceRef, &t.CreatedAt, &t.CompletedAt, &domainName)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if domainName.Valid {
-		t.DomainName = domainName.String
-	}
-	return &t, nil
 }

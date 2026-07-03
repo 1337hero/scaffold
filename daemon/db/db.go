@@ -81,9 +81,6 @@ func (db *DB) migrate() error {
 	if err := db.migrateAddColumn("memories", "suppressed_at", "TEXT"); err != nil {
 		return err
 	}
-	if err := db.migrateAddColumn("captures", "confirmed", "INTEGER DEFAULT 0"); err != nil {
-		return err
-	}
 
 	_, err = db.conn.Exec(`
 		CREATE TABLE IF NOT EXISTS domains (
@@ -103,12 +100,6 @@ func (db *DB) migrate() error {
 	if err := db.migrateAddColumn("memories", "domain_id", "INTEGER REFERENCES domains(id)"); err != nil {
 		return err
 	}
-	if err := db.migrateAddColumn("captures", "domain_id", "INTEGER REFERENCES domains(id)"); err != nil {
-		return err
-	}
-	if err := db.migrateAddColumn("desk", "domain_id", "INTEGER REFERENCES domains(id)"); err != nil {
-		return err
-	}
 
 	if err := db.SeedDefaultDomains(); err != nil {
 		return fmt.Errorf("seed default domains: %w", err)
@@ -122,15 +113,9 @@ func (db *DB) migrate() error {
 		  content    TEXT NOT NULL,
 		  created_at TEXT NOT NULL
 		);
-		CREATE TABLE IF NOT EXISTS memory_centrality (
-		  memory_id  TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
-		  score      REAL NOT NULL DEFAULT 0,
-		  updated_at TEXT NOT NULL
-		);
 		CREATE INDEX IF NOT EXISTS idx_memories_suppressed ON memories(suppressed_at);
 		CREATE INDEX IF NOT EXISTS idx_conversation_log_created ON conversation_log(created_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_conversation_log_sender ON conversation_log(sender);
-		CREATE INDEX IF NOT EXISTS idx_memory_centrality_score ON memory_centrality(score DESC);
 	`)
 	if err != nil {
 		return fmt.Errorf("apply extended schema: %w", err)
@@ -144,21 +129,7 @@ func (db *DB) migrate() error {
 		  tags
 		);
 
-		CREATE TABLE IF NOT EXISTS memory_embeddings (
-		  memory_id  TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
-		  embedding  BLOB NOT NULL,
-		  model      TEXT NOT NULL,
-		  updated_at TEXT NOT NULL
-		);
-
-		CREATE TABLE IF NOT EXISTS embedding_jobs (
-		  memory_id   TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
-		  reason      TEXT NOT NULL,
-		  enqueued_at TEXT NOT NULL,
-		  attempts    INTEGER NOT NULL DEFAULT 0
-		);
-
-		CREATE TRIGGER IF NOT EXISTS memories_fts_insert
+CREATE TRIGGER IF NOT EXISTS memories_fts_insert
 		AFTER INSERT ON memories BEGIN
 		  INSERT INTO memories_fts(memory_id, title, content, tags)
 		  VALUES (new.id, COALESCE(new.title,''), new.content, COALESCE(new.tags,''));
@@ -196,61 +167,11 @@ func (db *DB) migrate() error {
 	}
 
 	_, err = db.conn.Exec(`
-		CREATE TABLE IF NOT EXISTS ingestion_files (
-		  path             TEXT PRIMARY KEY,
-		  file_hash        TEXT NOT NULL,
-		  status           TEXT NOT NULL,
-		  total_chunks     INTEGER NOT NULL DEFAULT 0,
-		  processed_chunks INTEGER NOT NULL DEFAULT 0,
-		  last_error       TEXT,
-		  updated_at       TEXT NOT NULL,
-		  completed_at     TEXT
-		);
-
-		CREATE TABLE IF NOT EXISTS ingestion_progress (
-		  chunk_hash TEXT PRIMARY KEY,
-		  file_path  TEXT NOT NULL,
-		  file_hash  TEXT NOT NULL,
-		  chunk_index INTEGER NOT NULL,
-		  status     TEXT NOT NULL,
-		  memory_id  TEXT REFERENCES memories(id),
-		  error      TEXT,
-		  created_at TEXT NOT NULL,
-		  updated_at TEXT NOT NULL
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_ingestion_files_status ON ingestion_files(status, updated_at DESC);
-		CREATE INDEX IF NOT EXISTS idx_ingestion_progress_file ON ingestion_progress(file_path, chunk_index);
-	`)
-	if err != nil {
-		return fmt.Errorf("apply ingestion schema: %w", err)
-	}
-
-	_, err = db.conn.Exec(`
-		CREATE TABLE IF NOT EXISTS goals (
-		  id            TEXT PRIMARY KEY,
-		  title         TEXT NOT NULL,
-		  domain_id     INTEGER REFERENCES domains(id),
-		  context       TEXT,
-		  due_date      TEXT,
-		  type          TEXT DEFAULT 'binary',
-		  target_value  REAL,
-		  current_value REAL,
-		  habit_type    TEXT,
-		  schedule_days TEXT,
-		  notify        INTEGER DEFAULT 0,
-		  status        TEXT DEFAULT 'active',
-		  created_at    TEXT NOT NULL,
-		  completed_at  TEXT
-		);
-		CREATE INDEX IF NOT EXISTS idx_goals_domain ON goals(domain_id);
-		CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status);
-
-		CREATE TABLE IF NOT EXISTS tasks (
+CREATE TABLE IF NOT EXISTS tasks (
 		  id          TEXT PRIMARY KEY,
 		  title       TEXT NOT NULL,
 		  domain_id   INTEGER REFERENCES domains(id),
-		  goal_id     TEXT REFERENCES goals(id),
+		  goal_id     TEXT,
 		  context     TEXT,
 		  due_date    TEXT,
 		  recurring   TEXT,
@@ -270,16 +191,16 @@ func (db *DB) migrate() error {
 		CREATE TABLE IF NOT EXISTS task_completions (
 		  id           TEXT PRIMARY KEY,
 		  task_id      TEXT NOT NULL REFERENCES tasks(id),
-		  goal_id      TEXT REFERENCES goals(id),
+		  goal_id      TEXT,
 		  completed_at TEXT NOT NULL
 		);
-		CREATE INDEX IF NOT EXISTS idx_task_completions_goal ON task_completions(goal_id, completed_at);
 
 		CREATE TABLE IF NOT EXISTS notes (
 		  id         TEXT PRIMARY KEY,
 		  title      TEXT NOT NULL,
 		  domain_id  INTEGER REFERENCES domains(id),
-		  goal_id    TEXT REFERENCES goals(id),
+		  goal_id    TEXT,
+		  task_id    TEXT REFERENCES tasks(id),
 		  content    TEXT,
 		  tags       TEXT,
 		  created_at TEXT NOT NULL,
@@ -287,6 +208,7 @@ func (db *DB) migrate() error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_notes_domain ON notes(domain_id);
 		CREATE INDEX IF NOT EXISTS idx_notes_goal ON notes(goal_id);
+		CREATE INDEX IF NOT EXISTS idx_notes_task_id ON notes(task_id);
 	`)
 	if err != nil {
 		return fmt.Errorf("apply lifeos schema: %w", err)
@@ -307,41 +229,6 @@ func (db *DB) migrate() error {
 	if err := db.migrateAddColumn("tasks", "is_focus", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
-	if err := db.migrateAddColumn("tasks", "source", "TEXT"); err != nil {
-		return err
-	}
-	if err := db.migrateAddColumn("tasks", "source_ref", "TEXT"); err != nil {
-		return err
-	}
-	if err := db.migrateAddColumn("notes", "task_id", "TEXT REFERENCES tasks(id)"); err != nil {
-		return err
-	}
-
-	_, err = db.conn.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_tasks_source_ref ON tasks(source_ref);
-		CREATE INDEX IF NOT EXISTS idx_notes_task_id ON notes(task_id);
-	`)
-	if err != nil {
-		return fmt.Errorf("apply webhook indexes: %w", err)
-	}
-
-	_, err = db.conn.Exec(`
-		CREATE TABLE IF NOT EXISTS gmail_waiting_threads (
-		  thread_id       TEXT PRIMARY KEY,
-		  subject         TEXT NOT NULL,
-		  task_id         TEXT REFERENCES tasks(id) ON DELETE SET NULL,
-		  context         TEXT,
-		  msg_count       INTEGER NOT NULL DEFAULT 0,
-		  last_message_id TEXT NOT NULL DEFAULT '',
-		  created_at      INTEGER NOT NULL
-		);
-		CREATE INDEX IF NOT EXISTS idx_gmail_waiting_created ON gmail_waiting_threads(created_at);
-	`)
-	if err != nil {
-		return fmt.Errorf("apply gmail schema: %w", err)
-	}
-
-	_, _ = db.conn.Exec(`ALTER TABLE gmail_waiting_threads ADD COLUMN last_message_id TEXT NOT NULL DEFAULT ''`)
 
 	_, err = db.conn.Exec(`
 		CREATE TABLE IF NOT EXISTS notification_log (
@@ -428,37 +315,12 @@ CREATE TABLE IF NOT EXISTS edges (
   created_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS captures (
-  id            TEXT PRIMARY KEY,
-  raw           TEXT NOT NULL,
-  source        TEXT NOT NULL,
-  processed     INTEGER DEFAULT 0,
-  triage_action TEXT,
-  memory_id     TEXT REFERENCES memories(id),
-  created_at    TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS desk (
-  id           TEXT PRIMARY KEY,
-  memory_id    TEXT REFERENCES memories(id),
-  title        TEXT NOT NULL,
-  position     INTEGER NOT NULL,
-  status       TEXT DEFAULT 'active',
-  micro_steps  TEXT,
-  date         TEXT NOT NULL,
-  created_at   TEXT NOT NULL,
-  completed_at TEXT
-);
-
 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
 CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_archived ON memories(archived);
 CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_id);
 CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);
-CREATE INDEX IF NOT EXISTS idx_captures_processed ON captures(processed);
-CREATE INDEX IF NOT EXISTS idx_desk_date ON desk(date);
-CREATE INDEX IF NOT EXISTS idx_desk_status ON desk(status);
 
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash   TEXT PRIMARY KEY,
