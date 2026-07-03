@@ -26,6 +26,7 @@ type Domain struct {
 	Color         sql.NullString
 	Position      int
 	Status        string
+	Surface       string // life|business
 }
 
 type DomainUpdateOpts struct {
@@ -37,6 +38,7 @@ type DomainUpdateOpts struct {
 	Color      *string
 	Position   *int
 	Status     *string
+	Surface    *string
 }
 
 type DomainHealthData struct {
@@ -204,11 +206,17 @@ func resolveDomainIDTx(tx *sql.Tx, name string) (*int, error) {
 	return &id, nil
 }
 
-func (db *DB) ListDomains() ([]Domain, error) {
-	rows, err := db.conn.Query(
-		`SELECT id, name, importance, last_touched_at, status_line, briefing, created_at, icon, color, position, status
-		 FROM domains WHERE status != 'archived' ORDER BY position ASC, importance DESC, name ASC`,
-	)
+// ListDomains returns non-archived domains, optionally filtered by surface.
+func (db *DB) ListDomains(surface *string) ([]Domain, error) {
+	q := `SELECT id, name, importance, last_touched_at, status_line, briefing, created_at, icon, color, position, status, surface
+		 FROM domains WHERE status != 'archived'`
+	var args []any
+	if surface != nil {
+		q += ` AND surface = ?`
+		args = append(args, *surface)
+	}
+	q += ` ORDER BY position ASC, importance DESC, name ASC`
+	rows, err := db.conn.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +225,7 @@ func (db *DB) ListDomains() ([]Domain, error) {
 	out := make([]Domain, 0)
 	for rows.Next() {
 		var d Domain
-		if err := rows.Scan(&d.ID, &d.Name, &d.Importance, &d.LastTouchedAt, &d.StatusLine, &d.Briefing, &d.CreatedAt, &d.Icon, &d.Color, &d.Position, &d.Status); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Importance, &d.LastTouchedAt, &d.StatusLine, &d.Briefing, &d.CreatedAt, &d.Icon, &d.Color, &d.Position, &d.Status, &d.Surface); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -227,11 +235,11 @@ func (db *DB) ListDomains() ([]Domain, error) {
 
 func (db *DB) GetDomain(id int) (*Domain, error) {
 	row := db.conn.QueryRow(
-		`SELECT id, name, importance, last_touched_at, status_line, briefing, created_at, icon, color, position, status
+		`SELECT id, name, importance, last_touched_at, status_line, briefing, created_at, icon, color, position, status, surface
 		 FROM domains WHERE id = ?`, id,
 	)
 	var d Domain
-	err := row.Scan(&d.ID, &d.Name, &d.Importance, &d.LastTouchedAt, &d.StatusLine, &d.Briefing, &d.CreatedAt, &d.Icon, &d.Color, &d.Position, &d.Status)
+	err := row.Scan(&d.ID, &d.Name, &d.Importance, &d.LastTouchedAt, &d.StatusLine, &d.Briefing, &d.CreatedAt, &d.Icon, &d.Color, &d.Position, &d.Status, &d.Surface)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -241,16 +249,22 @@ func (db *DB) GetDomain(id int) (*Domain, error) {
 	return &d, nil
 }
 
-func (db *DB) CreateDomain(name string, importance int, icon, color string) (*Domain, error) {
+func (db *DB) CreateDomain(name string, importance int, icon, color, surface string) (*Domain, error) {
+	if surface == "" {
+		surface = "life"
+	}
+	if err := validateSurface(surface); err != nil {
+		return nil, err
+	}
 	ts := now()
 
 	var maxPos int
 	_ = db.conn.QueryRow(`SELECT COALESCE(MAX(position), 0) FROM domains`).Scan(&maxPos)
 
 	result, err := db.conn.Exec(
-		`INSERT INTO domains (name, importance, icon, color, position, status, last_touched_at, created_at)
-		 VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
-		name, importance, nullIfEmpty(icon), nullIfEmpty(color), maxPos+1, ts, ts,
+		`INSERT INTO domains (name, importance, icon, color, position, status, surface, last_touched_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+		name, importance, nullIfEmpty(icon), nullIfEmpty(color), maxPos+1, surface, ts, ts,
 	)
 	if err != nil {
 		return nil, err
@@ -267,6 +281,7 @@ func (db *DB) CreateDomain(name string, importance int, icon, color string) (*Do
 		Color:         toNullString(color),
 		Position:      maxPos + 1,
 		Status:        "active",
+		Surface:       surface,
 		LastTouchedAt: ts,
 		CreatedAt:     ts,
 	}, nil
@@ -322,6 +337,13 @@ func (db *DB) UpdateDomain(id int, opts DomainUpdateOpts) error {
 		sets = append(sets, "status = ?")
 		args = append(args, *opts.Status)
 	}
+	if opts.Surface != nil {
+		if err := validateSurface(*opts.Surface); err != nil {
+			return err
+		}
+		sets = append(sets, "surface = ?")
+		args = append(args, *opts.Surface)
+	}
 
 	if len(sets) == 0 {
 		return nil
@@ -350,7 +372,7 @@ func (db *DB) ArchiveDomain(id int) error {
 }
 
 func (db *DB) DomainHealthAll() ([]DomainHealthData, error) {
-	domains, err := db.ListDomains()
+	domains, err := db.ListDomains(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -531,8 +553,9 @@ func canonicalDomainName(name string) string {
 	return trimmed
 }
 
-func (db *DB) ComputeDriftStates() ([]DomainDrift, error) {
-	domains, err := db.ListDomains()
+// ComputeDriftStates classifies non-archived domains, optionally filtered by surface.
+func (db *DB) ComputeDriftStates(surface *string) ([]DomainDrift, error) {
+	domains, err := db.ListDomains(surface)
 	if err != nil {
 		return nil, err
 	}

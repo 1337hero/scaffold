@@ -40,6 +40,17 @@ func newID() string {
 	return uuid.New().String()
 }
 
+// validateSurface checks the shared life|business enum used by tasks, notes,
+// domains, people, and projects.
+func validateSurface(surface string) error {
+	switch surface {
+	case "life", "business":
+		return nil
+	default:
+		return fmt.Errorf("%w: surface %q (must be life|business)", ErrInvalidEnum, surface)
+	}
+}
+
 var localLocation *time.Location
 
 func init() {
@@ -98,6 +109,12 @@ func (db *DB) migrate() error {
 	}
 
 	if err := db.migrateAddColumn("memories", "domain_id", "INTEGER REFERENCES domains(id)"); err != nil {
+		return err
+	}
+
+	// The surface column must exist before seeding — SeedDefaultDomains
+	// branches on it to pick the v2 domain set.
+	if err := db.migrateAddColumn("domains", "surface", "TEXT NOT NULL DEFAULT 'life'"); err != nil {
 		return err
 	}
 
@@ -270,10 +287,6 @@ CREATE TABLE IF NOT EXISTS tasks (
 			return err
 		}
 	}
-	if err := db.migrateAddColumn("domains", "surface", "TEXT NOT NULL DEFAULT 'life'"); err != nil {
-		return err
-	}
-
 	return nil
 }
 

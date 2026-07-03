@@ -7,15 +7,32 @@ import (
 )
 
 type Note struct {
-	ID        string
-	Title     string
-	DomainID  sql.NullInt64
-	GoalID    sql.NullString
-	TaskID    sql.NullString
-	Content   sql.NullString
-	Tags      sql.NullString
-	CreatedAt string
-	UpdatedAt sql.NullString
+	ID            string
+	Title         string
+	DomainID      sql.NullInt64
+	GoalID        sql.NullString
+	TaskID        sql.NullString
+	Content       sql.NullString
+	Tags          sql.NullString
+	Kind          string // note|journal|quote
+	Source        sql.NullString
+	FlagForReview int // 0|1
+	ReviewAt      sql.NullString
+	PersonID      sql.NullString
+	CreatedAt     string
+	UpdatedAt     sql.NullString
+}
+
+const noteCols = `id, title, domain_id, goal_id, task_id, content, tags,
+	kind, source, flag_for_review, review_at, person_id, created_at, updated_at`
+
+func validateNoteKind(kind string) error {
+	switch kind {
+	case "note", "journal", "quote":
+		return nil
+	default:
+		return fmt.Errorf("%w: note kind %q (must be note|journal|quote)", ErrInvalidEnum, kind)
+	}
 }
 
 func (db *DB) InsertNote(n Note) error {
@@ -28,23 +45,35 @@ func (db *DB) InsertNote(n Note) error {
 	if !n.UpdatedAt.Valid {
 		n.UpdatedAt = sql.NullString{String: now(), Valid: true}
 	}
+	if n.Kind == "" {
+		n.Kind = "note"
+	}
+	if err := validateNoteKind(n.Kind); err != nil {
+		return err
+	}
 
 	_, err := db.conn.Exec(
-		`INSERT INTO notes (id, title, domain_id, goal_id, task_id, content, tags, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		n.ID, n.Title, n.DomainID, n.GoalID, n.TaskID, n.Content, n.Tags, n.CreatedAt, n.UpdatedAt,
+		`INSERT INTO notes (id, title, domain_id, goal_id, task_id, content, tags,
+		    kind, source, flag_for_review, review_at, person_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.ID, n.Title, n.DomainID, n.GoalID, n.TaskID, n.Content, n.Tags,
+		n.Kind, n.Source, n.FlagForReview, n.ReviewAt, n.PersonID, n.CreatedAt, n.UpdatedAt,
 	)
 	return err
 }
 
-func (db *DB) GetNote(id string) (*Note, error) {
-	row := db.conn.QueryRow(
-		`SELECT id, title, domain_id, goal_id, task_id, content, tags, created_at, updated_at
-		 FROM notes WHERE id = ?`, id,
-	)
-
+func scanNote(s interface {
+	Scan(...any) error
+}) (Note, error) {
 	var n Note
-	err := row.Scan(&n.ID, &n.Title, &n.DomainID, &n.GoalID, &n.TaskID, &n.Content, &n.Tags, &n.CreatedAt, &n.UpdatedAt)
+	err := s.Scan(&n.ID, &n.Title, &n.DomainID, &n.GoalID, &n.TaskID, &n.Content, &n.Tags,
+		&n.Kind, &n.Source, &n.FlagForReview, &n.ReviewAt, &n.PersonID, &n.CreatedAt, &n.UpdatedAt)
+	return n, err
+}
+
+func (db *DB) GetNote(id string) (*Note, error) {
+	row := db.conn.QueryRow(`SELECT `+noteCols+` FROM notes WHERE id = ?`, id)
+	n, err := scanNote(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -54,21 +83,52 @@ func (db *DB) GetNote(id string) (*Note, error) {
 	return &n, nil
 }
 
-func (db *DB) ListNotes(domainID *int, goalID *string, tags string) ([]Note, error) {
-	q := `SELECT id, title, domain_id, goal_id, task_id, content, tags, created_at, updated_at FROM notes WHERE 1=1`
+// NoteFilters are the optional AND'd filters for ListNotes; nil skips a filter.
+type NoteFilters struct {
+	DomainID      *int
+	GoalID        *string
+	Tags          string // substring match
+	Kind          *string
+	PersonID      *string
+	Source        *string
+	FlagForReview *bool
+}
+
+func (db *DB) ListNotes(f NoteFilters) ([]Note, error) {
+	q := `SELECT ` + noteCols + ` FROM notes WHERE 1=1`
 	var args []any
 
-	if domainID != nil {
+	if f.DomainID != nil {
 		q += ` AND domain_id = ?`
-		args = append(args, *domainID)
+		args = append(args, *f.DomainID)
 	}
-	if goalID != nil {
+	if f.GoalID != nil {
 		q += ` AND goal_id = ?`
-		args = append(args, *goalID)
+		args = append(args, *f.GoalID)
 	}
-	if tags != "" {
+	if f.Tags != "" {
 		q += ` AND tags LIKE ?`
-		args = append(args, "%"+tags+"%")
+		args = append(args, "%"+f.Tags+"%")
+	}
+	if f.Kind != nil {
+		q += ` AND kind = ?`
+		args = append(args, *f.Kind)
+	}
+	if f.PersonID != nil {
+		q += ` AND person_id = ?`
+		args = append(args, *f.PersonID)
+	}
+	if f.Source != nil {
+		q += ` AND source = ?`
+		args = append(args, *f.Source)
+	}
+	if f.FlagForReview != nil {
+		q += ` AND flag_for_review = ?`
+		if *f.FlagForReview {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
 	}
 
 	q += ` ORDER BY COALESCE(updated_at, created_at) DESC`
@@ -76,12 +136,17 @@ func (db *DB) ListNotes(domainID *int, goalID *string, tags string) ([]Note, err
 }
 
 var noteUpdateCols = map[string]bool{
-	"title":     true,
-	"domain_id": true,
-	"goal_id":   true,
-	"task_id":   true,
-	"content":   true,
-	"tags":      true,
+	"title":           true,
+	"domain_id":       true,
+	"goal_id":         true,
+	"task_id":         true,
+	"content":         true,
+	"tags":            true,
+	"kind":            true,
+	"source":          true,
+	"flag_for_review": true,
+	"review_at":       true,
+	"person_id":       true,
 }
 
 func (db *DB) UpdateNote(id string, updates map[string]any) error {
@@ -94,6 +159,25 @@ func (db *DB) UpdateNote(id string, updates map[string]any) error {
 	for col, val := range updates {
 		if !noteUpdateCols[col] {
 			return fmt.Errorf("unsupported update column: %s", col)
+		}
+		switch col {
+		case "kind":
+			s, ok := val.(string)
+			if !ok {
+				return fmt.Errorf("%w: note kind must be a string", ErrInvalidEnum)
+			}
+			if err := validateNoteKind(s); err != nil {
+				return err
+			}
+		case "flag_for_review":
+			// Accept JSON booleans; the column is INTEGER 0|1.
+			if b, ok := val.(bool); ok {
+				if b {
+					val = 1
+				} else {
+					val = 0
+				}
+			}
 		}
 		setClauses = append(setClauses, col+" = ?")
 		args = append(args, val)
@@ -121,8 +205,7 @@ func (db *DB) DeleteNote(id string) error {
 
 func (db *DB) NotesByDomain(domainID int) ([]Note, error) {
 	return db.queryNotes(
-		`SELECT id, title, domain_id, goal_id, task_id, content, tags, created_at, updated_at
-		 FROM notes WHERE domain_id = ? ORDER BY COALESCE(updated_at, created_at) DESC`,
+		`SELECT `+noteCols+` FROM notes WHERE domain_id = ? ORDER BY COALESCE(updated_at, created_at) DESC`,
 		domainID,
 	)
 }
@@ -136,8 +219,8 @@ func (db *DB) queryNotes(query string, args ...any) ([]Note, error) {
 
 	out := make([]Note, 0)
 	for rows.Next() {
-		var n Note
-		if err := rows.Scan(&n.ID, &n.Title, &n.DomainID, &n.GoalID, &n.TaskID, &n.Content, &n.Tags, &n.CreatedAt, &n.UpdatedAt); err != nil {
+		n, err := scanNote(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -147,8 +230,7 @@ func (db *DB) queryNotes(query string, args ...any) ([]Note, error) {
 
 func (db *DB) NotesByTask(taskID string) ([]Note, error) {
 	return db.queryNotes(
-		`SELECT id, title, domain_id, goal_id, task_id, content, tags, created_at, updated_at
-		 FROM notes WHERE task_id = ? ORDER BY COALESCE(updated_at, created_at) DESC`,
+		`SELECT `+noteCols+` FROM notes WHERE task_id = ? ORDER BY COALESCE(updated_at, created_at) DESC`,
 		taskID,
 	)
 }
