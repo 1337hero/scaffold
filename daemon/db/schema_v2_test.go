@@ -395,7 +395,7 @@ func TestSchemaV2PeopleTableColumns(t *testing.T) {
 	for _, col := range []string{
 		"id", "name", "surface", "domain_id", "relationship",
 		"birthday", "anniversary", "spouse", "kids", "notes",
-		"last_interaction_at", "contact_cadence_days", "created_at", "updated_at",
+		"last_interaction_at", "contact_cadence_days", "suppressed_at", "created_at", "updated_at",
 	} {
 		ct, _, _, err := pragmaColumnInfo(db.conn, "people", col)
 		if err != nil {
@@ -406,7 +406,7 @@ func TestSchemaV2PeopleTableColumns(t *testing.T) {
 		}
 	}
 
-	for _, idx := range []string{"idx_people_surface", "idx_people_domain", "idx_people_birthday"} {
+	for _, idx := range []string{"idx_people_surface", "idx_people_domain", "idx_people_birthday", "idx_people_suppressed"} {
 		var exists int
 		err := db.conn.QueryRow(
 			`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?`, idx,

@@ -16,12 +16,14 @@ CREATE TABLE IF NOT EXISTS people (
     notes               TEXT,
     last_interaction_at TEXT,
     contact_cadence_days INTEGER,                      -- slipping threshold; null = default 90
+    suppressed_at       TEXT,                           -- soft-delete, same model as memories
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_people_surface ON people(surface);
 CREATE INDEX IF NOT EXISTS idx_people_domain ON people(domain_id);
 CREATE INDEX IF NOT EXISTS idx_people_birthday ON people(birthday);
+CREATE INDEX IF NOT EXISTS idx_people_suppressed ON people(suppressed_at);
 
 CREATE TABLE IF NOT EXISTS interactions (
     id              TEXT PRIMARY KEY,
@@ -131,4 +133,13 @@ var v2NoteColumns = []struct {
 	{"flag_for_review", "INTEGER NOT NULL DEFAULT 0"},
 	{"review_at", "TEXT"},
 	{"person_id", "TEXT REFERENCES people(id)"},
+}
+
+// v2PeopleColumns backfills the people table for databases that were created by
+// an earlier v2 migration before suppressed_at existed. Fresh installs get the
+// column from the CREATE TABLE above; this is a no-op there.
+var v2PeopleColumns = []struct {
+	name, def string
+}{
+	{"suppressed_at", "TEXT"},
 }
