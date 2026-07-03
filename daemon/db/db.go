@@ -260,6 +260,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 			return err
 		}
 	}
+	for _, col := range v2PeopleColumns {
+		if err := db.migrateAddColumn("people", col.name, col.def); err != nil {
+			return err
+		}
+	}
 	if err := db.migrateAddColumn("domains", "surface", "TEXT NOT NULL DEFAULT 'life'"); err != nil {
 		return err
 	}
