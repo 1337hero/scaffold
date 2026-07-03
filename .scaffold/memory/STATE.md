@@ -16,7 +16,7 @@ PRD 03 complete — v2 schema bootstrap with new tables, modified columns, LifeO
 Nothing.
 
 ## Current branch / PR
-Branch model: everything off `main` by PR. PRD 03 work is on `prd/03-v2-schema` branch.
+Branch model: everything off `main` by PR. PRD 03 work is on `prd/03-v2-schema` branch. PR #43 open: https://github.com/1337hero/scaffold/pull/43
 
 ## Last shipped
 PRD 03: v2 schema bootstrap — new schema_v2.go with 8 new tables (people, interactions, projects, milestones, checklists, activity, facts, fact_edges), modified columns on tasks/notes/domains, LifeOS/BusinessOS domain seeding, schema tests
