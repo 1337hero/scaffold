@@ -1,9 +1,9 @@
 import { useEffect, useState } from "preact/hooks";
 
 function parseHash() {
-  const hash = location.hash.replace(/^#\/?/, "") || "dashboard";
+  const hash = location.hash.replace(/^#\/?/, "") || "today";
   const parts = hash.split("/");
-  return { route: parts[0] || "dashboard", param: parts[1] || null };
+  return { route: parts[0] || "today", param: parts[1] || null };
 }
 
 function navigate(path) {

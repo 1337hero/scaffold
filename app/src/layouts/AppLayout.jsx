@@ -1,95 +1,90 @@
-import { inboxCountQuery } from "@/api/queries.js";
-import CaptureModal from "@/components/CaptureModal.jsx";
 import MobileBar from "@/components/MobileBar.jsx";
 import Sidebar from "@/components/Sidebar.jsx";
+import SurfaceToggle from "@/components/SurfaceToggle.jsx";
 import { useKeyboard } from "@/hooks/useKeyboard.js";
 import { navigate, useRoute } from "@/hooks/useRoute.js";
-import Coder from "@/pages/Coder.jsx";
-import Dashboard from "@/pages/Dashboard.jsx";
-import Inbox from "@/pages/Inbox.jsx";
-import Login from "@/pages/Login.jsx";
+import { SurfaceProvider, useSurface } from "@/hooks/useSurface.jsx";
 import Area from "@/pages/Area.jsx";
 import Areas from "@/pages/Areas.jsx";
+import Library from "@/pages/Library.jsx";
+import Login from "@/pages/Login.jsx";
+import People from "@/pages/People.jsx";
+import Projects from "@/pages/Projects.jsx";
 import Search from "@/pages/Search.jsx";
+import Tasks from "@/pages/Tasks.jsx";
+import Today from "@/pages/Today.jsx";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect } from "preact/hooks";
 
 function RouteView({ route, param }) {
   switch (route) {
-    case "dashboard":
-      return <Dashboard />;
-    case "inbox":
-      return <Inbox />;
-    case "areas":
+    case "today":
+      return <Today />;
+    case "tasks":
+      return <Tasks />;
+    case "projects":
+      return <Projects />;
+    case "people":
+      return <People />;
+    case "library":
+      return <Library />;
+    case "domains":
       return param ? (
-        <Area
-          domainId={param}
-          onBack={() => navigate("/areas")}
-        />
+        <Area domainId={param} onBack={() => navigate("/domains")} />
       ) : (
-        <Areas
-          onOpenArea={(id) => navigate(`/areas/${id}`)}
-        />
+        <Areas onOpenArea={(id) => navigate(`/domains/${id}`)} />
       );
     case "search":
       return <Search />;
-    case "agents":
-      return <Coder />;
     default:
-      return <Dashboard />;
+      return <Today />;
   }
 }
 
+const routeTitles = {
+  today: "Today",
+  tasks: "Tasks",
+  projects: "Projects",
+  people: "People",
+  library: "Library",
+  domains: "Domains",
+  search: "Search",
+};
+
 function AuthenticatedShell() {
-  const [captureOpen, setCaptureOpen] = useState(false);
   const { route, param } = useRoute();
   const queryClient = useQueryClient();
-  const { data: inboxCount = 0 } = useQuery(inboxCountQuery);
-  const { data: agentTasks = [] } = useQuery({
-    queryKey: ["agent-tasks"],
-    queryFn: () =>
-      fetch("/api/agents/tasks", { credentials: "include" }).then((r) => r.json()),
-    refetchInterval: 10_000,
-  });
-  const coderActive = (agentTasks ?? []).some((t) => t.status === "running");
+  const { toggle } = useSurface();
 
-  const openCapture = () => setCaptureOpen(true);
-  const closeCapture = () => setCaptureOpen(false);
+  useKeyboard([{ key: ".", meta: true, action: toggle }]);
+
+  useEffect(() => {
+    document.title = `${routeTitles[route] ?? "Today"} — Scaffold`;
+  }, [route]);
 
   const handleLogout = async () => {
-    await fetch("/api/logout", { method: "POST", credentials: "include" });
-    queryClient.invalidateQueries({ queryKey: ["auth"] });
+    try {
+      await fetch("/api/logout", { method: "POST", credentials: "include" });
+    } finally {
+      // Drop every cached query — no stale personal data after logout.
+      queryClient.clear();
+      queryClient.setQueryData(["auth"], false);
+    }
   };
-
-  useKeyboard([
-    { key: "Escape", when: () => captureOpen, action: closeCapture },
-    { key: "k", meta: true, action: () => (captureOpen ? closeCapture() : openCapture()) },
-  ]);
 
   return (
     <div class="min-h-screen pb-24 lg:pb-0 lg:pl-64">
-      <Sidebar
-        activeRoute={route}
-        onNavigate={navigate}
-        onCapture={openCapture}
-        onLogout={handleLogout}
-        inboxCount={inboxCount}
-        coderActive={coderActive}
-      />
+      <Sidebar activeRoute={route} onLogout={handleLogout} />
 
-      <main class="max-w-7xl mx-auto p-6 lg:p-12">
+      <SurfaceToggle />
+
+      <main class="max-w-7xl mx-auto p-6 pt-20 lg:p-12 lg:pt-20">
         <div key={`${route}-${param}`} class="animate-page-enter">
           <RouteView route={route} param={param} />
         </div>
       </main>
 
-      <MobileBar
-        activeRoute={route}
-        onNavigate={navigate}
-        onCapture={openCapture}
-      />
-
-      <CaptureModal open={captureOpen} onClose={closeCapture} />
+      <MobileBar activeRoute={route} />
     </div>
   );
 }
@@ -122,12 +117,14 @@ const AppLayout = () => {
   }
 
   if (!authed) {
-    return (
-      <Login onSuccess={() => queryClient.setQueryData(["auth"], true)} />
-    );
+    return <Login onSuccess={() => queryClient.setQueryData(["auth"], true)} />;
   }
 
-  return <AuthenticatedShell />;
+  return (
+    <SurfaceProvider>
+      <AuthenticatedShell />
+    </SurfaceProvider>
+  );
 };
 
 export default AppLayout;
