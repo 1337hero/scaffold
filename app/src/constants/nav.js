@@ -1,7 +1,17 @@
-import { RiDashboardLine, RiInbox2Line, RiBookOpenLine, RiSearchLine, RiSpyLine } from "@remixicon/react"
+import {
+  RiSunLine,
+  RiTodoLine,
+  RiFolder2Line,
+  RiGroupLine,
+  RiBookOpenLine,
+  RiLayoutGridLine,
+} from "@remixicon/react";
 
-export const dashboard = { id: "dashboard", path: "#/dashboard", icon: RiDashboardLine, label: "Dashboard" }
-export const inbox = { id: "inbox", path: "#/inbox", icon: RiInbox2Line, label: "Inbox" }
-export const areas = { id: "areas", path: "#/areas", icon: RiBookOpenLine, label: "Areas" }
-export const search = { id: "search", path: "#/search", icon: RiSearchLine, label: "Search" }
-export const agentsNav = { id: "agents", path: "#/agents", icon: RiSpyLine, label: "Agents" }
+export const navItems = [
+  { id: "today", path: "#/today", icon: RiSunLine, label: "Today" },
+  { id: "tasks", path: "#/tasks", icon: RiTodoLine, label: "Tasks" },
+  { id: "projects", path: "#/projects", icon: RiFolder2Line, label: "Projects" },
+  { id: "people", path: "#/people", icon: RiGroupLine, label: "People" },
+  { id: "library", path: "#/library", icon: RiBookOpenLine, label: "Library" },
+  { id: "domains", path: "#/domains", icon: RiLayoutGridLine, label: "Domains" },
+];

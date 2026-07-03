@@ -87,32 +87,6 @@ function putJSON(path, body) {
   })
 }
 
-// Dashboard
-
-export const dashboardQuery = {
-  queryKey: ["dashboard"],
-  queryFn: async () => {
-    const data = await apiFetch("/api/dashboard")
-    if (!data || typeof data !== "object") {
-      return {
-        TodaysTasks: [],
-        OverdueTasks: [],
-        GoalsWithProgress: [],
-        DomainHealth: [],
-        DoneToday: [],
-      }
-    }
-    return {
-      ...data,
-      TodaysTasks: ensureArray(data.TodaysTasks),
-      OverdueTasks: ensureArray(data.OverdueTasks),
-      GoalsWithProgress: ensureArray(data.GoalsWithProgress),
-      DomainHealth: ensureArray(data.DomainHealth),
-      DoneToday: ensureArray(data.DoneToday),
-    }
-  },
-}
-
 // Goals
 
 export const goalsQuery = (domainId, status) => ({
@@ -186,25 +160,6 @@ export const domainHealthQuery = {
   },
 }
 
-// Inbox
-
-export const inboxQuery = {
-  queryKey: ["inbox"],
-  queryFn: async () => {
-    const data = await apiFetch("/api/inbox")
-    return ensureArray(data)
-  },
-}
-
-export const inboxCountQuery = {
-  queryKey: ["inbox-count"],
-  queryFn: async () => {
-    const items = await apiFetch("/api/inbox")
-    return Array.isArray(items) ? items.filter(i => i.Processed === 0).length : 0
-  },
-  staleTime: 30000,
-}
-
 // Search
 
 export const searchQuery = (q, filters) => ({
@@ -269,35 +224,3 @@ export function updateDomain(id, data) {
   })
 }
 export function archiveDomain(id) { return apiFetch(`/api/domains/${id}`, { method: "DELETE" }) }
-
-// Mutations — Inbox
-
-export function processInboxItem(id, data) { return putJSON(`/api/inbox/${id}/process`, data) }
-export function archiveInboxCapture(id) { return apiFetch(`/api/inbox/${id}/archive`, { method: "POST" }) }
-export function createCapture(text) { return postJSON("/api/capture", { text }) }
-
-// Agents
-
-export async function dispatchAgentTask({ task, chain, cwd = "" }) {
-  const res = await fetch("/api/agents/dispatch", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ task, chain, cwd }),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error || `${res.status} ${res.statusText}`)
-  }
-  return res.json()
-}
-
-export function fetchStepEvents(taskId, stepNum) {
-  return apiFetch(`/api/agents/tasks/${taskId}/steps/${stepNum}/events`)
-}
-
-export const agentChainsQuery = {
-  queryKey: ["agent-chains"],
-  queryFn: () => apiFetch("/api/agents/chains"),
-  staleTime: 5 * 60 * 1000,
-}
