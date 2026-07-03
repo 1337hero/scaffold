@@ -273,7 +273,7 @@ func TestVerifyStartupWarmupUsesSelectedFallbackProvider(t *testing.T) {
 	runtime := &Runtime{
 		cfg: appconfig.LLMConfig{
 			Routes: map[string]appconfig.LLMRouteConfig{
-				appconfig.LLMRouteBrainTriage: {
+				appconfig.LLMRouteCortexBulletin: {
 					Profile:          "primary_profile",
 					FallbackProfiles: []string{"fallback_profile"},
 					Required:         true,
@@ -291,17 +291,17 @@ func TestVerifyStartupWarmupUsesSelectedFallbackProvider(t *testing.T) {
 			},
 			Startup: appconfig.LLMStartupConfig{
 				VerifyRequiredRoutes: true,
-				WarmupRoutes:         []string{appconfig.LLMRouteBrainTriage},
+				WarmupRoutes:         []string{appconfig.LLMRouteCortexBulletin},
 			},
 		},
 		providers: map[string]provider{
 			"primary_provider": &stubProvider{
-				supportsCompletionJSON: true,
+				supportsCompletionText: true,
 				completionErr:          fmt.Errorf("primary unavailable"),
 				healthChecker:          primaryChecker,
 			},
 			"fallback_provider": &stubProvider{
-				supportsCompletionJSON: true,
+				supportsCompletionText: true,
 				healthChecker:          fallbackChecker,
 			},
 		},
@@ -372,7 +372,7 @@ func TestBindCompletionFailsWhenFactoryReturnsNilCompletion(t *testing.T) {
 			"custom_profile": {Provider: "custom_provider", Model: "m1"},
 		},
 		Routes: map[string]appconfig.LLMRouteConfig{
-			appconfig.LLMRouteBrainTriage: {Profile: "custom_profile", Required: true},
+			appconfig.LLMRouteCortexBulletin: {Profile: "custom_profile", Required: true},
 		},
 	}
 
@@ -392,7 +392,7 @@ func TestBindCompletionFailsWhenFactoryReturnsNilCompletion(t *testing.T) {
 		t.Fatalf("NewRuntimeWithEnv: %v", err)
 	}
 
-	if _, _, err := runtime.BindCompletion(appconfig.LLMRouteBrainTriage); err == nil {
+	if _, _, err := runtime.BindCompletion(appconfig.LLMRouteCortexBulletin); err == nil {
 		t.Fatal("expected bind failure")
 	} else if !strings.Contains(err.Error(), "nil completion client") {
 		t.Fatalf("expected nil completion client error, got %v", err)

@@ -28,11 +28,6 @@ type ConsolidationCandidate struct {
 	Similarity float64
 }
 
-type ReindexReport struct {
-	MemoriesIndexed int
-	MaxDegree       int
-}
-
 func (db *DB) DecayMemories(factor float64, exemptTypes []string, importanceFloor float64, olderThanDays int) (DecayReport, error) {
 	if factor <= 0 || factor >= 1 {
 		return DecayReport{}, fmt.Errorf("factor must be between 0 and 1 (exclusive)")
@@ -176,102 +171,6 @@ func (db *DB) ConsolidateMemories() (ConsolidationReport, error) {
 	}
 
 	return report, nil
-}
-
-func (db *DB) ReindexMemoryCentrality() (ReindexReport, error) {
-	type memoryRef struct {
-		ID string
-	}
-	activeRows, err := db.conn.Query(`SELECT id FROM memories WHERE suppressed_at IS NULL`)
-	if err != nil {
-		return ReindexReport{}, err
-	}
-	defer activeRows.Close()
-
-	activeIDs := make([]memoryRef, 0)
-	degree := make(map[string]int)
-	for activeRows.Next() {
-		var m memoryRef
-		if err := activeRows.Scan(&m.ID); err != nil {
-			return ReindexReport{}, err
-		}
-		activeIDs = append(activeIDs, m)
-		degree[m.ID] = 0
-	}
-	if err := activeRows.Err(); err != nil {
-		return ReindexReport{}, err
-	}
-
-	edgeRows, err := db.conn.Query(`
-		SELECT e.from_id, e.to_id
-		FROM edges e
-		INNER JOIN memories m1 ON m1.id = e.from_id AND m1.suppressed_at IS NULL
-		INNER JOIN memories m2 ON m2.id = e.to_id AND m2.suppressed_at IS NULL`)
-	if err != nil {
-		return ReindexReport{}, err
-	}
-	defer edgeRows.Close()
-
-	maxDegree := 0
-	for edgeRows.Next() {
-		var fromID, toID string
-		if err := edgeRows.Scan(&fromID, &toID); err != nil {
-			return ReindexReport{}, err
-		}
-		degree[fromID]++
-		degree[toID]++
-		if degree[fromID] > maxDegree {
-			maxDegree = degree[fromID]
-		}
-		if degree[toID] > maxDegree {
-			maxDegree = degree[toID]
-		}
-	}
-	if err := edgeRows.Err(); err != nil {
-		return ReindexReport{}, err
-	}
-
-	tx, err := db.conn.Begin()
-	if err != nil {
-		return ReindexReport{}, err
-	}
-	defer tx.Rollback()
-
-	for _, m := range activeIDs {
-		score := 0.0
-		if maxDegree > 0 {
-			score = float64(degree[m.ID]) / float64(maxDegree)
-		}
-		if _, err := tx.Exec(
-			`INSERT INTO memory_centrality (memory_id, score, updated_at)
-			 VALUES (?, ?, ?)
-			 ON CONFLICT(memory_id) DO UPDATE SET score = excluded.score, updated_at = excluded.updated_at`,
-			m.ID, score, now(),
-		); err != nil {
-			return ReindexReport{}, err
-		}
-	}
-
-	if _, err := tx.Exec(`DELETE FROM memory_centrality WHERE memory_id NOT IN (SELECT id FROM memories WHERE suppressed_at IS NULL)`); err != nil {
-		return ReindexReport{}, err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return ReindexReport{}, err
-	}
-
-	return ReindexReport{
-		MemoriesIndexed: len(activeIDs),
-		MaxDegree:       maxDegree,
-	}, nil
-}
-
-func (db *DB) MemoryCentralityCount() (int, error) {
-	var count int
-	if err := db.conn.QueryRow(`SELECT COUNT(*) FROM memory_centrality`).Scan(&count); err != nil {
-		return 0, err
-	}
-	return count, nil
 }
 
 func (db *DB) ensureUndirectedEdge(idA, idB, relation string, weight float64) (bool, error) {

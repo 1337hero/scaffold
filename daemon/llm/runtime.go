@@ -451,16 +451,8 @@ func requirementForRoute(routeName string) routeRequirement {
 	switch routeName {
 	case appconfig.LLMRouteBrainRespond:
 		return routeRequirement{toolUse: true}
-	case appconfig.LLMRouteBrainTriage:
-		return routeRequirement{completionJSON: true}
-	case appconfig.LLMRouteBrainPrioritize:
-		return routeRequirement{completionJSON: true}
 	case appconfig.LLMRouteCortexBulletin:
 		return routeRequirement{completionText: true}
-	case appconfig.LLMRouteCortexSemantic:
-		return routeRequirement{completionJSON: true}
-	case appconfig.LLMRouteCortexObservations:
-		return routeRequirement{completionJSON: true}
 	default:
 		return routeRequirement{}
 	}

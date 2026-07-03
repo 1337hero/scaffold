@@ -35,7 +35,7 @@ tools:
 
   - name: create_task
     description: |
-      Create a new task. Tasks are concrete action items, optionally linked to a goal.
+      Create a new task. Tasks are concrete action items.
     input_schema:
       type: object
       properties:
@@ -44,10 +44,7 @@ tools:
           description: Task title
         domain:
           type: string
-          description: "Life domain (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies)"
-        goal_id:
-          type: string
-          description: Link task to a goal by ID
+          description: "Life domain"
         context:
           type: string
           description: Additional context or notes
@@ -62,12 +59,6 @@ tools:
           type: string
           enum: [high, normal, low]
           description: "Priority level. Default: normal"
-        source:
-          type: string
-          description: "Origin system (e.g. github, monday). Set for webhook-originated tasks."
-        source_ref:
-          type: string
-          description: "Unique reference URL from origin system. Used for dedup on repeated webhook deliveries."
       required: [title]
 
   - name: create_note
@@ -81,13 +72,7 @@ tools:
           description: Note title
         domain:
           type: string
-          description: "Life domain (Work/Business, Personal Projects, Homelife, Relationships, Personal Development, Finances, Hobbies)"
-        goal_id:
-          type: string
-          description: Link note to a goal by ID
-        task_id:
-          type: string
-          description: Link note to a task by ID
+          description: "Life domain"
         content:
           type: string
           description: Note body content
@@ -112,9 +97,7 @@ tools:
           type: string
         domain:
           type: string
-          description: "Life domain name to resolve"
-        goal_id:
-          type: string
+          description: "Life domain name"
         context:
           type: string
         due_date:
@@ -140,9 +123,6 @@ tools:
         domain:
           type: string
           description: "Filter by life domain name"
-        goal_id:
-          type: string
-          description: "Filter tasks linked to a specific goal"
         status:
           type: string
           description: "Filter by status (default: pending)"
@@ -198,37 +178,3 @@ tools:
         description:
           type: string
       required: [event_id]
-
-  - name: search_email
-    description: |
-      Search Mike's Gmail inbox using a query string.
-      Use Gmail search syntax: from:, subject:, label:, after:, etc.
-    input_schema:
-      type: object
-      properties:
-        query:
-          type: string
-          description: "Gmail search query (e.g. 'from:bob@example.com subject:invoice')"
-        max_results:
-          type: integer
-          description: "Max results to return. Default: 5"
-          minimum: 1
-          maximum: 20
-      required: [query]
-
-  - name: get_email
-    description: |
-      Get a specific email by ID, or get recent emails from a Gmail label.
-      Use message_id for a specific email, or label for recent labeled emails.
-    input_schema:
-      type: object
-      properties:
-        message_id:
-          type: string
-          description: Gmail message ID (from search_email results)
-        label:
-          type: string
-          description: "Gmail label name to list recent emails from (e.g. 'FOLLOW UP', 'INBOX')"
-        max_results:
-          type: integer
-          description: "Max results when using label. Default: 5"

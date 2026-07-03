@@ -43,11 +43,6 @@ type domainPatchRequest struct {
 	Status     *string `json:"status"`
 }
 
-type dumpResponse struct {
-	Count    int         `json:"count"`
-	Memories []db.Memory `json:"memories"`
-}
-
 func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
 	drifts, err := s.db.ComputeDriftStates()
 	if err != nil {

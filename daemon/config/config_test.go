@@ -66,8 +66,8 @@ func TestToolsConfig(t *testing.T) {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if len(cfg.Tools.Tools) != 10 {
-		t.Errorf("expected 10 tools, got %d", len(cfg.Tools.Tools))
+	if len(cfg.Tools.Tools) != 8 {
+		t.Errorf("expected 8 tools, got %d", len(cfg.Tools.Tools))
 	}
 
 	names := make(map[string]bool)
@@ -79,8 +79,6 @@ func TestToolsConfig(t *testing.T) {
 		"get_calendar_events",
 		"create_calendar_event",
 		"update_calendar_event",
-		"search_email",
-		"get_email",
 		"create_task",
 		"create_note",
 		"update_task",
@@ -118,15 +116,6 @@ func TestCortexConfig(t *testing.T) {
 	if _, ok := cfg.Cortex.Tasks["prune"]; !ok {
 		t.Error("missing cortex task: prune")
 	}
-	if _, ok := cfg.Cortex.Tasks["reindex"]; !ok {
-		t.Error("missing cortex task: reindex")
-	}
-	if _, ok := cfg.Cortex.Tasks["prioritize"]; !ok {
-		t.Error("missing cortex task: prioritize")
-	}
-	if _, ok := cfg.Cortex.Tasks["session_cleanup"]; !ok {
-		t.Error("missing cortex task: session_cleanup")
-	}
 
 	decay := cfg.Cortex.Tasks["decay"]
 	if decay.Factor != 0.95 {
@@ -151,10 +140,6 @@ func TestTemplateSubstitution(t *testing.T) {
 	}
 	if !strings.Contains(cfg.Agent.Personality, "Mike") {
 		t.Error("agent personality should contain substituted user_name 'Mike'")
-	}
-
-	if strings.Contains(cfg.Triage.Prompt, "{user_name}") {
-		t.Error("triage prompt still contains {user_name} placeholder")
 	}
 }
 
@@ -193,12 +178,6 @@ func TestDefaults(t *testing.T) {
 	}
 	if cfg.Cortex.Bulletin.MaxWords != 500 {
 		t.Errorf("expected default bulletin max_words 500, got %d", cfg.Cortex.Bulletin.MaxWords)
-	}
-	if _, ok := cfg.Cortex.Tasks["prioritize"]; !ok {
-		t.Error("expected default prioritize task")
-	}
-	if _, ok := cfg.Cortex.Tasks["session_cleanup"]; !ok {
-		t.Error("expected default session_cleanup task")
 	}
 	if cfg.LLM.Version != 1 {
 		t.Errorf("expected default llm version 1, got %d", cfg.LLM.Version)
@@ -396,26 +375,3 @@ tools:
 	}
 }
 
-func TestLoadFailsOnUnsupportedEmbeddingProvider(t *testing.T) {
-	dir := t.TempDir()
-
-	if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: Test\n"), 0o644); err != nil {
-		t.Fatalf("write agent.yaml: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "tools.yaml"), []byte("tools: []\n"), 0o644); err != nil {
-		t.Fatalf("write tools.yaml: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "triage.yaml"), []byte("prompt: test\n"), 0o644); err != nil {
-		t.Fatalf("write triage.yaml: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "cortex.yaml"), []byte("bulletin:\n  interval_minutes: 60\n"), 0o644); err != nil {
-		t.Fatalf("write cortex.yaml: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "embedding.yaml"), []byte("provider: fake-provider\n"), 0o644); err != nil {
-		t.Fatalf("write embedding.yaml: %v", err)
-	}
-
-	if _, err := Load(dir, "User"); err == nil {
-		t.Fatal("expected unsupported embedding provider to fail")
-	}
-}

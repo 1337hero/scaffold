@@ -96,36 +96,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteBrainRespond, err)
 	}
-	triageCompletion, triageModel, err := llmRuntime.BindCompletion(appconfig.LLMRouteBrainTriage)
-	if err != nil {
-		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteBrainTriage, err)
-	}
-	prioritizeCompletion, prioritizeModel, err := llmRuntime.BindCompletion(appconfig.LLMRouteBrainPrioritize)
-	if err != nil {
-		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteBrainPrioritize, err)
-	}
 	bulletinCompletion, bulletinModel, err := llmRuntime.BindCompletion(appconfig.LLMRouteCortexBulletin)
 	if err != nil {
 		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteCortexBulletin, err)
 	}
 
-
 	b := brain.NewWithDependencies(database, brain.Config{
 		AssistantName:    assistantName,
 		UserName:         cfg.userName,
 		SystemPrompt:     buildAgentSystemPrompt(appCfg),
-		TriagePrompt:     appCfg.Triage.Prompt,
 		RespondModel:     respondModel,
-		TriageModel:      triageModel,
-		PrioritizeModel:  prioritizeModel,
 		RespondMaxTokens: appCfg.Agent.MaxResponseTokens,
-		TriageMaxTokens:  appCfg.Triage.MaxTokens,
 		Tools:            toolDefs,
-	}, brain.Dependencies{
-		Responder:            respondResponder,
-		TriageCompletion:     triageCompletion,
-		PrioritizeCompletion: prioritizeCompletion,
-	})
+	}, respondResponder)
 
 	cortexRuntime := cortex.NewWithLLM(database, b, appCfg.Cortex, cortex.LLMRoutes{
 		Bulletin: cortex.LLMRoute{
@@ -509,9 +492,6 @@ func buildAgentSystemPrompt(cfg *appconfig.Config) string {
 	return b.String()
 }
 
-// runProactiveNotifier drains the scaffold-agent session bus queue and sends
-// messages to the user via Signal. Cortex tasks and agent results push to this
-// queue; the notifier is the single outbound path to Signal.
 func handleAuthSubcommand(args []string) {
 	if len(args) == 0 {
 		log.Fatal("usage: scaffold-daemon auth google")

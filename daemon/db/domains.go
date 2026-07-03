@@ -417,13 +417,6 @@ func (db *DB) DomainDetailByID(id int) (*DomainDetail, error) {
 }
 
 
-func (db *DB) DumpMemories(limit int) ([]Memory, error) {
-	return db.queryMemories(
-		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id
-		 FROM memories WHERE domain_id IS NULL AND suppressed_at IS NULL ORDER BY created_at DESC LIMIT ?`, limit,
-	)
-}
-
 func (db *DB) TouchDomainByMemory(memoryID string) error {
 	var domainID sql.NullInt64
 	err := db.conn.QueryRow(`SELECT domain_id FROM memories WHERE id = ?`, memoryID).Scan(&domainID)

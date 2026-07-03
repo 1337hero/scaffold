@@ -81,7 +81,6 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	s.mux.HandleFunc("POST /api/domains", s.protected(s.handleDomainCreate))
 	s.mux.HandleFunc("PATCH /api/domains/{id}", s.protected(s.handleDomainPatch))
 	s.mux.HandleFunc("DELETE /api/domains/{id}", s.protected(s.handleDomainDelete))
-	s.mux.HandleFunc("GET /api/dashboard", s.protected(s.handleDashboard))
 	s.mux.HandleFunc("GET /api/search", s.protected(s.handleSearch))
 	s.mux.HandleFunc("GET /api/calendar/upcoming", s.protected(s.handleCalendarEvents))
 
@@ -252,8 +251,6 @@ func (s *Server) protected(next http.HandlerFunc) http.HandlerFunc {
 
 // authorizedByCookie validates the session cookie and touches it on success.
 func (s *Server) authorizedByCookie(r *http.Request) (bool, error) {
-	// AUTH BYPASS — just looking at the UI
-	return true, nil
 	cookie, err := r.Cookie("session")
 	if err != nil {
 		return false, nil

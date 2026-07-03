@@ -17,10 +17,8 @@ func requireRowsAffected(result sql.Result) error {
 	return nil
 }
 
-// ScoredMemory is a memory with search relevance scores.
+// ScoredMemory is a memory with its FTS5 search relevance score.
 type ScoredMemory struct {
 	Memory
-	FTSScore    float64
-	VectorScore float64
-	FusedScore  float64
+	FTSScore float64
 }

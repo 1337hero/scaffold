@@ -9,22 +9,6 @@ providers:
     api_key_env: ANTHROPIC_API_KEY
     timeout_seconds: 30
 
-  # Local semantic/embedding tasks. No tool use.
-  ollama_specialist:
-    type: openai_compatible
-    base_url: http://127.0.0.1:11434/v1
-    api_key: ollama
-    timeout_seconds: 90
-    supports_tool_use: false
-
-  # Local Vulkan llama-server for Pi agent chains.
-  # Qwen3.5-35B-A3B on GPU 1 (no display), ~106 t/s.
-  # Pi resolves this via ~/.pi/agent/models.json "local" provider.
-  local_vulkan:
-    type: local
-    api_key_env: ""
-    timeout_seconds: 300
-
 profiles:
   # Conversational — what Mike actually talks to. Don't cheap out.
   respond_sonnet:
@@ -32,56 +16,18 @@ profiles:
     model: claude-sonnet-4-6
 
   # Background tasks — classification, summarization, structured output.
-  # Haiku is fast, cheap, and plenty capable for these.
   background_haiku:
     provider: anthropic_main
     model: claude-haiku-4-5-20251001
-
-  # Local semantic maintenance.
-  ollama_semantic:
-    provider: ollama_specialist
-    model: qwen3-coder:30b-a3b-q4_K_M
-
-  # Local Qwen via Vulkan llama-server for agent chains.
-  local_worker:
-    provider: local_vulkan
-    model: qwen3.5-35b-a3b
 
 routes:
   brain.respond:
     profile: respond_sonnet
     required: false
 
-  brain.triage:
-    profile: background_haiku
-    required: false
-
-  brain.prioritize:
-    profile: background_haiku
-    required: false
-
   cortex.bulletin:
     profile: background_haiku
     required: false
-
-  cortex.semantic:
-    profile: ollama_semantic
-    required: false
-
-  cortex.observations:
-    profile: background_haiku
-    required: false
-
-  coder.worker:
-    profile: local_worker
-    required: false
-
-  # Per-step route overrides (optional). If set, the step uses this
-  # provider/model instead of coder.worker defaults.
-  # coder.step.scout:
-  #   profile: background_haiku
-  # coder.step.planner:
-  #   profile: background_haiku
 
 startup:
   verify_required_routes: false

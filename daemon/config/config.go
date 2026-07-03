@@ -12,9 +12,7 @@ import (
 type Config struct {
 	Agent         AgentConfig
 	Tools         ToolsConfig
-	Triage        TriageConfig
 	Cortex        CortexConfig
-	Embedding     EmbeddingConfig
 	Google        GoogleConfig
 	LLM           LLMConfig
 	Notifications NotificationsConfig
@@ -25,13 +23,6 @@ type GoogleConfig struct {
 	ClientSecret string   `yaml:"client_secret"`
 	CalendarID   string   `yaml:"calendar_id"`
 	Scopes       []string `yaml:"scopes"`
-}
-
-type EmbeddingConfig struct {
-	Provider   string `yaml:"provider"`
-	URL        string `yaml:"url"`
-	Model      string `yaml:"model"`
-	Dimensions int    `yaml:"dimensions"`
 }
 
 type AgentConfig struct {
@@ -50,12 +41,6 @@ type ToolDef struct {
 	Name        string                 `yaml:"name"`
 	Description string                 `yaml:"description"`
 	InputSchema map[string]interface{} `yaml:"input_schema"`
-}
-
-type TriageConfig struct {
-	Prompt    string `yaml:"prompt"`
-	Model     string `yaml:"model"`
-	MaxTokens int    `yaml:"max_tokens"`
 }
 
 type CortexConfig struct {
@@ -108,13 +93,8 @@ func Load(configDir string, userName string) (*Config, error) {
 	if err := loadFile(filepath.Join(configDir, "tools.yaml"), &cfg.Tools); err != nil {
 		return nil, fmt.Errorf("load tools.yaml: %w", err)
 	}
-	// triage.yaml is optional
-	_ = loadFileOptional(filepath.Join(configDir, "triage.yaml"), &cfg.Triage)
 	if err := loadFile(filepath.Join(configDir, "cortex.yaml"), &cfg.Cortex); err != nil {
 		return nil, fmt.Errorf("load cortex.yaml: %w", err)
-	}
-	if err := loadFile(filepath.Join(configDir, "embedding.yaml"), &cfg.Embedding); err != nil {
-		return nil, fmt.Errorf("load embedding.yaml: %w", err)
 	}
 	if err := loadFileOptional(filepath.Join(configDir, "google.yaml"), &cfg.Google); err != nil {
 		return nil, fmt.Errorf("load google.yaml: %w", err)
@@ -164,12 +144,6 @@ func applyDefaults(cfg *Config) {
 	if cfg.Agent.Model == "" {
 		cfg.Agent.Model = "claude-haiku-4-5"
 	}
-	if cfg.Triage.Model == "" {
-		cfg.Triage.Model = "claude-haiku-4-5"
-	}
-	if cfg.Triage.MaxTokens == 0 {
-		cfg.Triage.MaxTokens = 300
-	}
 	if cfg.Cortex.Bulletin.IntervalMinutes == 0 {
 		cfg.Cortex.Bulletin.IntervalMinutes = 60
 	}
@@ -185,18 +159,6 @@ func applyDefaults(cfg *Config) {
 	if cfg.Cortex.Tasks == nil {
 		cfg.Cortex.Tasks = make(map[string]TaskConfig)
 	}
-	if _, ok := cfg.Cortex.Tasks["prioritize"]; !ok {
-		cfg.Cortex.Tasks["prioritize"] = TaskConfig{
-			IntervalHours:  24,
-			TimeoutSeconds: 120,
-		}
-	}
-	if _, ok := cfg.Cortex.Tasks["session_cleanup"]; !ok {
-		cfg.Cortex.Tasks["session_cleanup"] = TaskConfig{
-			IntervalHours:  24,
-			TimeoutSeconds: 15,
-		}
-	}
 
 	if cfg.Google.CalendarID == "" {
 		cfg.Google.CalendarID = "primary"
@@ -205,19 +167,6 @@ func applyDefaults(cfg *Config) {
 		cfg.Google.Scopes = []string{
 			"https://www.googleapis.com/auth/calendar.events",
 		}
-	}
-
-	if cfg.Embedding.Provider == "" {
-		cfg.Embedding.Provider = "ollama"
-	}
-	if cfg.Embedding.URL == "" {
-		cfg.Embedding.URL = "http://127.0.0.1:11434"
-	}
-	if cfg.Embedding.Model == "" {
-		cfg.Embedding.Model = "all-minilm"
-	}
-	if cfg.Embedding.Dimensions == 0 {
-		cfg.Embedding.Dimensions = 384
 	}
 
 	if cfg.Notifications.OverdueCooldownHours == 0 {
@@ -245,7 +194,6 @@ func substituteVars(cfg *Config, userName string) {
 		"{user_name}", userName,
 	)
 	cfg.Agent.Personality = r.Replace(cfg.Agent.Personality)
-	cfg.Triage.Prompt = r.Replace(cfg.Triage.Prompt)
 }
 
 func validate(cfg *Config) error {
@@ -257,15 +205,6 @@ func validate(cfg *Config) error {
 	}
 	if strings.TrimSpace(cfg.Agent.Model) == "" {
 		return fmt.Errorf("agent.model must not be empty")
-	}
-	if strings.TrimSpace(cfg.Triage.Prompt) == "" {
-		cfg.Triage.Prompt = "You are a helpful assistant."
-	}
-	if strings.TrimSpace(cfg.Triage.Model) == "" {
-		cfg.Triage.Model = "claude-haiku-4-5"
-	}
-	if cfg.Triage.MaxTokens <= 0 {
-		cfg.Triage.MaxTokens = 300
 	}
 	if cfg.Cortex.Bulletin.IntervalMinutes <= 0 {
 		return fmt.Errorf("cortex.bulletin.interval_minutes must be > 0")
@@ -312,26 +251,6 @@ func validate(cfg *Config) error {
 			return fmt.Errorf("cortex task %q suppressed_days must be >= 0", name)
 		}
 	}
-
-	provider := strings.ToLower(strings.TrimSpace(cfg.Embedding.Provider))
-	if provider == "" {
-		return fmt.Errorf("embedding.provider must not be empty")
-	}
-	switch provider {
-	case "ollama":
-		if strings.TrimSpace(cfg.Embedding.URL) == "" {
-			return fmt.Errorf("embedding.url must not be empty for provider %q", provider)
-		}
-		if strings.TrimSpace(cfg.Embedding.Model) == "" {
-			return fmt.Errorf("embedding.model must not be empty for provider %q", provider)
-		}
-		if cfg.Embedding.Dimensions <= 0 {
-			return fmt.Errorf("embedding.dimensions must be > 0 for provider %q", provider)
-		}
-	default:
-		return fmt.Errorf("unsupported embedding.provider %q", cfg.Embedding.Provider)
-	}
-	cfg.Embedding.Provider = provider
 
 	if err := validateLLM(cfg); err != nil {
 		return err

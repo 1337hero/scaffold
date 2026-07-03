@@ -26,8 +26,6 @@ func defaultToolRegistry() map[string]ToolHandler {
 		"create_note":            handleCreateNote,
 		"update_task":            handleUpdateTask,
 		"list_tasks":             handleListTasks,
-		"search_email":           handleSearchEmail,
-		"get_email":              handleGetEmail,
 	}
 }
 
@@ -120,14 +118,12 @@ func formatSearchResults(query string, results []db.ScoredMemory) string {
 			}
 			sb.WriteString(fmt.Sprintf("   %s\n", content))
 		}
-		if r.FusedScore > 0 {
-			sb.WriteString(fmt.Sprintf("   score: %.3f (fts=%.3f vec=%.3f)\n", r.FusedScore, r.FTSScore, r.VectorScore))
+		if r.FTSScore > 0 {
+			sb.WriteString(fmt.Sprintf("   score: %.3f\n", r.FTSScore))
 		}
 	}
 	return sb.String()
 }
-
-
 
 func markSearchAccess(database *db.DB, results []db.ScoredMemory) {
 	if database == nil || len(results) == 0 {
@@ -222,8 +218,6 @@ func handleCreateTask(ctx context.Context, database *db.DB, b *Brain, params jso
 		DueDate   string `json:"due_date"`
 		Recurring string `json:"recurring"`
 		Priority  string `json:"priority"`
-		Source    string `json:"source"`
-		SourceRef string `json:"source_ref"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return "", fmt.Errorf("create_task: bad params: %w", err)
@@ -251,12 +245,6 @@ func handleCreateTask(ctx context.Context, database *db.DB, b *Brain, params jso
 	}
 	if p.Priority != "" {
 		t.Priority = p.Priority
-	}
-	if p.Source != "" {
-		t.Source = sql.NullString{String: p.Source, Valid: true}
-	}
-	if p.SourceRef != "" {
-		t.SourceRef = sql.NullString{String: p.SourceRef, Valid: true}
 	}
 
 	if err := database.InsertTask(t); err != nil {
@@ -500,11 +488,5 @@ func handleUpdateCalendarEvent(ctx context.Context, database *db.DB, b *Brain, p
 	return fmt.Sprintf("Event updated: %q (id=%s)", updated.Title, updated.ID), nil
 }
 
-func handleSearchEmail(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	return "Gmail search is not available in v2. Email triage has been removed.", nil
-}
 
-func handleGetEmail(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	return "Gmail access is not available in v2. Email triage has been removed.", nil
-}
 
