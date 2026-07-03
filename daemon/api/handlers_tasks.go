@@ -13,16 +13,20 @@ import (
 )
 
 type taskCreateRequest struct {
-	Title      string  `json:"title"`
-	DomainID   *int64  `json:"domain_id"`
-	GoalID     *string `json:"goal_id"`
-	Context    *string `json:"context"`
-	DueDate    *string `json:"due_date"`
-	Recurring  *string `json:"recurring"`
-	Priority   string  `json:"priority"`
-	MicroSteps *string `json:"micro_steps"`
-	Notify     *int    `json:"notify"`
-	Position   *int    `json:"position"`
+	Title        string  `json:"title"`
+	DomainID     *int64  `json:"domain_id"`
+	GoalID       *string `json:"goal_id"`
+	Context      *string `json:"context"`
+	DueDate      *string `json:"due_date"`
+	Recurring    *string `json:"recurring"`
+	Priority     string  `json:"priority"`
+	MicroSteps   *string `json:"micro_steps"`
+	Notify       *int    `json:"notify"`
+	Position     *int    `json:"position"`
+	ProjectID    *string `json:"project_id"`
+	ReminderAt   *string `json:"reminder_at"`
+	Surface      *string `json:"surface"`
+	Top3Position *int64  `json:"top3_position"`
 }
 
 type reorderRequest struct {
@@ -49,7 +53,40 @@ func (s *Server) handleTasksList(w http.ResponseWriter, r *http.Request) {
 		goalID = &raw
 	}
 
-	tasks, err := s.db.ListTasks(domainID, goalID, status, due)
+	var projectID *string
+	if raw := strings.TrimSpace(q.Get("project_id")); raw != "" {
+		projectID = &raw
+	}
+	var surface *string
+	if raw := strings.TrimSpace(q.Get("surface")); raw != "" {
+		surface = &raw
+	}
+	var top3 *bool
+	if raw := strings.TrimSpace(q.Get("top3")); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid top3"})
+			return
+		}
+		top3 = &v
+	}
+	// reminder_at filters to tasks whose reminder is set and due by the given
+	// ISO timestamp (reminder_at <= value).
+	var reminderAt *string
+	if raw := strings.TrimSpace(q.Get("reminder_at")); raw != "" {
+		reminderAt = &raw
+	}
+
+	tasks, err := s.db.ListTasks(db.TaskFilters{
+		DomainID:   domainID,
+		GoalID:     goalID,
+		Status:     status,
+		Due:        due,
+		ProjectID:  projectID,
+		Surface:    surface,
+		Top3:       top3,
+		ReminderAt: reminderAt,
+	})
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -99,8 +136,24 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if req.Position != nil {
 		t.Position = *req.Position
 	}
+	if req.ProjectID != nil {
+		t.ProjectID = sql.NullString{String: *req.ProjectID, Valid: true}
+	}
+	if req.ReminderAt != nil {
+		t.ReminderAt = sql.NullString{String: *req.ReminderAt, Valid: true}
+	}
+	if req.Surface != nil {
+		t.Surface = *req.Surface
+	}
+	if req.Top3Position != nil {
+		t.Top3Position = sql.NullInt64{Int64: *req.Top3Position, Valid: true}
+	}
 
 	if err := s.db.InsertTask(t); err != nil {
+		if errors.Is(err, db.ErrInvalidEnum) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		writeInternalError(w, err)
 		return
 	}
@@ -122,6 +175,10 @@ func (s *Server) handleTaskUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.UpdateTask(id, updates); err != nil {
+		if errors.Is(err, db.ErrInvalidEnum) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "task not found"})
 			return

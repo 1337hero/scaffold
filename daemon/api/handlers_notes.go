@@ -13,12 +13,17 @@ import (
 )
 
 type noteCreateRequest struct {
-	Title    string  `json:"title"`
-	DomainID *int64  `json:"domain_id"`
-	GoalID   *string `json:"goal_id"`
-	TaskID   *string `json:"task_id"`
-	Content  *string `json:"content"`
-	Tags     *string `json:"tags"`
+	Title         string  `json:"title"`
+	DomainID      *int64  `json:"domain_id"`
+	GoalID        *string `json:"goal_id"`
+	TaskID        *string `json:"task_id"`
+	Content       *string `json:"content"`
+	Tags          *string `json:"tags"`
+	Kind          *string `json:"kind"` // note|journal|quote
+	Source        *string `json:"source"`
+	FlagForReview *bool   `json:"flag_for_review"`
+	ReviewAt      *string `json:"review_at"`
+	PersonID      *string `json:"person_id"`
 }
 
 func (s *Server) handleNotesList(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +45,37 @@ func (s *Server) handleNotesList(w http.ResponseWriter, r *http.Request) {
 		goalID = &raw
 	}
 
-	notes, err := s.db.ListNotes(domainID, goalID, tags)
+	var kind *string
+	if raw := strings.TrimSpace(q.Get("kind")); raw != "" {
+		kind = &raw
+	}
+	var personID *string
+	if raw := strings.TrimSpace(q.Get("person_id")); raw != "" {
+		personID = &raw
+	}
+	var source *string
+	if raw := strings.TrimSpace(q.Get("source")); raw != "" {
+		source = &raw
+	}
+	var flagForReview *bool
+	if raw := strings.TrimSpace(q.Get("flag_for_review")); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid flag_for_review"})
+			return
+		}
+		flagForReview = &v
+	}
+
+	notes, err := s.db.ListNotes(db.NoteFilters{
+		DomainID:      domainID,
+		GoalID:        goalID,
+		Tags:          tags,
+		Kind:          kind,
+		PersonID:      personID,
+		Source:        source,
+		FlagForReview: flagForReview,
+	})
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -100,8 +135,27 @@ func (s *Server) handleNoteCreate(w http.ResponseWriter, r *http.Request) {
 	if req.TaskID != nil {
 		n.TaskID = sql.NullString{String: *req.TaskID, Valid: true}
 	}
+	if req.Kind != nil {
+		n.Kind = *req.Kind
+	}
+	if req.Source != nil {
+		n.Source = sql.NullString{String: *req.Source, Valid: true}
+	}
+	if req.FlagForReview != nil && *req.FlagForReview {
+		n.FlagForReview = 1
+	}
+	if req.ReviewAt != nil {
+		n.ReviewAt = sql.NullString{String: *req.ReviewAt, Valid: true}
+	}
+	if req.PersonID != nil {
+		n.PersonID = sql.NullString{String: *req.PersonID, Valid: true}
+	}
 
 	if err := s.db.InsertNote(n); err != nil {
+		if errors.Is(err, db.ErrInvalidEnum) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		writeInternalError(w, err)
 		return
 	}
@@ -123,6 +177,10 @@ func (s *Server) handleNoteUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.UpdateNote(id, updates); err != nil {
+		if errors.Is(err, db.ErrInvalidEnum) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "note not found"})
 			return

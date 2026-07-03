@@ -46,6 +46,12 @@ func (db *DB) InsertTask(t Task) error {
 	if t.Surface == "" {
 		t.Surface = "life"
 	}
+	if err := validateSurface(t.Surface); err != nil {
+		return err
+	}
+	if err := validateTop3Position(t.Top3Position); err != nil {
+		return err
+	}
 
 	_, err := db.conn.Exec(
 		`INSERT INTO tasks (id, title, domain_id, goal_id, context, due_date, recurring, priority, status, micro_steps, notify, position, created_at, completed_at, project_id, reminder_at, surface, top3_position)
@@ -96,24 +102,67 @@ func (db *DB) GetTask(id string) (*Task, error) {
 	return &t, nil
 }
 
-func (db *DB) ListTasks(domainID *int, goalID *string, status string, due string) ([]Task, error) {
-	if status == "" {
-		status = "pending"
+// validateTop3Position accepts null or positions 1-3.
+func validateTop3Position(p sql.NullInt64) error {
+	if p.Valid && !validTop3(p.Int64) {
+		return fmt.Errorf("%w: top3_position %d (must be 1, 2, or 3)", ErrInvalidEnum, p.Int64)
+	}
+	return nil
+}
+
+func validTop3(n int64) bool {
+	return n >= 1 && n <= 3
+}
+
+// TaskFilters are the optional AND'd filters for ListTasks; nil skips a filter.
+type TaskFilters struct {
+	DomainID   *int
+	GoalID     *string
+	Status     string // defaults to pending
+	Due        string // today|tomorrow|week
+	ProjectID  *string
+	Surface    *string
+	Top3       *bool   // true: in the Top 3 (any position); false: not in it
+	ReminderAt *string // tasks whose reminder_at is set and <= this ISO timestamp
+}
+
+func (db *DB) ListTasks(f TaskFilters) ([]Task, error) {
+	if f.Status == "" {
+		f.Status = "pending"
 	}
 
 	clauses := []string{"t.status = ?"}
-	args := []any{status}
+	args := []any{f.Status}
 
-	if domainID != nil {
+	if f.DomainID != nil {
 		clauses = append(clauses, "t.domain_id = ?")
-		args = append(args, *domainID)
+		args = append(args, *f.DomainID)
 	}
-	if goalID != nil {
+	if f.GoalID != nil {
 		clauses = append(clauses, "t.goal_id = ?")
-		args = append(args, *goalID)
+		args = append(args, *f.GoalID)
+	}
+	if f.ProjectID != nil {
+		clauses = append(clauses, "t.project_id = ?")
+		args = append(args, *f.ProjectID)
+	}
+	if f.Surface != nil {
+		clauses = append(clauses, "t.surface = ?")
+		args = append(args, *f.Surface)
+	}
+	if f.Top3 != nil {
+		if *f.Top3 {
+			clauses = append(clauses, "t.top3_position IS NOT NULL")
+		} else {
+			clauses = append(clauses, "t.top3_position IS NULL")
+		}
+	}
+	if f.ReminderAt != nil {
+		clauses = append(clauses, "t.reminder_at IS NOT NULL AND t.reminder_at <= ?")
+		args = append(args, *f.ReminderAt)
 	}
 
-	switch due {
+	switch f.Due {
 	case "today":
 		clauses = append(clauses, "t.due_date <= ?")
 		args = append(args, today())
@@ -154,6 +203,24 @@ func (db *DB) UpdateTask(id string, updates map[string]any) error {
 	for k, v := range updates {
 		if !taskUpdateFields[k] {
 			return fmt.Errorf("unsupported task update field: %s", k)
+		}
+		switch k {
+		case "surface":
+			s, ok := v.(string)
+			if !ok {
+				return fmt.Errorf("%w: surface must be a string", ErrInvalidEnum)
+			}
+			if err := validateSurface(s); err != nil {
+				return err
+			}
+		case "top3_position":
+			// null clears the star; JSON numbers arrive as float64.
+			if v != nil {
+				n, ok := v.(float64)
+				if !ok || !validTop3(int64(n)) || n != float64(int64(n)) {
+					return fmt.Errorf("%w: top3_position %v (must be 1, 2, 3, or null)", ErrInvalidEnum, v)
+				}
+			}
 		}
 		sets = append(sets, k+" = ?")
 		args = append(args, v)

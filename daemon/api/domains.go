@@ -23,6 +23,7 @@ type domainResponse struct {
 	DriftState     string `json:"drift_state"`
 	DriftLabel     string `json:"drift_label"`
 	OpenTaskCount  int    `json:"open_task_count"`
+	Surface        string `json:"surface"`
 }
 
 type domainDetailResponse struct {
@@ -41,10 +42,16 @@ type domainPatchRequest struct {
 	Color      *string `json:"color"`
 	Position   *int    `json:"position"`
 	Status     *string `json:"status"`
+	Surface    *string `json:"surface"`
 }
 
 func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
-	drifts, err := s.db.ComputeDriftStates()
+	var surface *string
+	if raw := strings.TrimSpace(r.URL.Query().Get("surface")); raw != "" {
+		surface = &raw
+	}
+
+	drifts, err := s.db.ComputeDriftStates(surface)
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -61,6 +68,7 @@ func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
 			DriftState:     d.State,
 			DriftLabel:     d.Label,
 			OpenTaskCount:  d.OpenTaskCount,
+			Surface:        d.Surface,
 		}
 		if d.StatusLine.Valid {
 			resp.StatusLine = d.StatusLine.String
@@ -102,7 +110,7 @@ func (s *Server) handleDomainDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var driftState, driftLabel string
-	drifts, err := s.db.ComputeDriftStates()
+	drifts, err := s.db.ComputeDriftStates(nil)
 	if err == nil {
 		for _, d := range drifts {
 			if d.ID == id {
@@ -141,6 +149,7 @@ type domainCreateRequest struct {
 	Importance int    `json:"importance"`
 	Icon       string `json:"icon"`
 	Color      string `json:"color"`
+	Surface    string `json:"surface"` // life|business, defaults to life
 }
 
 func (s *Server) handleDomainCreate(w http.ResponseWriter, r *http.Request) {
@@ -159,8 +168,12 @@ func (s *Server) handleDomainCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domain, err := s.db.CreateDomain(req.Name, req.Importance, req.Icon, req.Color)
+	domain, err := s.db.CreateDomain(req.Name, req.Importance, req.Icon, req.Color, req.Surface)
 	if err != nil {
+		if errors.Is(err, db.ErrInvalidEnum) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		writeInternalError(w, err)
 		return
 	}
@@ -209,6 +222,7 @@ func (s *Server) handleDomainPatch(w http.ResponseWriter, r *http.Request) {
 		Color:      req.Color,
 		Position:   req.Position,
 		Status:     req.Status,
+		Surface:    req.Surface,
 	}
 	if opts == (db.DomainUpdateOpts{}) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no fields to update"})
@@ -220,6 +234,10 @@ func (s *Server) handleDomainPatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.UpdateDomain(id, opts); err != nil {
+		if errors.Is(err, db.ErrInvalidEnum) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
 			return

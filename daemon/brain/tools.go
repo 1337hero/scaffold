@@ -397,7 +397,7 @@ func handleListTasks(ctx context.Context, database *db.DB, b *Brain, params json
 		goalID = &p.GoalID
 	}
 
-	tasks, err := database.ListTasks(domainID, goalID, p.Status, p.Due)
+	tasks, err := database.ListTasks(db.TaskFilters{DomainID: domainID, GoalID: goalID, Status: p.Status, Due: p.Due})
 	if err != nil {
 		return "", fmt.Errorf("list_tasks: %w", err)
 	}
