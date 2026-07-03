@@ -7,37 +7,25 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
 	"scaffold/db"
 	googlecal "scaffold/google"
-	"scaffold/sessionbus"
 )
 
 type ToolHandler func(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error)
 
 func defaultToolRegistry() map[string]ToolHandler {
 	return map[string]ToolHandler{
-		"save_to_inbox":          handleSaveToInbox,
-		"get_desk":               handleGetDesk,
 		"search_memories":        handleSearchMemories,
-		"update_desk_item":       handleUpdateDeskItem,
-		"get_inbox":              handleGetInbox,
 		"get_calendar_events":    handleGetCalendarEvents,
 		"create_calendar_event":  handleCreateCalendarEvent,
 		"update_calendar_event":  handleUpdateCalendarEvent,
-		"send_to_session":        handleSendToSession,
-		"list_sessions":          handleListSessions,
-		"create_goal":            handleCreateGoal,
 		"create_task":            handleCreateTask,
 		"create_note":            handleCreateNote,
-		"update_goal":            handleUpdateGoal,
 		"update_task":            handleUpdateTask,
-		"list_goals":             handleListGoals,
 		"list_tasks":             handleListTasks,
-		"dispatch_code_task":     handleDispatchCodeTask,
 		"search_email":           handleSearchEmail,
 		"get_email":              handleGetEmail,
 	}
@@ -54,122 +42,7 @@ func ExecuteTool(ctx context.Context, name string, params json.RawMessage, datab
 	return handler(ctx, database, b, params)
 }
 
-func handleSaveToInbox(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	var p struct {
-		Title      string   `json:"title"`
-		Content    string   `json:"content"`
-		Type       string   `json:"type"`
-		Importance float64  `json:"importance"`
-		Tags       []string `json:"tags"`
-		Domain     string   `json:"domain"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return "", fmt.Errorf("save_to_inbox: bad params: %w", err)
-	}
-	if p.Title == "" || p.Content == "" {
-		return "", fmt.Errorf("save_to_inbox: title and content required")
-	}
-	if database == nil {
-		return "", fmt.Errorf("save_to_inbox: database is required")
-	}
 
-	var triage *TriageResult
-	if b != nil {
-		var triageErr error
-		triage, triageErr = b.Triage(ctx, p.Content)
-		if triageErr != nil {
-			log.Printf("save_to_inbox triage error: %v", triageErr)
-		}
-	}
-
-	typ := "Observation"
-	if triage != nil && triage.Type != "" {
-		typ = triage.Type
-	}
-	if p.Type != "" {
-		typ = p.Type
-	}
-
-	importance := p.Importance
-	if importance == 0 && triage != nil {
-		importance = triage.Importance
-	}
-	if importance == 0 {
-		importance = 0.5
-	}
-
-	tags := strings.Join(p.Tags, ",")
-	if tags == "" && triage != nil {
-		tags = strings.Join(triage.Tags, ",")
-	}
-
-	var domainID sql.NullInt64
-	domainName := p.Domain
-	if domainName == "" && triage != nil {
-		domainName = triage.Domain
-	}
-	domainName = strings.TrimSpace(domainName)
-	if domainName == "" {
-		domainName = "Personal Development"
-	}
-	resolved, resolveErr := database.ResolveDomainID(domainName)
-	if resolveErr != nil {
-		log.Printf("save_to_inbox: resolve domain %q: %v", domainName, resolveErr)
-	} else if resolved != nil {
-		domainID = sql.NullInt64{Int64: int64(*resolved), Valid: true}
-	} else {
-		log.Printf("save_to_inbox: unknown domain %q, leaving undomained", domainName)
-	}
-
-	memoryID := uuid.New().String()
-	mem := db.Memory{
-		ID:         memoryID,
-		Type:       typ,
-		Content:    p.Content,
-		Title:      p.Title,
-		Importance: importance,
-		Source:     "agent",
-		Tags:       tags,
-		DomainID:   domainID,
-	}
-
-	action := "reference"
-	if triage != nil && triage.Action != "" {
-		action = triage.Action
-	}
-
-	captureID, err := database.InsertProcessedCaptureWithMemory(p.Content, "agent", action, mem, "agent_tool")
-	if err != nil {
-		return "", fmt.Errorf("save_to_inbox: persist failed: %w", err)
-	}
-
-	return fmt.Sprintf("Saved to inbox: %q (type=%s, capture=%s, memory=%s)", p.Title, typ, captureID, memoryID), nil
-}
-
-func handleGetDesk(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if database == nil {
-		return "", fmt.Errorf("get_desk: database is required")
-	}
-
-	items, err := database.TodaysDesk()
-	if err != nil {
-		return "", fmt.Errorf("get_desk: %w", err)
-	}
-	if len(items) == 0 {
-		return "Desk is empty today.", nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Today's desk:\n")
-	for i, item := range items {
-		sb.WriteString(fmt.Sprintf("%d. [%s] %s (id=%s)", i+1, item.Status, item.Title, item.ID))
-		if item.MicroSteps.Valid && item.MicroSteps.String != "" {
-			sb.WriteString("\n   Steps: " + item.MicroSteps.String)
-		}
-		sb.WriteString("\n")
-	}
-	return sb.String(), nil
-}
 
 func handleSearchMemories(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
 	if database == nil {
@@ -189,23 +62,6 @@ func handleSearchMemories(ctx context.Context, database *db.DB, b *Brain, params
 	requestedType := strings.TrimSpace(p.Type)
 
 	const topK = 10
-
-	if b != nil && b.embedder != nil && b.embedder.Available(ctx) {
-		vec, err := b.embedder.Embed(ctx, p.Query)
-		if err == nil {
-			embeddingModel := strings.TrimSpace(b.embedder.ModelName())
-			if embeddingModel != "" {
-				results, err := database.SearchHybrid(p.Query, vec, embeddingModel, topK*3)
-				if err == nil && len(results) > 0 {
-					filtered := filterScoredMemoriesByType(results, requestedType, topK)
-					if len(filtered) > 0 {
-						markSearchAccess(database, filtered)
-						return formatSearchResults(p.Query, filtered), nil
-					}
-				}
-			}
-		}
-	}
 
 	ftsResults, err := database.SearchFTS(p.Query, topK*3)
 	if err == nil && len(ftsResults) > 0 {
@@ -271,79 +127,7 @@ func formatSearchResults(query string, results []db.ScoredMemory) string {
 	return sb.String()
 }
 
-func handleUpdateDeskItem(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if database == nil {
-		return "", fmt.Errorf("update_desk_item: database is required")
-	}
 
-	var p struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return "", fmt.Errorf("update_desk_item: bad params: %w", err)
-	}
-	if p.ID == "" || p.Status == "" {
-		return "", fmt.Errorf("update_desk_item: id and status required")
-	}
-
-	switch p.Status {
-	case "deferred":
-		if err := database.DeferDeskItem(p.ID); err != nil {
-			return "", fmt.Errorf("update_desk_item: defer failed: %w", err)
-		}
-		return fmt.Sprintf("Desk item %s deferred to tomorrow.", p.ID), nil
-	case "done", "active":
-		if err := database.UpdateDeskStatus(p.ID, p.Status); err != nil {
-			return "", fmt.Errorf("update_desk_item: update failed: %w", err)
-		}
-		return fmt.Sprintf("Desk item %s marked %s.", p.ID, p.Status), nil
-	default:
-		return "", fmt.Errorf("update_desk_item: invalid status %q (must be done, deferred, or active)", p.Status)
-	}
-}
-
-func handleGetInbox(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if database == nil {
-		return "", fmt.Errorf("get_inbox: database is required")
-	}
-
-	captures, err := database.ListRecent(10)
-	if err != nil {
-		return "", fmt.Errorf("get_inbox: %w", err)
-	}
-
-	filtered := make([]db.Capture, 0, len(captures))
-	for _, capture := range captures {
-		if strings.EqualFold(strings.TrimSpace(capture.Source), "user:archive") {
-			continue
-		}
-		filtered = append(filtered, capture)
-	}
-
-	if len(filtered) == 0 {
-		return "Inbox is empty.", nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Inbox (%d items):\n", len(filtered)))
-	for i, c := range filtered {
-		processed := "pending"
-		if c.Processed == 1 {
-			processed = "processed"
-		}
-		action := ""
-		if c.TriageAction.Valid {
-			action = " [" + c.TriageAction.String + "]"
-		}
-		raw := c.Raw
-		if len(raw) > 80 {
-			raw = raw[:80] + "..."
-		}
-		sb.WriteString(fmt.Sprintf("%d. [%s%s] %s\n", i+1, processed, action, raw))
-	}
-	return sb.String(), nil
-}
 
 func markSearchAccess(database *db.DB, results []db.ScoredMemory) {
 	if database == nil || len(results) == 0 {
@@ -410,110 +194,7 @@ func handleGetCalendarEvents(ctx context.Context, database *db.DB, b *Brain, par
 	return googlecal.FormatEvents(events), nil
 }
 
-func handleListSessions(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if b == nil || b.sessionBus == nil {
-		return "", fmt.Errorf("list_sessions: session bus is not configured")
-	}
 
-	sessions := b.sessionBus.List(ctx)
-	if len(sessions) == 0 {
-		return "No active sessions in session bus.", nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Active sessions:\n")
-	for _, s := range sessions {
-		sb.WriteString("- ")
-		sb.WriteString(s.SessionID)
-		sb.WriteString(" [")
-		sb.WriteString(s.Provider)
-		sb.WriteString("]")
-		if strings.TrimSpace(s.Name) != "" {
-			sb.WriteString(" ")
-			sb.WriteString(s.Name)
-		}
-		sb.WriteString(fmt.Sprintf(" queue=%d last_seen=%s\n", s.QueueDepth, s.LastSeenAt.Format(time.RFC3339)))
-	}
-	return sb.String(), nil
-}
-
-func handleSendToSession(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if b == nil || b.sessionBus == nil {
-		return "", fmt.Errorf("send_to_session: session bus is not configured")
-	}
-
-	var p struct {
-		ToSessionID   string `json:"to_session_id"`
-		Message       string `json:"message"`
-		Mode          string `json:"mode"`
-		FromSessionID string `json:"from_session_id"`
-		FromProvider  string `json:"from_provider"`
-		FromName      string `json:"from_name"`
-		WaitSeconds   int    `json:"wait_seconds"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return "", fmt.Errorf("send_to_session: bad params: %w", err)
-	}
-
-	p.ToSessionID = strings.TrimSpace(p.ToSessionID)
-	p.Message = strings.TrimSpace(p.Message)
-	if p.ToSessionID == "" {
-		return "", fmt.Errorf("send_to_session: to_session_id is required")
-	}
-	if p.Message == "" {
-		return "", fmt.Errorf("send_to_session: message is required")
-	}
-
-	fromID := strings.TrimSpace(p.FromSessionID)
-	if fromID == "" {
-		fromID = "scaffold-agent"
-	}
-	fromProvider := strings.TrimSpace(p.FromProvider)
-	if fromProvider == "" {
-		fromProvider = "scaffold"
-	}
-	fromName := strings.TrimSpace(p.FromName)
-	if fromName == "" {
-		fromName = "Scaffold Agent"
-	}
-
-	if _, err := b.sessionBus.Register(ctx, sessionbus.RegisterRequest{
-		SessionID: fromID,
-		Provider:  fromProvider,
-		Name:      fromName,
-	}); err != nil {
-		return "", fmt.Errorf("send_to_session: register sender: %w", err)
-	}
-
-	delivered, err := b.sessionBus.Send(ctx, sessionbus.SendRequest{
-		FromSessionID: fromID,
-		ToSessionID:   p.ToSessionID,
-		Mode:          p.Mode,
-		Message:       p.Message,
-	})
-	if err != nil {
-		return "", fmt.Errorf("send_to_session: %w", err)
-	}
-
-	if p.WaitSeconds <= 0 {
-		return fmt.Sprintf("Message sent to %s (id=%s mode=%s)", p.ToSessionID, delivered.ID, delivered.Mode), nil
-	}
-
-	if p.WaitSeconds > 120 {
-		p.WaitSeconds = 120
-	}
-
-	incoming, err := b.sessionBus.Poll(ctx, fromID, 1, time.Duration(p.WaitSeconds)*time.Second)
-	if err != nil {
-		return "", fmt.Errorf("send_to_session: waiting for reply: %w", err)
-	}
-	if len(incoming) == 0 {
-		return fmt.Sprintf("Message sent to %s (id=%s). No reply within %ds.", p.ToSessionID, delivered.ID, p.WaitSeconds), nil
-	}
-
-	reply := incoming[0]
-	return fmt.Sprintf("Message sent to %s (id=%s).\nReply from %s:\n%s", p.ToSessionID, delivered.ID, reply.FromSessionID, reply.Message), nil
-}
 
 func resolveDomain(database *db.DB, name string) sql.NullInt64 {
 	name = strings.TrimSpace(name)
@@ -527,61 +208,6 @@ func resolveDomain(database *db.DB, name string) sql.NullInt64 {
 	return sql.NullInt64{Int64: int64(*resolved), Valid: true}
 }
 
-func handleCreateGoal(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if database == nil {
-		return "", fmt.Errorf("create_goal: database is required")
-	}
-
-	var p struct {
-		Title        string  `json:"title"`
-		Domain       string  `json:"domain"`
-		Context      string  `json:"context"`
-		DueDate      string  `json:"due_date"`
-		Type         string  `json:"type"`
-		TargetValue  float64 `json:"target_value"`
-		CurrentValue float64 `json:"current_value"`
-		HabitType    string  `json:"habit_type"`
-		ScheduleDays string  `json:"schedule_days"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return "", fmt.Errorf("create_goal: bad params: %w", err)
-	}
-	if p.Title == "" {
-		return "", fmt.Errorf("create_goal: title required")
-	}
-
-	g := db.Goal{
-		ID:       uuid.New().String(),
-		Title:    p.Title,
-		DomainID: resolveDomain(database, p.Domain),
-	}
-	if p.Context != "" {
-		g.Context = sql.NullString{String: p.Context, Valid: true}
-	}
-	if p.DueDate != "" {
-		g.DueDate = sql.NullString{String: p.DueDate, Valid: true}
-	}
-	if p.Type != "" {
-		g.Type = p.Type
-	}
-	if p.TargetValue != 0 {
-		g.TargetValue = sql.NullFloat64{Float64: p.TargetValue, Valid: true}
-	}
-	if p.CurrentValue != 0 {
-		g.CurrentValue = sql.NullFloat64{Float64: p.CurrentValue, Valid: true}
-	}
-	if p.HabitType != "" {
-		g.HabitType = sql.NullString{String: p.HabitType, Valid: true}
-	}
-	if p.ScheduleDays != "" {
-		g.ScheduleDays = sql.NullString{String: p.ScheduleDays, Valid: true}
-	}
-
-	if err := database.InsertGoal(g); err != nil {
-		return "", fmt.Errorf("create_goal: %w", err)
-	}
-	return fmt.Sprintf("Goal created: %q (id=%s)", p.Title, g.ID), nil
-}
 
 func handleCreateTask(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
 	if database == nil {
@@ -683,78 +309,6 @@ func handleCreateNote(ctx context.Context, database *db.DB, b *Brain, params jso
 	return fmt.Sprintf("Note created: %q (id=%s)", p.Title, n.ID), nil
 }
 
-func handleUpdateGoal(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if database == nil {
-		return "", fmt.Errorf("update_goal: database is required")
-	}
-
-	var p struct {
-		ID           string   `json:"id"`
-		Title        *string  `json:"title"`
-		Domain       *string  `json:"domain"`
-		Context      *string  `json:"context"`
-		DueDate      *string  `json:"due_date"`
-		Type         *string  `json:"type"`
-		TargetValue  *float64 `json:"target_value"`
-		CurrentValue *float64 `json:"current_value"`
-		HabitType    *string  `json:"habit_type"`
-		ScheduleDays *string  `json:"schedule_days"`
-		Status       *string  `json:"status"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return "", fmt.Errorf("update_goal: bad params: %w", err)
-	}
-	if p.ID == "" {
-		return "", fmt.Errorf("update_goal: id required")
-	}
-
-	updates := map[string]any{}
-	if p.Title != nil {
-		updates["title"] = *p.Title
-	}
-	if p.Domain != nil {
-		domainID := resolveDomain(database, *p.Domain)
-		if domainID.Valid {
-			updates["domain_id"] = domainID.Int64
-		}
-	}
-	if p.Context != nil {
-		updates["context"] = *p.Context
-	}
-	if p.DueDate != nil {
-		updates["due_date"] = *p.DueDate
-	}
-	if p.Type != nil {
-		updates["type"] = *p.Type
-	}
-	if p.TargetValue != nil {
-		updates["target_value"] = *p.TargetValue
-	}
-	if p.CurrentValue != nil {
-		updates["current_value"] = *p.CurrentValue
-	}
-	if p.HabitType != nil {
-		updates["habit_type"] = *p.HabitType
-	}
-	if p.ScheduleDays != nil {
-		updates["schedule_days"] = *p.ScheduleDays
-	}
-	if p.Status != nil {
-		updates["status"] = *p.Status
-		if *p.Status == "done" {
-			updates["completed_at"] = time.Now().UTC().Format(time.RFC3339)
-		}
-	}
-
-	if len(updates) == 0 {
-		return "No fields to update.", nil
-	}
-
-	if err := database.UpdateGoal(p.ID, updates); err != nil {
-		return "", fmt.Errorf("update_goal: %w", err)
-	}
-	return fmt.Sprintf("Goal %s updated.", p.ID), nil
-}
 
 func handleUpdateTask(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
 	if database == nil {
@@ -825,96 +379,7 @@ func handleUpdateTask(ctx context.Context, database *db.DB, b *Brain, params jso
 	return fmt.Sprintf("Task %s updated.", p.ID), nil
 }
 
-func handleListGoals(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if database == nil {
-		return "", fmt.Errorf("list_goals: database is required")
-	}
 
-	var p struct {
-		Domain string `json:"domain"`
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return "", fmt.Errorf("list_goals: bad params: %w", err)
-	}
-
-	var domainID *int
-	if p.Domain != "" {
-		resolved, err := database.ResolveDomainID(p.Domain)
-		if err == nil && resolved != nil {
-			domainID = resolved
-		}
-	}
-
-	goals, err := database.GoalsWithProgress(domainID)
-	if err != nil {
-		return "", fmt.Errorf("list_goals: %w", err)
-	}
-
-	if len(goals) == 0 {
-		return "No active goals found.", nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Goals (%d):\n", len(goals)))
-	for i, g := range goals {
-		sb.WriteString(fmt.Sprintf("%d. %s (id=%s, type=%s", i+1, g.Title, g.ID, g.Type))
-		if g.DueDate.Valid {
-			sb.WriteString(", due=" + g.DueDate.String)
-		}
-		if g.TotalTasks > 0 {
-			sb.WriteString(fmt.Sprintf(", tasks=%d/%d %.0f%%", g.CompletedTasks, g.TotalTasks, g.Progress*100))
-		}
-		sb.WriteString(")\n")
-	}
-	return sb.String(), nil
-}
-
-func handleDispatchCodeTask(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if b == nil || b.sessionBus == nil {
-		return "", fmt.Errorf("dispatch_code_task: session bus not configured")
-	}
-
-	var p struct {
-		Task  string `json:"task"`
-		Chain string `json:"chain"`
-		CWD   string `json:"cwd"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return "", fmt.Errorf("dispatch_code_task: bad params: %w", err)
-	}
-	if strings.TrimSpace(p.Task) == "" {
-		return "", fmt.Errorf("dispatch_code_task: task required")
-	}
-	if p.Chain == "" {
-		p.Chain = "implement"
-	}
-	if p.CWD == "" && b != nil {
-		p.CWD = b.codeDispatchCWD
-	}
-
-	msg := map[string]any{
-		"type":     "code_task",
-		"task":     p.Task,
-		"chain":    p.Chain,
-		"cwd":      p.CWD,
-		"reply_to": "scaffold-agent",
-	}
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return "", fmt.Errorf("dispatch_code_task: marshal: %w", err)
-	}
-
-	if _, err := b.sessionBus.Send(ctx, sessionbus.SendRequest{
-		FromSessionID: "scaffold-agent",
-		ToSessionID:   "scaffold-worker",
-		Message:       string(data),
-	}); err != nil {
-		return "", fmt.Errorf("dispatch_code_task: %w", err)
-	}
-
-	return fmt.Sprintf("Code task dispatched (chain=%s). Check #/agents in the web UI for live progress. Results delivered on completion.", p.Chain), nil
-}
 
 func handleListTasks(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
 	if database == nil {
@@ -1036,97 +501,10 @@ func handleUpdateCalendarEvent(ctx context.Context, database *db.DB, b *Brain, p
 }
 
 func handleSearchEmail(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if b == nil || b.gmailClient == nil {
-		return "Gmail is not configured. Run: scaffold-daemon auth google", nil
-	}
-
-	var p struct {
-		Query      string `json:"query"`
-		MaxResults int    `json:"max_results"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return "", fmt.Errorf("search_email: bad params: %w", err)
-	}
-	if strings.TrimSpace(p.Query) == "" {
-		return "", fmt.Errorf("search_email: query required")
-	}
-	maxResults := p.MaxResults
-	if maxResults <= 0 {
-		maxResults = 5
-	}
-	if maxResults > 20 {
-		maxResults = 20
-	}
-
-	messages, err := b.gmailClient.SearchMessages(ctx, p.Query, maxResults)
-	if err != nil {
-		return "", fmt.Errorf("search_email: %w", err)
-	}
-	if len(messages) == 0 {
-		return fmt.Sprintf("No emails found matching %q.", p.Query), nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d email(s) matching %q:\n", len(messages), p.Query))
-	for i, msg := range messages {
-		sb.WriteString(fmt.Sprintf("%d. From: %s\n   Subject: %s\n   Date: %s\n   ID: %s\n   %s\n\n",
-			i+1, msg.From, msg.Subject, msg.Date.Format("2006-01-02 15:04"), msg.ID, msg.Snippet))
-	}
-	return sb.String(), nil
+	return "Gmail search is not available in v2. Email triage has been removed.", nil
 }
 
 func handleGetEmail(ctx context.Context, database *db.DB, b *Brain, params json.RawMessage) (string, error) {
-	if b == nil || b.gmailClient == nil {
-		return "Gmail is not configured. Run: scaffold-daemon auth google", nil
-	}
-
-	var p struct {
-		MessageID  string `json:"message_id"`
-		Label      string `json:"label"`
-		MaxResults int    `json:"max_results"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return "", fmt.Errorf("get_email: bad params: %w", err)
-	}
-
-	if strings.TrimSpace(p.MessageID) != "" {
-		msg, err := b.gmailClient.GetMessage(ctx, strings.TrimSpace(p.MessageID))
-		if err != nil {
-			return "", fmt.Errorf("get_email: %w", err)
-		}
-		return fmt.Sprintf("Email:\nFrom: %s\nSubject: %s\nDate: %s\nLabels: %s\n\n%s",
-			msg.From, msg.Subject, msg.Date.Format("2006-01-02 15:04"),
-			strings.Join(msg.Labels, ", "), msg.Body), nil
-	}
-
-	label := strings.TrimSpace(p.Label)
-	if label == "" {
-		label = "INBOX"
-	}
-	maxResults := p.MaxResults
-	if maxResults <= 0 {
-		maxResults = 5
-	}
-	query := fmt.Sprintf("label:%s", quoteGmailQueryValue(label))
-	messages, err := b.gmailClient.SearchMessages(ctx, query, maxResults)
-	if err != nil {
-		return "", fmt.Errorf("get_email: %w", err)
-	}
-	if len(messages) == 0 {
-		return fmt.Sprintf("No emails found in label %q.", label), nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Recent emails in %q (%d):\n", label, len(messages)))
-	for i, msg := range messages {
-		sb.WriteString(fmt.Sprintf("%d. From: %s\n   Subject: %s\n   Date: %s\n   ID: %s\n\n",
-			i+1, msg.From, msg.Subject, msg.Date.Format("2006-01-02 15:04"), msg.ID))
-	}
-	return sb.String(), nil
+	return "Gmail access is not available in v2. Email triage has been removed.", nil
 }
 
-func quoteGmailQueryValue(v string) string {
-	escaped := strings.ReplaceAll(v, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-	return fmt.Sprintf(`"%s"`, escaped)
-}

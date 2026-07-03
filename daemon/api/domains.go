@@ -27,8 +27,6 @@ type domainResponse struct {
 
 type domainDetailResponse struct {
 	Domain         domainResponse `json:"domain"`
-	DeskItems      []db.DeskItem  `json:"desk_items"`
-	OpenCaptures   []db.Capture   `json:"open_captures"`
 	RecentMemories []db.Memory    `json:"recent_memories"`
 	DriftState     string         `json:"drift_state"`
 	DriftLabel     string         `json:"drift_label"`
@@ -46,9 +44,8 @@ type domainPatchRequest struct {
 }
 
 type dumpResponse struct {
-	Count    int          `json:"count"`
-	Captures []db.Capture `json:"captures"`
-	Memories []db.Memory  `json:"memories"`
+	Count    int         `json:"count"`
+	Memories []db.Memory `json:"memories"`
 }
 
 func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +55,7 @@ func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]domainResponse, 0, len(drifts)+1)
+	out := make([]domainResponse, 0, len(drifts))
 	for _, d := range drifts {
 		resp := domainResponse{
 			ID:             d.ID,
@@ -78,20 +75,6 @@ func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, resp)
 	}
-
-	count, err := s.db.CountDumpItems()
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	out = append(out, domainResponse{
-		ID:            0,
-		Name:          "The Dump",
-		Importance:    1,
-		DriftState:    "cold",
-		DriftLabel:    strconv.Itoa(count) + " items",
-		OpenTaskCount: count,
-	})
 
 	writeJSON(w, http.StatusOK, out)
 }
@@ -150,8 +133,6 @@ func (s *Server) handleDomainDetail(w http.ResponseWriter, r *http.Request) {
 
 	resp := domainDetailResponse{
 		Domain:         domResp,
-		DeskItems:      emptyIfNilDesk(detail.DeskItems),
-		OpenCaptures:   emptyIfNilCaptures(detail.OpenCaptures),
 		RecentMemories: emptyIfNilMemories(detail.RecentMemories),
 		DriftState:     driftState,
 		DriftLabel:     driftLabel,
@@ -262,43 +243,7 @@ func (s *Server) handleDomainPatch(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleDomainsDump(w http.ResponseWriter, r *http.Request) {
-	captures, err := s.db.DumpItems(50)
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	memories, err := s.db.DumpMemories(50)
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	count, err := s.db.CountDumpItems()
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
 
-	writeJSON(w, http.StatusOK, dumpResponse{
-		Count:    count,
-		Captures: emptyIfNilCaptures(captures),
-		Memories: emptyIfNilMemories(memories),
-	})
-}
-
-func emptyIfNilDesk(items []db.DeskItem) []db.DeskItem {
-	if items == nil {
-		return []db.DeskItem{}
-	}
-	return items
-}
-
-func emptyIfNilCaptures(items []db.Capture) []db.Capture {
-	if items == nil {
-		return []db.Capture{}
-	}
-	return items
-}
 
 func emptyIfNilMemories(items []db.Memory) []db.Memory {
 	if items == nil {

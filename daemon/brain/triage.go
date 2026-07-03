@@ -7,10 +7,8 @@ import (
 	"strings"
 
 	"scaffold/db"
-	"scaffold/embedding"
 	googlecal "scaffold/google"
 	"scaffold/llm"
-	"scaffold/sessionbus"
 )
 
 const maxToolRounds = 5
@@ -34,10 +32,7 @@ type Brain struct {
 	triageLLM        llm.CompletionClient
 	prioritizeLLM    llm.CompletionClient
 	db               *db.DB
-	embedder         embedding.Embedder
 	calendarClient   *googlecal.CalendarClient
-	gmailClient      *googlecal.GmailClient
-	sessionBus       *sessionbus.Bus
 	tools            []ToolDefinition
 	toolRegistry     map[string]ToolHandler
 	bulletinProvider func() (string, bool)
@@ -125,7 +120,6 @@ func NewWithDependencies(database *db.DB, cfg Config, deps Dependencies) *Brain 
 		prioritizeModel:  prioritizeModel,
 		respondMaxTokens: respondMaxTokens,
 		triageMaxTokens:  triageMaxTokens,
-		codeDispatchCWD:  cfg.CodeDispatchCWD,
 	}
 }
 
@@ -476,20 +470,8 @@ func (b *Brain) SetBulletinProvider(provider func() (string, bool)) {
 	b.bulletinProvider = provider
 }
 
-func (b *Brain) SetEmbedder(e embedding.Embedder) {
-	b.embedder = e
-}
-
 func (b *Brain) SetCalendarClient(c *googlecal.CalendarClient) {
 	b.calendarClient = c
-}
-
-func (b *Brain) SetGmailClient(c *googlecal.GmailClient) {
-	b.gmailClient = c
-}
-
-func (b *Brain) SetSessionBus(bus *sessionbus.Bus) {
-	b.sessionBus = bus
 }
 
 func (b *Brain) renderSystemPrompt() string {

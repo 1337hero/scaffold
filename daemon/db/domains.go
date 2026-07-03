@@ -52,8 +52,6 @@ type DomainHealthData struct {
 
 type DomainDetail struct {
 	Domain
-	DeskItems      []DeskItem
-	OpenCaptures   []Capture
 	RecentMemories []Memory
 }
 
@@ -127,7 +125,7 @@ func (db *DB) SeedDefaultDomains() error {
 			continue
 		}
 
-		for _, table := range []string{"memories", "captures", "desk"} {
+		for _, table := range []string{"memories"} {
 			if _, err := tx.Exec(
 				fmt.Sprintf("UPDATE %s SET domain_id = ? WHERE domain_id = ?", table),
 				*mappedID, *legacyID,
@@ -386,19 +384,7 @@ func computeHealthScore(importance, daysSince, goalCount, taskCount, completedTa
 	return score
 }
 
-func (db *DB) DomainDeskItems(domainID int) ([]DeskItem, error) {
-	return db.queryDesk(
-		`SELECT id, memory_id, title, position, status, micro_steps, date, created_at, completed_at, domain_id
-		 FROM desk WHERE domain_id = ? AND status = 'active' ORDER BY position ASC`, domainID,
-	)
-}
 
-func (db *DB) DomainOpenCaptures(domainID int) ([]Capture, error) {
-	return db.queryCaptures(
-		`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed, domain_id
-		 FROM captures WHERE domain_id = ? AND processed = 0 ORDER BY created_at DESC`, domainID,
-	)
-}
 
 func (db *DB) DomainRecentMemories(domainID int, limit int) ([]Memory, error) {
 	return db.queryMemories(
@@ -417,15 +403,7 @@ func (db *DB) DomainDetailByID(id int) (*DomainDetail, error) {
 		return nil, nil
 	}
 
-	deskItems, err := db.DomainDeskItems(id)
-	if err != nil {
-		return nil, fmt.Errorf("domain desk items: %w", err)
-	}
 
-	captures, err := db.DomainOpenCaptures(id)
-	if err != nil {
-		return nil, fmt.Errorf("domain open captures: %w", err)
-	}
 
 	memories, err := db.DomainRecentMemories(id, 10)
 	if err != nil {
@@ -434,38 +412,16 @@ func (db *DB) DomainDetailByID(id int) (*DomainDetail, error) {
 
 	return &DomainDetail{
 		Domain:         *domain,
-		DeskItems:      deskItems,
-		OpenCaptures:   captures,
 		RecentMemories: memories,
 	}, nil
 }
 
-func (db *DB) DumpItems(limit int) ([]Capture, error) {
-	return db.queryCaptures(
-		`SELECT id, raw, source, processed, triage_action, memory_id, created_at, confirmed, domain_id
-		 FROM captures WHERE domain_id IS NULL ORDER BY created_at DESC LIMIT ?`, limit,
-	)
-}
 
 func (db *DB) DumpMemories(limit int) ([]Memory, error) {
 	return db.queryMemories(
 		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id
 		 FROM memories WHERE domain_id IS NULL AND suppressed_at IS NULL ORDER BY created_at DESC LIMIT ?`, limit,
 	)
-}
-
-func (db *DB) CountDumpItems() (int, error) {
-	var capturesCount int
-	if err := db.conn.QueryRow(`SELECT COUNT(*) FROM captures WHERE domain_id IS NULL`).Scan(&capturesCount); err != nil {
-		return 0, err
-	}
-
-	var memoriesCount int
-	if err := db.conn.QueryRow(`SELECT COUNT(*) FROM memories WHERE domain_id IS NULL AND suppressed_at IS NULL`).Scan(&memoriesCount); err != nil {
-		return 0, err
-	}
-
-	return capturesCount + memoriesCount, nil
 }
 
 func (db *DB) TouchDomainByMemory(memoryID string) error {
@@ -486,41 +442,7 @@ func (db *DB) TouchDomainByMemory(memoryID string) error {
 	return nil
 }
 
-func (db *DB) TouchDomainByDesk(deskID string) error {
-	var domainID sql.NullInt64
-	err := db.conn.QueryRow(`SELECT domain_id FROM desk WHERE id = ?`, deskID).Scan(&domainID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		return fmt.Errorf("lookup domain by desk %s: %w", deskID, err)
-	}
-	if !domainID.Valid {
-		return nil
-	}
-	if err := db.TouchDomain(int(domainID.Int64)); err != nil {
-		return fmt.Errorf("touch domain by desk %s: %w", deskID, err)
-	}
-	return nil
-}
 
-func (db *DB) TouchDomainByCapture(captureID string) error {
-	var domainID sql.NullInt64
-	err := db.conn.QueryRow(`SELECT domain_id FROM captures WHERE id = ?`, captureID).Scan(&domainID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		return fmt.Errorf("lookup domain by capture %s: %w", captureID, err)
-	}
-	if !domainID.Valid {
-		return nil
-	}
-	if err := db.TouchDomain(int(domainID.Int64)); err != nil {
-		return fmt.Errorf("touch domain by capture %s: %w", captureID, err)
-	}
-	return nil
-}
 
 func (db *DB) ResolveDomainID(name string) (*int, error) {
 	name = canonicalDomainName(name)

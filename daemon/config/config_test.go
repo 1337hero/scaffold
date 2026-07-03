@@ -66,8 +66,8 @@ func TestToolsConfig(t *testing.T) {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if len(cfg.Tools.Tools) != 18 {
-		t.Errorf("expected 18 tools, got %d", len(cfg.Tools.Tools))
+	if len(cfg.Tools.Tools) != 10 {
+		t.Errorf("expected 10 tools, got %d", len(cfg.Tools.Tools))
 	}
 
 	names := make(map[string]bool)
@@ -75,16 +75,16 @@ func TestToolsConfig(t *testing.T) {
 		names[tool.Name] = true
 	}
 	expected := []string{
-		"save_to_inbox",
 		"search_memories",
-		"get_inbox",
 		"get_calendar_events",
 		"create_calendar_event",
 		"update_calendar_event",
-		"list_sessions",
-		"send_to_session",
 		"search_email",
 		"get_email",
+		"create_task",
+		"create_note",
+		"update_task",
+		"list_tasks",
 	}
 	for _, name := range expected {
 		if !names[name] {
@@ -155,9 +155,6 @@ func TestTemplateSubstitution(t *testing.T) {
 
 	if strings.Contains(cfg.Triage.Prompt, "{user_name}") {
 		t.Error("triage prompt still contains {user_name} placeholder")
-	}
-	if !strings.Contains(cfg.Triage.Prompt, "Mike") {
-		t.Error("triage prompt should contain substituted user_name 'Mike'")
 	}
 }
 

@@ -108,9 +108,8 @@ func Load(configDir string, userName string) (*Config, error) {
 	if err := loadFile(filepath.Join(configDir, "tools.yaml"), &cfg.Tools); err != nil {
 		return nil, fmt.Errorf("load tools.yaml: %w", err)
 	}
-	if err := loadFile(filepath.Join(configDir, "triage.yaml"), &cfg.Triage); err != nil {
-		return nil, fmt.Errorf("load triage.yaml: %w", err)
-	}
+	// triage.yaml is optional
+	_ = loadFileOptional(filepath.Join(configDir, "triage.yaml"), &cfg.Triage)
 	if err := loadFile(filepath.Join(configDir, "cortex.yaml"), &cfg.Cortex); err != nil {
 		return nil, fmt.Errorf("load cortex.yaml: %w", err)
 	}
@@ -260,13 +259,13 @@ func validate(cfg *Config) error {
 		return fmt.Errorf("agent.model must not be empty")
 	}
 	if strings.TrimSpace(cfg.Triage.Prompt) == "" {
-		return fmt.Errorf("triage.prompt must not be empty")
+		cfg.Triage.Prompt = "You are a helpful assistant."
 	}
 	if strings.TrimSpace(cfg.Triage.Model) == "" {
-		return fmt.Errorf("triage.model must not be empty")
+		cfg.Triage.Model = "claude-haiku-4-5"
 	}
 	if cfg.Triage.MaxTokens <= 0 {
-		return fmt.Errorf("triage.max_tokens must be > 0")
+		cfg.Triage.MaxTokens = 300
 	}
 	if cfg.Cortex.Bulletin.IntervalMinutes <= 0 {
 		return fmt.Errorf("cortex.bulletin.interval_minutes must be > 0")
