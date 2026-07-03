@@ -38,6 +38,16 @@ type activityCreateRequest struct {
 	Hours       *float64 `json:"hours"`
 }
 
+// projectDetailResponse is the enriched GET response including sub-entities.
+type projectDetailResponse struct {
+	Project            db.Project     `json:"project"`
+	Milestones         []db.Milestone `json:"milestones"`
+	MilestoneCompleted int            `json:"milestone_completed"`
+	MilestoneTotal     int            `json:"milestone_total"`
+	Checklists         []db.Checklist `json:"checklists"`
+	RecentActivity     []db.Activity  `json:"recent_activity"`
+}
+
 // --- Projects ---
 
 func (s *Server) handleProjectsList(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +146,42 @@ func (s *Server) handleProjectGet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, project)
+
+	// Fetch detail.
+	milestones, err := s.db.ListMilestones(id)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	milestoneCompleted, milestoneTotal, err := s.db.MilestoneCompletion(id)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	checklists, err := s.db.ListChecklists(id)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	activity, err := s.db.ListActivity(id)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	// Cap recent activity at 5.
+	if len(activity) > 5 {
+		activity = activity[:5]
+	}
+
+	detail := projectDetailResponse{
+		Project:            *project,
+		Milestones:         milestones,
+		MilestoneCompleted: milestoneCompleted,
+		MilestoneTotal:     milestoneTotal,
+		Checklists:         checklists,
+		RecentActivity:     activity,
+	}
+	writeJSON(w, http.StatusOK, detail)
 }
 
 func (s *Server) handleProjectPatch(w http.ResponseWriter, r *http.Request) {
