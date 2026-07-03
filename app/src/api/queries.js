@@ -224,3 +224,82 @@ export function updateDomain(id, data) {
   })
 }
 export function archiveDomain(id) { return apiFetch(`/api/domains/${id}`, { method: "DELETE" }) }
+
+// --- v2 normalizers (clean client shapes from Go wire format) ---
+
+function nullableField(field) {
+  if (!field || typeof field !== "object" || !field.Valid) return null
+  return field.String ?? field.Int64 ?? null
+}
+
+function normalizeTask(t) {
+  if (!t || typeof t !== "object") return null
+  return {
+    id: t.ID || "",
+    title: t.Title || "",
+    domainName: t.DomainName || "",
+    dueDate: nullableField(t.DueDate),
+    priority: t.Priority || "normal",
+    status: t.Status || "pending",
+    surface: t.Surface || "life",
+    projectId: nullableField(t.ProjectID),
+    reminderAt: nullableField(t.ReminderAt),
+    top3Position: nullableField(t.Top3Position),
+    daysOverdue: t.DaysOverdue ?? 0,
+  }
+}
+
+function normalizeSlippingProject(p) {
+  if (!p || typeof p !== "object") return null
+  return {
+    id: p.ID || "",
+    name: p.Name || "",
+    type: p.Type || "project",
+    surface: p.Surface || "life",
+    status: p.Status || "active",
+    lastActivityAt: nullableField(p.LastActivityAt),
+  }
+}
+
+function normalizeSlippingPerson(p) {
+  if (!p || typeof p !== "object") return null
+  return {
+    id: p.ID || "",
+    name: p.Name || "",
+    relationship: nullableField(p.Relationship),
+    lastInteractionAt: nullableField(p.LastInteractionAt),
+    contactCadenceDays: nullableField(p.ContactCadenceDays) ?? 90,
+  }
+}
+
+// Today
+
+export const todayQuery = (surface) => ({
+  queryKey: ["today", surface],
+  queryFn: async () => {
+    const data = await apiFetch(`/api/today?surface=${surface}`)
+    const slipping = data?.slipping ?? {}
+    return {
+      top3: ensureArray(data?.top3).map(normalizeTask).filter(Boolean),
+      calendar: ensureArray(data?.calendar),
+      slipping: {
+        projects: ensureArray(slipping.projects).map(normalizeSlippingProject).filter(Boolean),
+        tasks: ensureArray(slipping.tasks).map(normalizeTask).filter(Boolean),
+        people: ensureArray(slipping.people).map(normalizeSlippingPerson).filter(Boolean),
+        areas: ensureArray(slipping.areas).map(normalizeSlippingProject).filter(Boolean),
+      },
+      notifications: ensureArray(data?.notifications),
+    }
+  },
+  staleTime: 60 * 1000,
+})
+
+export const top3CandidatesQuery = (surface) => ({
+  queryKey: ["top3-candidates", surface],
+  queryFn: async () => {
+    const data = await apiFetch(`/api/tasks?surface=${surface}&top3=false`)
+    return ensureArray(data).map(normalizeTask).filter(Boolean)
+  },
+})
+
+export function setTop3(taskIds) { return putJSON("/api/today/top3", taskIds) }

@@ -69,7 +69,11 @@ func (s *Server) todaysCalendar(r *http.Request) []calendarEventDTO {
 func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 	surface := surfaceParam(r)
 
-	top3, err := s.db.GetTop3Tasks(surface)
+	// The Top 3 is a single global commitment (SetTop3Tasks caps at 3 total and
+	// clears all positions on write) — surface-filtering the view would let one
+	// surface silently wipe the other's stars. Calendar/slipping/notifications
+	// still scope to the surface.
+	top3, err := s.db.GetTop3Tasks(nil)
 	if err != nil {
 		writeInternalError(w, err)
 		return
