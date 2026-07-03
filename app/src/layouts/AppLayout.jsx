@@ -23,7 +23,7 @@ function RouteView({ route, param }) {
     case "tasks":
       return <Tasks />;
     case "projects":
-      return <Projects />;
+      return <Projects projectId={param} />;
     case "people":
       return <People />;
     case "library":

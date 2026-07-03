@@ -130,6 +130,7 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	s.mux.HandleFunc("POST /api/projects/{id}/checklists/clone", s.protected(s.handleChecklistClone))
 	s.mux.HandleFunc("PATCH /api/checklists/{id}", s.protected(s.handleChecklistPatch))
 	s.mux.HandleFunc("GET /api/checklists/templates", s.protected(s.handleChecklistTemplatesList))
+	s.mux.HandleFunc("POST /api/checklists/templates", s.protected(s.handleChecklistTemplateCreate))
 	// Activity (nested under project)
 	s.mux.HandleFunc("GET /api/projects/{id}/activity", s.protected(s.handleActivityList))
 	s.mux.HandleFunc("POST /api/projects/{id}/activity", s.protected(s.handleActivityCreate))

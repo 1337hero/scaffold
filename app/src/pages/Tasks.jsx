@@ -77,7 +77,7 @@ const Tasks = () => {
   const [formTask, setFormTask] = useState(null); // null=closed, "new"=create, task=edit
 
   const { data: tasks = [], isLoading, error } = useQuery(tasksListQuery(surface, filters.status));
-  const { data: projects = [] } = useQuery(projectsListQuery);
+  const { data: projects = [] } = useQuery(projectsListQuery());
   const { data: domains = [] } = useQuery(domainsQuery);
   const { data: top3Ids = [] } = useQuery(top3IdsQuery);
 

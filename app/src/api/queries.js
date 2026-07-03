@@ -229,7 +229,7 @@ export function archiveDomain(id) { return apiFetch(`/api/domains/${id}`, { meth
 
 function nullableField(field) {
   if (!field || typeof field !== "object" || !field.Valid) return null
-  return field.String ?? field.Int64 ?? null
+  return field.String ?? field.Int64 ?? field.Float64 ?? null
 }
 
 function normalizeTask(t) {
@@ -319,6 +319,11 @@ function normalizeProjectFull(p) {
     surface: p.Surface || "life",
     status: p.Status || "active",
     domainId: nullableField(p.DomainID),
+    startDate: nullableField(p.StartDate),
+    endDate: nullableField(p.EndDate),
+    description: nullableField(p.Description) || "",
+    lastActivityAt: nullableField(p.LastActivityAt),
+    lastResetAt: nullableField(p.LastResetAt),
   }
 }
 
@@ -360,13 +365,14 @@ export const top3IdsQuery = {
   },
 }
 
-export const projectsListQuery = {
-  queryKey: ["projects-list"],
+export const projectsListQuery = (surface = "") => ({
+  queryKey: ["projects-list", surface],
   queryFn: async () => {
-    const data = await apiFetch("/api/projects")
+    const params = surface ? `?surface=${surface}` : ""
+    const data = await apiFetch(`/api/projects${params}`)
     return ensureArray(data).map(normalizeProjectFull).filter(Boolean)
   },
-}
+})
 
 export const taskNotesQuery = (taskId) => ({
   queryKey: ["task-notes", taskId],
@@ -375,3 +381,117 @@ export const taskNotesQuery = (taskId) => ({
     return ensureArray(data).map(normalizeNote).filter(Boolean)
   },
 })
+
+// Projects page
+
+function normalizeMilestone(m) {
+  if (!m || typeof m !== "object") return null
+  return {
+    id: m.ID || "",
+    projectId: m.ProjectID || "",
+    title: m.Title || "",
+    position: m.Position ?? 0,
+    completed: Boolean(m.Completed),
+  }
+}
+
+function normalizeChecklist(c) {
+  if (!c || typeof c !== "object") return null
+  let items = []
+  try {
+    const parsed = JSON.parse(c.Items || "[]")
+    if (Array.isArray(parsed)) items = parsed
+  } catch { /* malformed items stay empty */ }
+  return {
+    id: c.ID || "",
+    title: c.Title || "",
+    items,
+    isTemplate: Boolean(c.IsTemplate),
+  }
+}
+
+function normalizeActivity(a) {
+  if (!a || typeof a !== "object") return null
+  return {
+    id: a.ID || "",
+    description: a.Description || "",
+    hours: nullableField(a.Hours),
+    createdAt: a.CreatedAt || "",
+  }
+}
+
+export const projectDetailQuery = (id) => ({
+  queryKey: ["project-detail", id],
+  queryFn: async () => {
+    const data = await apiFetch(`/api/projects/${id}`)
+    return {
+      project: normalizeProjectFull(data?.project),
+      milestones: ensureArray(data?.milestones).map(normalizeMilestone).filter(Boolean),
+      milestoneCompleted: data?.milestone_completed ?? 0,
+      milestoneTotal: data?.milestone_total ?? 0,
+      checklists: ensureArray(data?.checklists).map(normalizeChecklist).filter(Boolean),
+      recentActivity: ensureArray(data?.recent_activity).map(normalizeActivity).filter(Boolean),
+    }
+  },
+})
+
+export const projectTasksQuery = (projectId) => ({
+  queryKey: ["project-tasks", projectId],
+  queryFn: async () => {
+    const data = await apiFetch(`/api/tasks?project_id=${projectId}`)
+    return ensureArray(data).map(normalizeTask).filter(Boolean)
+  },
+})
+
+export const projectActivityQuery = (projectId) => ({
+  queryKey: ["project-activity", projectId],
+  queryFn: async () => {
+    const data = await apiFetch(`/api/projects/${projectId}/activity`)
+    return ensureArray(data).map(normalizeActivity).filter(Boolean)
+  },
+})
+
+export const checklistTemplatesQuery = {
+  queryKey: ["checklist-templates"],
+  queryFn: async () => {
+    const data = await apiFetch("/api/checklists/templates")
+    return ensureArray(data).map(normalizeChecklist).filter(Boolean)
+  },
+}
+
+// Mutations — Projects/Milestones/Checklists/Activity
+
+export function createProject(data) { return postJSON("/api/projects", data) }
+export function patchProject(id, data) {
+  return apiFetch(`/api/projects/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+}
+export function archiveProject(id) { return apiFetch(`/api/projects/${id}`, { method: "DELETE" }) }
+
+export function createMilestone(projectId, data) { return postJSON(`/api/projects/${projectId}/milestones`, data) }
+export function patchMilestone(id, data) {
+  return apiFetch(`/api/milestones/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+}
+export function deleteMilestone(id) { return apiFetch(`/api/milestones/${id}`, { method: "DELETE" }) }
+
+export function createChecklist(projectId, data) { return postJSON(`/api/projects/${projectId}/checklists`, data) }
+export function patchChecklist(id, data) {
+  return apiFetch(`/api/checklists/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+}
+export function cloneChecklist(projectId, templateId) {
+  return postJSON(`/api/projects/${projectId}/checklists/clone`, { template_id: templateId })
+}
+export function createChecklistTemplate(data) { return postJSON("/api/checklists/templates", data) }
+
+export function logActivity(projectId, data) { return postJSON(`/api/projects/${projectId}/activity`, data) }
