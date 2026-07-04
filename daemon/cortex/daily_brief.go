@@ -24,10 +24,14 @@ func (c *Cortex) SetNotificationsConfig(cfg appconfig.NotificationsConfig) {
 }
 
 func (c *Cortex) SetBriefSender(sender func(ctx context.Context, message string) error) {
+	c.SetSignalSender(sender)
+}
+
+func (c *Cortex) SetSignalSender(sender func(ctx context.Context, message string) error) {
 	if c == nil {
 		return
 	}
-	c.briefSend = sender
+	c.sendSignal = sender
 }
 
 func (c *Cortex) maybeRunDailyBriefs(ctx context.Context, now time.Time) {
@@ -96,7 +100,7 @@ func (c *Cortex) claimBriefRun(name string, localNow time.Time) bool {
 }
 
 func (c *Cortex) sendDailyBrief(ctx context.Context, surface string) error {
-	if c.briefSend == nil {
+	if c.sendSignal == nil {
 		return fmt.Errorf("brief sender is not configured")
 	}
 	data, err := c.loadBriefData(ctx, surface)
@@ -107,7 +111,7 @@ func (c *Cortex) sendDailyBrief(ctx context.Context, surface string) error {
 	if strings.TrimSpace(message) == "" {
 		return fmt.Errorf("brief assembler returned blank message")
 	}
-	return c.briefSend(ctx, message)
+	return c.sendSignal(ctx, message)
 }
 
 func (c *Cortex) loadBriefData(ctx context.Context, surface string) (brief.QueryData, error) {
