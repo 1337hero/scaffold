@@ -16,6 +16,10 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 
 function formatDate(value) {
   if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+    const [year, month, day] = String(value).split("-").map(Number);
+    return dateFormatter.format(new Date(Date.UTC(year, month - 1, day)));
+  }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date);
 }
