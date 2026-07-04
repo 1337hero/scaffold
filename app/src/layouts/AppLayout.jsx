@@ -27,7 +27,7 @@ function RouteView({ route, param }) {
     case "people":
       return <People personId={param} />;
     case "library":
-      return <Library />;
+      return <Library tab={param} />;
     case "domains":
       return param ? (
         <Area domainId={param} onBack={() => navigate("/domains")} />

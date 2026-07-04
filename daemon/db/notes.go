@@ -19,12 +19,14 @@ type Note struct {
 	FlagForReview int // 0|1
 	ReviewAt      sql.NullString
 	PersonID      sql.NullString
+	ProjectID     sql.NullString
+	SuppressedAt  sql.NullString
 	CreatedAt     string
 	UpdatedAt     sql.NullString
 }
 
 const noteCols = `id, title, domain_id, goal_id, task_id, content, tags,
-	kind, source, flag_for_review, review_at, person_id, created_at, updated_at`
+	kind, source, flag_for_review, review_at, person_id, project_id, suppressed_at, created_at, updated_at`
 
 func validateNoteKind(kind string) error {
 	switch kind {
@@ -54,10 +56,10 @@ func (db *DB) InsertNote(n Note) error {
 
 	_, err := db.conn.Exec(
 		`INSERT INTO notes (id, title, domain_id, goal_id, task_id, content, tags,
-		    kind, source, flag_for_review, review_at, person_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		    kind, source, flag_for_review, review_at, person_id, project_id, suppressed_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		n.ID, n.Title, n.DomainID, n.GoalID, n.TaskID, n.Content, n.Tags,
-		n.Kind, n.Source, n.FlagForReview, n.ReviewAt, n.PersonID, n.CreatedAt, n.UpdatedAt,
+		n.Kind, n.Source, n.FlagForReview, n.ReviewAt, n.PersonID, n.ProjectID, n.SuppressedAt, n.CreatedAt, n.UpdatedAt,
 	)
 	return err
 }
@@ -67,12 +69,12 @@ func scanNote(s interface {
 }) (Note, error) {
 	var n Note
 	err := s.Scan(&n.ID, &n.Title, &n.DomainID, &n.GoalID, &n.TaskID, &n.Content, &n.Tags,
-		&n.Kind, &n.Source, &n.FlagForReview, &n.ReviewAt, &n.PersonID, &n.CreatedAt, &n.UpdatedAt)
+		&n.Kind, &n.Source, &n.FlagForReview, &n.ReviewAt, &n.PersonID, &n.ProjectID, &n.SuppressedAt, &n.CreatedAt, &n.UpdatedAt)
 	return n, err
 }
 
 func (db *DB) GetNote(id string) (*Note, error) {
-	row := db.conn.QueryRow(`SELECT `+noteCols+` FROM notes WHERE id = ?`, id)
+	row := db.conn.QueryRow(`SELECT `+noteCols+` FROM notes WHERE id = ? AND suppressed_at IS NULL`, id)
 	n, err := scanNote(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -91,12 +93,15 @@ type NoteFilters struct {
 	Tags          string // substring match
 	Kind          *string
 	PersonID      *string
+	ProjectID     *string
 	Source        *string
 	FlagForReview *bool
+	Surface       *string
+	Query         string
 }
 
 func (db *DB) ListNotes(f NoteFilters) ([]Note, error) {
-	q := `SELECT ` + noteCols + ` FROM notes WHERE 1=1`
+	q := `SELECT ` + noteCols + ` FROM notes WHERE suppressed_at IS NULL`
 	var args []any
 
 	if f.DomainID != nil {
@@ -123,6 +128,10 @@ func (db *DB) ListNotes(f NoteFilters) ([]Note, error) {
 		q += ` AND person_id = ?`
 		args = append(args, *f.PersonID)
 	}
+	if f.ProjectID != nil {
+		q += ` AND project_id = ?`
+		args = append(args, *f.ProjectID)
+	}
 	if f.Source != nil {
 		q += ` AND source = ?`
 		args = append(args, *f.Source)
@@ -134,6 +143,15 @@ func (db *DB) ListNotes(f NoteFilters) ([]Note, error) {
 		} else {
 			args = append(args, 0)
 		}
+	}
+	if f.Surface != nil {
+		q += ` AND (domain_id IS NULL OR domain_id IN (SELECT id FROM domains WHERE surface = ?))`
+		args = append(args, *f.Surface)
+	}
+	if strings.TrimSpace(f.Query) != "" {
+		like := "%" + strings.ToLower(strings.TrimSpace(f.Query)) + "%"
+		q += ` AND (LOWER(title) LIKE ? OR LOWER(COALESCE(content, '')) LIKE ? OR LOWER(COALESCE(tags, '')) LIKE ? OR LOWER(COALESCE(source, '')) LIKE ?)`
+		args = append(args, like, like, like, like)
 	}
 
 	q += ` ORDER BY COALESCE(updated_at, created_at) DESC`
@@ -152,6 +170,7 @@ var noteUpdateCols = map[string]bool{
 	"flag_for_review": true,
 	"review_at":       true,
 	"person_id":       true,
+	"project_id":      true,
 }
 
 func (db *DB) UpdateNote(id string, updates map[string]any) error {
@@ -201,7 +220,8 @@ func (db *DB) UpdateNote(id string, updates map[string]any) error {
 }
 
 func (db *DB) DeleteNote(id string) error {
-	result, err := db.conn.Exec(`DELETE FROM notes WHERE id = ?`, id)
+	ts := now()
+	result, err := db.conn.Exec(`UPDATE notes SET suppressed_at = ?, updated_at = ? WHERE id = ? AND suppressed_at IS NULL`, ts, ts, id)
 	if err != nil {
 		return err
 	}
@@ -210,7 +230,7 @@ func (db *DB) DeleteNote(id string) error {
 
 func (db *DB) NotesByDomain(domainID int) ([]Note, error) {
 	return db.queryNotes(
-		`SELECT `+noteCols+` FROM notes WHERE domain_id = ? ORDER BY COALESCE(updated_at, created_at) DESC`,
+		`SELECT `+noteCols+` FROM notes WHERE suppressed_at IS NULL AND domain_id = ? ORDER BY COALESCE(updated_at, created_at) DESC`,
 		domainID,
 	)
 }
@@ -235,7 +255,7 @@ func (db *DB) queryNotes(query string, args ...any) ([]Note, error) {
 
 func (db *DB) NotesByTask(taskID string) ([]Note, error) {
 	return db.queryNotes(
-		`SELECT `+noteCols+` FROM notes WHERE task_id = ? ORDER BY COALESCE(updated_at, created_at) DESC`,
+		`SELECT `+noteCols+` FROM notes WHERE suppressed_at IS NULL AND task_id = ? ORDER BY COALESCE(updated_at, created_at) DESC`,
 		taskID,
 	)
 }

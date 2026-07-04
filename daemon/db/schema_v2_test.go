@@ -99,7 +99,11 @@ func TestSchemaV2DroppedTablesAbsent(t *testing.T) {
 func TestSchemaV2TaskNewColumns(t *testing.T) {
 	db := openTestDB(t)
 
-	type colSpec struct{ colType string; notNull int; defaultVal string }
+	type colSpec struct {
+		colType    string
+		notNull    int
+		defaultVal string
+	}
 	checks := map[string]colSpec{
 		"project_id":    {"TEXT", 0, ""},
 		"reminder_at":   {"TEXT", 0, ""},
@@ -130,13 +134,19 @@ func TestSchemaV2TaskNewColumns(t *testing.T) {
 func TestSchemaV2NoteNewColumns(t *testing.T) {
 	db := openTestDB(t)
 
-	type colSpec struct{ colType string; notNull int; defaultVal string }
+	type colSpec struct {
+		colType    string
+		notNull    int
+		defaultVal string
+	}
 	checks := map[string]colSpec{
 		"kind":            {"TEXT", 1, "'note'"},
 		"source":          {"TEXT", 0, ""},
 		"flag_for_review": {"INTEGER", 1, "0"},
 		"review_at":       {"TEXT", 0, ""},
 		"person_id":       {"TEXT", 0, ""},
+		"project_id":      {"TEXT", 0, ""},
+		"suppressed_at":   {"TEXT", 0, ""},
 	}
 	for col, exp := range checks {
 		ct, nn, dv, err := pragmaColumnInfo(db.conn, "notes", col)

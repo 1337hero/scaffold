@@ -279,6 +279,26 @@ func TestInsertNote_WithPersonID(t *testing.T) {
 	}
 }
 
+func TestInsertNote_WithProjectID(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.InsertProject(Project{ID: "p1", Name: "Fence"}); err != nil {
+		t.Fatalf("InsertProject: %v", err)
+	}
+
+	n := Note{ID: "n1", Title: "on Fence", ProjectID: sql.NullString{String: "p1", Valid: true}}
+	if err := db.InsertNote(n); err != nil {
+		t.Fatalf("InsertNote: %v", err)
+	}
+
+	notes, err := db.ListNotes(NoteFilters{ProjectID: strPtr("p1")})
+	if err != nil {
+		t.Fatalf("ListNotes: %v", err)
+	}
+	if len(notes) != 1 || notes[0].ID != "n1" {
+		t.Fatalf("got %+v, want only n1", notes)
+	}
+}
+
 func TestListNotes_FilterByKind(t *testing.T) {
 	db := openTestDB(t)
 	if err := db.InsertNote(Note{ID: "n1", Title: "entry", Kind: "journal"}); err != nil {
@@ -291,6 +311,50 @@ func TestListNotes_FilterByKind(t *testing.T) {
 	notes, err := db.ListNotes(NoteFilters{Kind: strPtr("journal")})
 	if err != nil {
 		t.Fatalf("ListNotes: %v", err)
+	}
+	if len(notes) != 1 || notes[0].ID != "n1" {
+		t.Fatalf("got %+v, want only n1", notes)
+	}
+}
+
+func TestListNotes_FilterBySurfaceAndQuery(t *testing.T) {
+	db := openTestDB(t)
+	biz, err := db.CreateDomain("Library Biz", 5, "", "", "business")
+	if err != nil {
+		t.Fatalf("CreateDomain biz: %v", err)
+	}
+	life, err := db.CreateDomain("Library Life", 5, "", "", "life")
+	if err != nil {
+		t.Fatalf("CreateDomain life: %v", err)
+	}
+
+	if err := db.InsertNote(Note{ID: "n1", Title: "client launch", Content: sql.NullString{String: "runbook checklist", Valid: true}, DomainID: sql.NullInt64{Int64: int64(biz.ID), Valid: true}}); err != nil {
+		t.Fatalf("InsertNote n1: %v", err)
+	}
+	if err := db.InsertNote(Note{ID: "n2", Title: "garden launch", Content: sql.NullString{String: "planting notes", Valid: true}, DomainID: sql.NullInt64{Int64: int64(life.ID), Valid: true}}); err != nil {
+		t.Fatalf("InsertNote n2: %v", err)
+	}
+	if err := db.InsertNote(Note{ID: "n3", Title: "loose launch", Content: sql.NullString{String: "inbox item", Valid: true}}); err != nil {
+		t.Fatalf("InsertNote n3: %v", err)
+	}
+
+	surface := "business"
+	notes, err := db.ListNotes(NoteFilters{Surface: &surface, Query: "launch"})
+	if err != nil {
+		t.Fatalf("ListNotes: %v", err)
+	}
+	if len(notes) != 2 {
+		t.Fatalf("got %d notes, want business + loose", len(notes))
+	}
+	for _, n := range notes {
+		if n.ID == "n2" {
+			t.Fatalf("life note leaked into business surface: %+v", notes)
+		}
+	}
+
+	notes, err = db.ListNotes(NoteFilters{Surface: &surface, Query: "runbook"})
+	if err != nil {
+		t.Fatalf("ListNotes query: %v", err)
 	}
 	if len(notes) != 1 || notes[0].ID != "n1" {
 		t.Fatalf("got %+v, want only n1", notes)
@@ -323,6 +387,37 @@ func TestListNotes_FilterByFlagForReview(t *testing.T) {
 	notes, _ = db.ListNotes(NoteFilters{FlagForReview: &flagged})
 	if len(notes) != 2 {
 		t.Fatalf("got %d flagged notes after update, want 2", len(notes))
+	}
+}
+
+func TestDeleteNote_SoftDeletes(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.InsertNote(Note{ID: "n1", Title: "remove me"}); err != nil {
+		t.Fatalf("InsertNote: %v", err)
+	}
+
+	if err := db.DeleteNote("n1"); err != nil {
+		t.Fatalf("DeleteNote: %v", err)
+	}
+
+	got, err := db.GetNote("n1")
+	if err != nil {
+		t.Fatalf("GetNote: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("GetNote after delete returned %+v, want nil", got)
+	}
+
+	notes, err := db.ListNotes(NoteFilters{})
+	if err != nil {
+		t.Fatalf("ListNotes: %v", err)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("deleted note still listed: %+v", notes)
+	}
+
+	if err := db.DeleteNote("n1"); err != sql.ErrNoRows {
+		t.Fatalf("second DeleteNote got %v, want sql.ErrNoRows", err)
 	}
 }
 
