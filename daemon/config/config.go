@@ -142,7 +142,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Agent.MaxResponseTokens = 1024
 	}
 	if cfg.Agent.Model == "" {
-		cfg.Agent.Model = "claude-haiku-4-5"
+		cfg.Agent.Model = "claude-sonnet-4-6"
 	}
 	if cfg.Cortex.Bulletin.IntervalMinutes == 0 {
 		cfg.Cortex.Bulletin.IntervalMinutes = 60

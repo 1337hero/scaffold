@@ -43,7 +43,7 @@ func NewWithDependencies(database *db.DB, cfg Config, responder ToolUseResponder
 		systemPrompt = buildSystemPrompt(cfg)
 	}
 
-	respondModel := "claude-haiku-4-5"
+	respondModel := "claude-sonnet-4-6"
 	if cfg.RespondModel != "" {
 		respondModel = strings.TrimSpace(cfg.RespondModel)
 	}
@@ -90,7 +90,6 @@ If they send a task or todo, acknowledge it and create it using create_task.
 If they ask a question, answer it.
 If they're just thinking out loud, reflect it back and engage.`, cfg.AssistantName, cfg.UserName, cfg.UserName)
 }
-
 
 type ConversationTurn struct {
 	Role    string

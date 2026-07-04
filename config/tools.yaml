@@ -1,108 +1,100 @@
-# Agent tool definitions — what tools the agent can call during conversation
-# These map to Go functions in brain/tools.go
+# Agent tool definitions. This file is the model-facing source of truth; each
+# tool maps to a handler in daemon/brain/tools.go.
 
 tools:
+  - name: save_memory
+    description: Persist a distilled memory from conversation. Do not store raw message text.
+    input_schema:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Short synthesized title. Optional; generated from content when omitted.
+        content:
+          type: string
+          description: Distilled memory content.
+        type:
+          type: string
+          description: Memory type, such as Memory, Decision, Preference, Observation, or Todo.
+        importance:
+          type: number
+          description: Importance from 0.0 to 1.0. Defaults to 0.5.
+          minimum: 0
+          maximum: 1
+        source:
+          type: string
+          description: Source label. Defaults to signal.
+        tags:
+          type: array
+          items:
+            type: string
+        domain:
+          type: string
+          description: Optional domain name to link.
+      required: [content]
+
   - name: search_memories
-    description: Search the knowledge graph for memories matching a query.
+    description: Search memories and notes by query.
     input_schema:
       type: object
       properties:
         query:
           type: string
-          description: Search query to match against memory content and titles
+          description: Search query to match against memory content and titles.
         type:
           type: string
-          description: Optional memory type filter (Todo, Goal, Decision, etc)
+          description: Optional memory type filter.
       required: [query]
 
-  - name: get_calendar_events
-    description: |
-      Check the user's Google Calendar. Use to answer schedule questions,
-      check availability, or see what's coming up today.
-    input_schema:
-      type: object
-      properties:
-        scope:
-          type: string
-          enum: [today, upcoming]
-          description: "'today' for full day, 'upcoming' for next few hours"
-        hours:
-          type: integer
-          description: "Hours to look ahead when scope is 'upcoming'. Range 1-24, default 4. Ignored for 'today'."
-          minimum: 1
-          maximum: 24
-      required: [scope]
-
   - name: create_task
-    description: |
-      Create a new task. Tasks are concrete action items.
+    description: Create a concrete action item, optionally linked to a project or reminder time.
     input_schema:
       type: object
       properties:
         title:
           type: string
-          description: Task title
+          description: Task title.
         domain:
           type: string
-          description: "Life domain"
+          description: Optional life or business domain name.
         context:
           type: string
-          description: Additional context or notes
+          description: Additional context or notes.
         due_date:
           type: string
-          description: "Due date (YYYY-MM-DD)"
+          description: Due date as YYYY-MM-DD.
         recurring:
           type: string
           enum: [daily, weekly, monthly]
-          description: Recurrence schedule
         priority:
           type: string
           enum: [high, normal, low]
-          description: "Priority level. Default: normal"
-      required: [title]
-
-  - name: create_note
-    description: |
-      Create a note. Notes capture freeform information, ideas, or reference material.
-    input_schema:
-      type: object
-      properties:
-        title:
+        project_id:
           type: string
-          description: Note title
-        domain:
+          description: Optional project ID.
+        reminder_at:
           type: string
-          description: "Life domain"
-        content:
-          type: string
-          description: Note body content
-        tags:
-          type: array
-          items:
-            type: string
-          description: Tags for categorization
+          description: Optional reminder timestamp in ISO/RFC3339 format.
       required: [title]
 
   - name: update_task
-    description: |
-      Update an existing task. Pass only the fields you want to change.
-      Set status to "done" to complete (handles recurring reset automatically).
+    description: Update an existing task. Pass only fields that should change.
     input_schema:
       type: object
       properties:
         id:
           type: string
-          description: Task ID
+          description: Task ID.
         title:
           type: string
         domain:
           type: string
-          description: "Life domain name"
+          description: Optional life or business domain name.
         context:
           type: string
         due_date:
           type: string
-          description: "YYYY-MM-DD"
+          description: Due date as YYYY-MM-DD.
         recurring:
           type: string
           enum: [daily, weekly, monthly]
@@ -112,69 +104,160 @@ tools:
         status:
           type: string
           enum: [pending, in_progress, done, deleted]
+        project_id:
+          type: string
+          description: Project ID. Pass an empty string to clear it.
+        reminder_at:
+          type: string
+          description: ISO/RFC3339 reminder timestamp. Pass an empty string to clear it.
       required: [id]
 
   - name: list_tasks
-    description: |
-      List tasks with optional filters. Use due filter to scope by time.
+    description: List tasks with optional status, due date, project, surface, or reminder filters.
     input_schema:
       type: object
       properties:
         domain:
           type: string
-          description: "Filter by life domain name"
+          description: Optional life or business domain name.
+        project_id:
+          type: string
+        surface:
+          type: string
+          enum: [life, business]
         status:
           type: string
-          description: "Filter by status (default: pending)"
+          description: Task status. Defaults to pending. Use all for every non-deleted task.
         due:
           type: string
           enum: [today, tomorrow, week]
-          description: "Filter by due date window"
+        reminder_at:
+          type: string
+          description: Return tasks with reminder_at at or before this ISO/RFC3339 timestamp.
 
-  - name: create_calendar_event
-    description: |
-      Create a new event on Google Calendar.
-      Use when Mike asks to schedule something, set up a meeting, or block time.
+  - name: create_note
+    description: Create a freeform note, journal entry, or quote.
     input_schema:
       type: object
       properties:
         title:
           type: string
-          description: Event title / summary
-        start:
+          description: Note title.
+        domain:
           type: string
-          description: "Start time in RFC3339 format (e.g. 2026-02-25T14:00:00-07:00)"
-        end:
+          description: Optional life or business domain name.
+        task_id:
           type: string
-          description: "End time in RFC3339 format"
-        location:
+          description: Optional task ID.
+        person_id:
           type: string
-          description: Optional location or video link
-        description:
+          description: Optional person ID.
+        project_id:
           type: string
-          description: Optional event description or notes
-      required: [title, start, end]
+          description: Optional project ID.
+        kind:
+          type: string
+          enum: [note, journal, quote]
+          description: Note kind. Defaults to note.
+        content:
+          type: string
+          description: Note body content.
+        tags:
+          type: array
+          items:
+            type: string
+      required: [title]
 
-  - name: update_calendar_event
-    description: |
-      Update an existing Google Calendar event by ID.
-      Pass only the fields you want to change.
+  - name: get_calendar_events
+    description: Check Google Calendar for today or upcoming events.
     input_schema:
       type: object
       properties:
-        event_id:
+        scope:
           type: string
-          description: Google Calendar event ID (from get_calendar_events)
-        title:
+          enum: [today, upcoming]
+          description: Today for the full day, upcoming for the next few hours.
+        hours:
+          type: integer
+          description: Hours to look ahead when scope is upcoming. Range 1-24, default 4.
+          minimum: 1
+          maximum: 24
+      required: [scope]
+
+  - name: query_people
+    description: Search people, log an interaction, or get upcoming birthdays.
+    input_schema:
+      type: object
+      properties:
+        mode:
           type: string
-        start:
+          enum: [search, log_interaction, birthdays]
+          description: Operation mode. Defaults to search.
+        query:
           type: string
-          description: "New start time in RFC3339 format"
-        end:
+          description: Search text for mode search.
+        surface:
           type: string
-          description: "New end time in RFC3339 format"
-        location:
+          enum: [life, business]
+        relationship:
           type: string
-        description:
+          enum: [family, friend, colleague, client, mentor, other]
+        limit:
+          type: integer
+          description: Maximum search results. Defaults to 10.
+        person_id:
           type: string
-      required: [event_id]
+          description: Person ID for mode log_interaction.
+        summary:
+          type: string
+          description: Interaction summary for mode log_interaction.
+        date:
+          type: string
+          description: Interaction date as YYYY-MM-DD. Defaults to today.
+        follow_up:
+          type: string
+          description: Optional follow-up note.
+        follow_up_date:
+          type: string
+          description: Optional follow-up date as YYYY-MM-DD.
+        days:
+          type: integer
+          description: Birthday lookahead window for mode birthdays. Defaults to 7.
+
+  - name: query_facts
+    description: Probe an entity and return known relational facts at or above the trust floor.
+    input_schema:
+      type: object
+      properties:
+        entity:
+          type: string
+          description: Person, project, or concept to query.
+        limit:
+          type: integer
+          description: Optional result limit.
+      required: [entity]
+
+  - name: save_fact
+    description: Store a relational fact with optional category, tags, and related entity edges.
+    input_schema:
+      type: object
+      properties:
+        entity:
+          type: string
+          description: Primary person, project, or concept this fact is about.
+        content:
+          type: string
+          description: The fact to store.
+        category:
+          type: string
+          enum: [user_pref, project, tool, general]
+        tags:
+          type: array
+          items:
+            type: string
+        related_entities:
+          type: array
+          items:
+            type: string
+          description: Additional entities to connect to this fact.
+      required: [entity, content]

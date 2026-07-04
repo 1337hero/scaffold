@@ -60,7 +60,7 @@ func TestSchemaV2ExistingTablesPreserved(t *testing.T) {
 	preserved := []string{
 		"memories", "edges", "conversation_log", "oauth_tokens",
 		"tasks", "task_completions", "notes", "domains",
-		"notification_log", "sessions",
+		"notification_log", "sessions", "embedding_jobs",
 	}
 
 	for _, name := range preserved {
