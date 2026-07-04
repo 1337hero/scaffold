@@ -6,7 +6,6 @@ import { typeColor } from "@/constants/colors.js"
 
 const FILTERS = [
   { id: "", label: "All" },
-  { id: "goal", label: "Goals" },
   { id: "task", label: "Tasks" },
   { id: "note", label: "Notes" },
 ]
@@ -29,10 +28,9 @@ function ResultItem({ result, domains }) {
   const domainId = nullable(result.DomainID)
   const domain = domainId ? domains.find((d) => d.ID === domainId) : null
   const color = typeColor(result.Type)
-  const href = domainId ? `#/domains/${domainId}` : null
 
   const card = (
-    <div class="p-4 bg-[var(--color-card-bg)] rounded-2xl border border-app-border card-shadow hover:border-app-ink/10 transition-all flex items-center gap-3 cursor-pointer">
+    <div class="p-4 bg-[var(--color-card-bg)] rounded-2xl border border-app-border card-shadow flex items-center gap-3">
       <span
         class="text-[9px] mono uppercase px-1.5 py-0.5 rounded bg-black/5 font-bold shrink-0"
         style={{ color }}
@@ -48,7 +46,6 @@ function ResultItem({ result, domains }) {
       {domain && (
         <span
           class="text-[9px] mono uppercase px-1.5 py-0.5 rounded bg-black/5 opacity-60 shrink-0"
-          style={{ color: typeColor('goal') }}
         >
           {domain.Name}
         </span>
@@ -56,7 +53,6 @@ function ResultItem({ result, domains }) {
     </div>
   )
 
-  if (href) return <a href={href} class="no-underline text-inherit block">{card}</a>
   return card
 }
 
@@ -88,7 +84,7 @@ const Search = () => {
           type="text"
           value={inputValue}
           onInput={(e) => setInputValue(e.currentTarget.value)}
-          placeholder="Search goals, tasks, notes..."
+          placeholder="Search tasks and notes..."
           class="w-full bg-[var(--color-card-bg)] border border-app-border rounded-3xl py-6 pl-16 pr-6 text-xl focus:outline-none focus:ring-2 focus:ring-app-ink/5 card-shadow"
         />
         {isFetching && (

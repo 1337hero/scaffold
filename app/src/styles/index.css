@@ -41,22 +41,9 @@
   --color-domain-hobbies: #C4663A;
   --color-domain-default: #9C8E7A;
 
-  /* ── Drift ── */
-  --color-drift-active: #27ae60;
-  --color-drift-drifting: #f39c12;
-  --color-drift-neglected: #e74c3c;
-  --color-drift-cold: #95a5a6;
-  --color-drift-overactive: #3498db;
-
   /* ── Capture types ── */
-  --color-type-goal: #5A9E6F;
   --color-type-task: #f59e0b;
   --color-type-note: #8b5cf6;
-
-  /* ── Inbox groups ── */
-  --color-group-tasks: #d29922;
-  --color-group-goals: #58a6ff;
-  --color-group-notes: #8b949e;
 
   /* ── Coder tools ── */
   --color-tool-shell: #5B8DB8;
@@ -157,13 +144,6 @@ dialog[open] .modal-card {
   .bg-status-done      { background-color: var(--color-status-success); }
   .bg-status-running   { background-color: var(--color-status-warning); }
   .bg-status-failed    { background-color: var(--color-status-error); }
-
-  /* ── Drift ── */
-  .drift-active     { background-color: color-mix(in srgb, var(--color-drift-active) 10%, transparent); color: var(--color-drift-active); }
-  .drift-drifting   { background-color: color-mix(in srgb, var(--color-drift-drifting) 10%, transparent); color: var(--color-drift-drifting); }
-  .drift-neglected  { background-color: color-mix(in srgb, var(--color-drift-neglected) 10%, transparent); color: var(--color-drift-neglected); }
-  .drift-cold       { background-color: color-mix(in srgb, var(--color-drift-cold) 10%, transparent); color: var(--color-drift-cold); }
-  .drift-overactive { background-color: color-mix(in srgb, var(--color-drift-overactive) 10%, transparent); color: var(--color-drift-overactive); }
 
   /* ── Tool badges ── */
   .tool-badge-shell  { background-color: color-mix(in srgb, var(--color-tool-shell) 10%, transparent); color: var(--color-tool-shell); }

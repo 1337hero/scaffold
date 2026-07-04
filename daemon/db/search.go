@@ -116,22 +116,6 @@ func (db *DB) SearchAll(query string, domainID *int, entityType string, status s
 	var parts []string
 	var args []any
 
-	if entityType == "" || entityType == "goal" {
-		q := `SELECT id, 'goal' AS type, title, COALESCE(context, '') AS snippet, domain_id, status
-		      FROM goals WHERE (title LIKE ? OR context LIKE ?)`
-		a := []any{like, like}
-		if domainID != nil {
-			q += ` AND domain_id = ?`
-			a = append(a, *domainID)
-		}
-		if status != "" {
-			q += ` AND status = ?`
-			a = append(a, status)
-		}
-		parts = append(parts, q)
-		args = append(args, a...)
-	}
-
 	if entityType == "" || entityType == "task" {
 		q := `SELECT id, 'task' AS type, title, COALESCE(context, '') AS snippet, domain_id, status
 		      FROM tasks WHERE (title LIKE ? OR context LIKE ?)`

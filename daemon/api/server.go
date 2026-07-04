@@ -76,7 +76,6 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 	s.mux.HandleFunc("POST /api/logout", s.protected(s.handleLogout))
 	s.mux.HandleFunc("POST /api/webhook", s.handleWebhook)
 	s.mux.HandleFunc("GET /api/domains", s.protected(s.handleDomains))
-	s.mux.HandleFunc("GET /api/domains/health", s.protected(s.handleDomainsHealth))
 	s.mux.HandleFunc("GET /api/domains/{id}", s.protected(s.handleDomainDetail))
 	s.mux.HandleFunc("POST /api/domains", s.protected(s.handleDomainCreate))
 	s.mux.HandleFunc("PATCH /api/domains/{id}", s.protected(s.handleDomainPatch))

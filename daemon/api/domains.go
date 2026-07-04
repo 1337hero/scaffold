@@ -82,15 +82,6 @@ func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) handleDomainsHealth(w http.ResponseWriter, r *http.Request) {
-	health, err := s.db.DomainHealthAll()
-	if err != nil {
-		writeInternalError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, health)
-}
-
 func (s *Server) handleDomainDetail(w http.ResponseWriter, r *http.Request) {
 	idStr := strings.TrimSpace(r.PathValue("id"))
 	id, err := strconv.Atoi(idStr)
@@ -255,8 +246,6 @@ func (s *Server) handleDomainPatch(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
-
-
 
 func emptyIfNilMemories(items []db.Memory) []db.Memory {
 	if items == nil {
