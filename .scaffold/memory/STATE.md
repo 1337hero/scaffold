@@ -1,15 +1,15 @@
 # Project State
 
-_Last updated: 2026-07-03 by PRD 15 session_
+_Last updated: 2026-07-03 by PRD 16 session_
 
 ## What this project is
 Scaffold — personal agent-driven LifeOS/executive-function system (Go daemon + SQLite brain + Signal agent + Preact web UI). v2 pivots it to a "notification surface with a brain": the agent is a witness, not an optimizer. Spec: `specs/v2-notification-surface.md`.
 
 ## Current focus
-PRD 15 complete — agent tool set reduced to the ten witness tools, with memory, task, note, people, calendar-read, and fact handlers aligned to v2. PRDs 01-15 shipped; latest PR #56 closed issue #36.
+PRD 16 complete — deterministic BusinessOS/LifeOS daily briefs are assembled without LLM calls and delivered via Signal callback from cortex. PRDs 01-16 shipped; latest PR #57 closed issue #35.
 
 ## Next up
-1. PRD 16 — Daily brief (#35).
+1. PRD 17 — Signal push notifications (#33).
 2. Re-auth Google Calendar: revoke Scaffold's access at myaccount.google.com/permissions (kills the archived v1 token's Gmail scope), then `cd daemon && ./bin/scaffold-daemon auth google` (fresh grant is calendar-only per config defaults)
 
 ## In flight
@@ -19,12 +19,12 @@ Nothing — main branch is current.
 `main` — no in-flight branch.
 
 ## Last shipped
-PRD 15: Agent tool set — `config/tools.yaml` now exposes exactly ten witness tools; `daemon/brain/tools.go` implements `save_memory`, note-inclusive `search_memories`, task project/reminder support, note person/project/kind support, `query_people`, `query_facts`, and `save_fact`; `brain.respond` defaults to Sonnet; `embedding_jobs` migration fixed for memory inserts. PR #56 closed #36.
+PRD 16: Daily brief — new `daemon/brief` pure assembler; cortex schedules deterministic 09:00 BusinessOS and 18:00 LifeOS briefs in America/Denver time; query layer gathers calendar/tasks/reminders/follow-ups/slipping/birthdays/overdue people; Signal delivery is a thin callback from `main`; Google Calendar token loading is wired at startup. PR #57 closed #35.
 
 ## Last verified
 - `go build ./...`, `go vet ./...`, `go test ./...` — all green
 - `bun run build` — green
-- PRD 15 has no browser E2E surface; covered by focused brain handler tests plus config/schema tests.
+- PRD 16 has no browser E2E surface; covered by assembler/config/cortex tests plus backend validation.
 
 ## Known issues / watch list
 - **api package has no tests** — returns with Phase 2 rebuild
