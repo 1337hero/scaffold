@@ -4,7 +4,6 @@ import {
   RiFolder2Line,
   RiGroupLine,
   RiBookOpenLine,
-  RiLayoutGridLine,
 } from "@remixicon/react";
 
 export const navItems = [
@@ -13,5 +12,4 @@ export const navItems = [
   { id: "projects", path: "#/projects", icon: RiFolder2Line, label: "Projects" },
   { id: "people", path: "#/people", icon: RiGroupLine, label: "People" },
   { id: "library", path: "#/library", icon: RiBookOpenLine, label: "Library" },
-  { id: "domains", path: "#/domains", icon: RiLayoutGridLine, label: "Domains" },
 ];

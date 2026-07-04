@@ -57,20 +57,6 @@ function normalizeSearchResult(result) {
   }
 }
 
-function normalizeCalendarEvent(event) {
-  if (!event || typeof event !== "object") return null
-
-  return {
-    id: event.id || event.ID || "",
-    summary: event.summary || event.Summary || event.title || event.Title || "",
-    time: event.time || event.Time || "",
-    all_day: Boolean(event.all_day ?? event.AllDay),
-    start: event.start || event.Start || "",
-    end: event.end || event.End || "",
-    htmlLink: event.htmlLink || event.HtmlLink || "",
-  }
-}
-
 function postJSON(path, body) {
   return apiFetch(path, {
     method: "POST",
@@ -87,52 +73,6 @@ function putJSON(path, body) {
   })
 }
 
-// Goals
-
-export const goalsQuery = (domainId, status) => ({
-  queryKey: ["goals", { domainId, status }],
-  queryFn: async () => {
-    const params = new URLSearchParams()
-    if (domainId) params.set("domain_id", domainId)
-    if (status) params.set("status", status)
-    const data = await apiFetch(`/api/goals?${params}`)
-    return ensureArray(data)
-  },
-})
-
-export const goalDetailQuery = (id) => ({
-  queryKey: ["goal", id],
-  queryFn: () => apiFetch(`/api/goals/${id}`),
-})
-
-// Tasks
-
-export const tasksQuery = (domainId, goalId, status, due) => ({
-  queryKey: ["tasks", { domainId, goalId, status, due }],
-  queryFn: async () => {
-    const params = new URLSearchParams()
-    if (domainId) params.set("domain_id", domainId)
-    if (goalId) params.set("goal_id", goalId)
-    if (status) params.set("status", status)
-    if (due) params.set("due", due)
-    const data = await apiFetch(`/api/tasks?${params}`)
-    return ensureArray(data)
-  },
-})
-
-// Notes
-
-export const notesQuery = (domainId, goalId) => ({
-  queryKey: ["notes", { domainId, goalId }],
-  queryFn: async () => {
-    const params = new URLSearchParams()
-    if (domainId) params.set("domain_id", domainId)
-    if (goalId) params.set("goal_id", goalId)
-    const data = await apiFetch(`/api/notes?${params}`)
-    return ensureArray(data)
-  },
-})
-
 export const noteDetailQuery = (id) => ({
   queryKey: ["note", id],
   queryFn: () => apiFetch(`/api/notes/${id}`),
@@ -147,16 +87,6 @@ export const domainsQuery = {
     return ensureArray(raw)
       .map(normalizeDomain)
       .filter(Boolean)
-  },
-}
-
-// Domain Health (for Areas)
-
-export const domainHealthQuery = {
-  queryKey: ["domains-health"],
-  queryFn: async () => {
-    const data = await apiFetch("/api/domains/health")
-    return ensureArray(data)
   },
 }
 
@@ -177,25 +107,6 @@ export const searchQuery = (q, filters) => ({
   },
   enabled: !!q,
 })
-
-// Calendar
-
-export const calendarQuery = {
-  queryKey: ["calendar"],
-  queryFn: async () => {
-    const data = await apiFetch("/api/calendar/upcoming", { allow404: true, fallback: [] })
-    return ensureArray(data)
-      .map(normalizeCalendarEvent)
-      .filter(Boolean)
-  },
-  staleTime: 5 * 60 * 1000,
-}
-
-// Mutations — Goals
-
-export function createGoal(data) { return postJSON("/api/goals", data) }
-export function updateGoal(id, data) { return putJSON(`/api/goals/${id}`, data) }
-export function deleteGoal(id) { return apiFetch(`/api/goals/${id}`, { method: "DELETE" }) }
 
 // Mutations — Tasks
 

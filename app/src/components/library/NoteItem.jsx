@@ -73,7 +73,7 @@ const NoteItem = ({ note, domain, person, project, expanded, onToggle, onEdit, o
 
       <div class="mt-3 flex flex-wrap gap-2 text-xs text-app-muted">
         <span>{formatDate(note.updatedAt || note.createdAt)}</span>
-        {domain && <a href={`#/domains/${domain.ID}`} class="underline decoration-app-border hover:decoration-app-ink">{domain.Name}</a>}
+        {domain && <span>{domain.Name}</span>}
         {note.source && <span>{note.source}</span>}
         {note.tags && (
           <span class="inline-flex items-center gap-1">

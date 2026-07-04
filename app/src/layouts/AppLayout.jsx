@@ -2,10 +2,8 @@ import MobileBar from "@/components/MobileBar.jsx";
 import Sidebar from "@/components/Sidebar.jsx";
 import SurfaceToggle from "@/components/SurfaceToggle.jsx";
 import { useKeyboard } from "@/hooks/useKeyboard.js";
-import { navigate, useRoute } from "@/hooks/useRoute.js";
+import { useRoute } from "@/hooks/useRoute.js";
 import { SurfaceProvider, useSurface } from "@/hooks/useSurface.jsx";
-import Area from "@/pages/Area.jsx";
-import Areas from "@/pages/Areas.jsx";
 import Library from "@/pages/Library.jsx";
 import Login from "@/pages/Login.jsx";
 import People from "@/pages/People.jsx";
@@ -28,12 +26,6 @@ function RouteView({ route, param }) {
       return <People personId={param} />;
     case "library":
       return <Library tab={param} />;
-    case "domains":
-      return param ? (
-        <Area domainId={param} onBack={() => navigate("/domains")} />
-      ) : (
-        <Areas onOpenArea={(id) => navigate(`/domains/${id}`)} />
-      );
     case "search":
       return <Search />;
     default:
@@ -47,7 +39,6 @@ const routeTitles = {
   projects: "Projects",
   people: "People",
   library: "Library",
-  domains: "Domains",
   search: "Search",
 };
 

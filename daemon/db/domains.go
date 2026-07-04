@@ -41,17 +41,6 @@ type DomainUpdateOpts struct {
 	Surface    *string
 }
 
-type DomainHealthData struct {
-	Domain
-	GoalCount      int
-	TaskCount      int
-	NoteCount      int
-	CompletedTasks int
-	HealthScore    float64
-	DaysSinceTouch int
-	State          string
-}
-
 type DomainDetail struct {
 	Domain
 	RecentMemories []Memory
@@ -371,84 +360,6 @@ func (db *DB) ArchiveDomain(id int) error {
 	return requireRowsAffected(result)
 }
 
-func (db *DB) DomainHealthAll() ([]DomainHealthData, error) {
-	domains, err := db.ListDomains(nil)
-	if err != nil {
-		return nil, err
-	}
-
-	nowTime := time.Now().UTC()
-	sevenDaysAgo := nowTime.AddDate(0, 0, -7).Format(time.RFC3339)
-
-	out := make([]DomainHealthData, 0, len(domains))
-	for _, d := range domains {
-		var goalCount, taskCount, noteCount, completedTasks int
-		_ = db.conn.QueryRow(`SELECT COUNT(*) FROM goals WHERE domain_id = ? AND status = 'active'`, d.ID).Scan(&goalCount)
-		_ = db.conn.QueryRow(`SELECT COUNT(*) FROM tasks WHERE domain_id = ? AND status = 'pending'`, d.ID).Scan(&taskCount)
-		_ = db.conn.QueryRow(`SELECT COUNT(*) FROM notes WHERE domain_id = ?`, d.ID).Scan(&noteCount)
-		_ = db.conn.QueryRow(
-			`SELECT COUNT(*) FROM task_completions tc
-			 JOIN tasks t ON tc.task_id = t.id
-			 WHERE t.domain_id = ? AND tc.completed_at >= ?`, d.ID, sevenDaysAgo,
-		).Scan(&completedTasks)
-
-		touched, err := time.Parse(time.RFC3339, d.LastTouchedAt)
-		if err != nil {
-			touched = nowTime
-		}
-		daysSince := int(math.Floor(nowTime.Sub(touched).Hours() / 24))
-		if daysSince < 0 {
-			daysSince = 0
-		}
-
-		healthScore := computeHealthScore(d.Importance, daysSince, goalCount, taskCount, completedTasks)
-		driftScore := float64(d.Importance) * float64(daysSince)
-		state, _ := classifyDrift(d.Importance, daysSince, driftScore, taskCount)
-
-		out = append(out, DomainHealthData{
-			Domain:         d,
-			GoalCount:      goalCount,
-			TaskCount:      taskCount,
-			NoteCount:      noteCount,
-			CompletedTasks: completedTasks,
-			HealthScore:    healthScore,
-			DaysSinceTouch: daysSince,
-			State:          state,
-		})
-	}
-	return out, nil
-}
-
-func computeHealthScore(importance, daysSince, goalCount, taskCount, completedTasks int) float64 {
-	score := 1.0
-
-	// Decay by days since touch
-	if daysSince > 0 {
-		decay := float64(daysSince) * 0.05 * float64(importance)
-		score -= decay
-	}
-
-	// Boost for completed tasks
-	if completedTasks > 0 {
-		score += float64(completedTasks) * 0.1
-	}
-
-	// Slight boost for having goals
-	if goalCount > 0 {
-		score += 0.1
-	}
-
-	if score > 1.0 {
-		score = 1.0
-	}
-	if score < 0.0 {
-		score = 0.0
-	}
-	return score
-}
-
-
-
 func (db *DB) DomainRecentMemories(domainID int, limit int) ([]Memory, error) {
 	return db.queryMemories(
 		`SELECT id, type, content, title, importance, source, tags, created_at, updated_at, accessed_at, access_count, archived, suppressed_at, domain_id
@@ -466,8 +377,6 @@ func (db *DB) DomainDetailByID(id int) (*DomainDetail, error) {
 		return nil, nil
 	}
 
-
-
 	memories, err := db.DomainRecentMemories(id, 10)
 	if err != nil {
 		return nil, fmt.Errorf("domain recent memories: %w", err)
@@ -478,7 +387,6 @@ func (db *DB) DomainDetailByID(id int) (*DomainDetail, error) {
 		RecentMemories: memories,
 	}, nil
 }
-
 
 func (db *DB) TouchDomainByMemory(memoryID string) error {
 	var domainID sql.NullInt64
@@ -497,8 +405,6 @@ func (db *DB) TouchDomainByMemory(memoryID string) error {
 	}
 	return nil
 }
-
-
 
 func (db *DB) ResolveDomainID(name string) (*int, error) {
 	name = canonicalDomainName(name)
