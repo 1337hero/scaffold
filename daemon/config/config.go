@@ -11,6 +11,7 @@ import (
 
 type Config struct {
 	Agent         AgentConfig
+	Identity      AgentIdentityConfig
 	Tools         ToolsConfig
 	Cortex        CortexConfig
 	Google        GoogleConfig
@@ -31,6 +32,19 @@ type AgentConfig struct {
 	Rules             []string `yaml:"rules"`
 	MaxResponseTokens int      `yaml:"max_response_tokens"`
 	Model             string   `yaml:"model"`
+}
+
+type AgentIdentityConfig struct {
+	Voice    []string            `yaml:"voice"`
+	Values   []string            `yaml:"values"`
+	Posture  []string            `yaml:"posture"`
+	CannotDo []string            `yaml:"cannot_do"`
+	Rules    []string            `yaml:"rules"`
+	Facts    FactInjectionConfig `yaml:"facts"`
+}
+
+type FactInjectionConfig struct {
+	MaxPromptFacts int `yaml:"max_prompt_facts"`
 }
 
 type ToolsConfig struct {
@@ -92,6 +106,9 @@ func Load(configDir string, userName string) (*Config, error) {
 	if err := loadFile(filepath.Join(configDir, "agent.yaml"), &cfg.Agent); err != nil {
 		return nil, fmt.Errorf("load agent.yaml: %w", err)
 	}
+	if err := loadFileOptional(filepath.Join(configDir, "agent-identity.yaml"), &cfg.Identity); err != nil {
+		return nil, fmt.Errorf("load agent-identity.yaml: %w", err)
+	}
 	if err := loadFile(filepath.Join(configDir, "tools.yaml"), &cfg.Tools); err != nil {
 		return nil, fmt.Errorf("load tools.yaml: %w", err)
 	}
@@ -145,6 +162,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Agent.Model == "" {
 		cfg.Agent.Model = "claude-sonnet-4-6"
+	}
+	if cfg.Identity.Facts.MaxPromptFacts == 0 {
+		cfg.Identity.Facts.MaxPromptFacts = 10
 	}
 	if cfg.Cortex.Bulletin.IntervalMinutes == 0 {
 		cfg.Cortex.Bulletin.IntervalMinutes = 60
@@ -202,6 +222,11 @@ func substituteVars(cfg *Config, userName string) {
 		"{user_name}", userName,
 	)
 	cfg.Agent.Personality = r.Replace(cfg.Agent.Personality)
+	cfg.Identity.Voice = replaceStrings(cfg.Identity.Voice, r)
+	cfg.Identity.Values = replaceStrings(cfg.Identity.Values, r)
+	cfg.Identity.Posture = replaceStrings(cfg.Identity.Posture, r)
+	cfg.Identity.CannotDo = replaceStrings(cfg.Identity.CannotDo, r)
+	cfg.Identity.Rules = replaceStrings(cfg.Identity.Rules, r)
 }
 
 func validate(cfg *Config) error {
@@ -213,6 +238,9 @@ func validate(cfg *Config) error {
 	}
 	if strings.TrimSpace(cfg.Agent.Model) == "" {
 		return fmt.Errorf("agent.model must not be empty")
+	}
+	if cfg.Identity.Facts.MaxPromptFacts <= 0 {
+		return fmt.Errorf("agent_identity.facts.max_prompt_facts must be > 0")
 	}
 	if cfg.Cortex.Bulletin.IntervalMinutes <= 0 {
 		return fmt.Errorf("cortex.bulletin.interval_minutes must be > 0")
@@ -265,4 +293,15 @@ func validate(cfg *Config) error {
 	}
 
 	return nil
+}
+
+func replaceStrings(values []string, r *strings.Replacer) []string {
+	if len(values) == 0 {
+		return values
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, r.Replace(value))
+	}
+	return out
 }

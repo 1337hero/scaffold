@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -238,6 +239,60 @@ func (db *DB) ListFacts(entity, category, tag *string, limit int) ([]Fact, error
 	return db.queryFacts(q, args...)
 }
 
+// PromptFacts returns high-trust facts for system-prompt injection. It ranks
+// same-entity and query-relevant facts ahead of generic high-trust facts, then
+// bumps retrieval_count for facts that actually enter the prompt.
+func (db *DB) PromptFacts(entities []string, query string, limit int) ([]Fact, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	facts, err := db.queryFacts(
+		`SELECT `+factCols+` FROM facts
+		 WHERE suppressed_at IS NULL AND trust >= ?
+		 ORDER BY trust DESC, updated_at DESC`,
+		trustFloor,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(facts) == 0 {
+		return make([]Fact, 0), nil
+	}
+
+	entitySet := normalizedSet(entities)
+	queryTokens := factTokens(query)
+	scored := make([]scoredFact, 0, len(facts))
+	for _, fact := range facts {
+		scored = append(scored, scoredFact{
+			Fact:  fact,
+			Score: promptFactScore(fact, entitySet, queryTokens),
+		})
+	}
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].Score != scored[j].Score {
+			return scored[i].Score > scored[j].Score
+		}
+		if scored[i].Trust != scored[j].Trust {
+			return scored[i].Trust > scored[j].Trust
+		}
+		return scored[i].UpdatedAt > scored[j].UpdatedAt
+	})
+
+	if len(scored) > limit {
+		scored = scored[:limit]
+	}
+	out := make([]Fact, 0, len(scored))
+	ids := make([]string, 0, len(scored))
+	for _, item := range scored {
+		out = append(out, item.Fact)
+		ids = append(ids, item.ID)
+	}
+	if err := db.bumpFactsRetrieved(ids); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProbeFacts returns all facts about an entity (trust floor applied), sorted by
 // trust DESC, and bumps retrieval_count on every returned fact.
 func (db *DB) ProbeFacts(entity string) ([]Fact, error) {
@@ -347,6 +402,27 @@ func (db *DB) ContradictingFacts(entity string) ([]Fact, error) {
 	)
 }
 
+// ConflictingFacts returns same-entity facts that appear to conflict with new
+// content under simple launch heuristics. This is intentionally conservative:
+// exact duplicates and merely adjacent preferences are allowed through.
+func (db *DB) ConflictingFacts(entity, content string) ([]Fact, error) {
+	content = strings.TrimSpace(content)
+	if strings.TrimSpace(entity) == "" || content == "" {
+		return make([]Fact, 0), nil
+	}
+	facts, err := db.ContradictingFacts(strings.TrimSpace(entity))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Fact, 0)
+	for _, fact := range facts {
+		if factContentConflicts(fact.Content, content) {
+			out = append(out, fact)
+		}
+	}
+	return out, nil
+}
+
 // FeedbackFact adjusts trust in place: +0.05 helpful, -0.10 unhelpful, clamped
 // to [0.0, 1.0]. Helpful feedback also bumps helpful_count.
 func (db *DB) FeedbackFact(id string, helpful bool) error {
@@ -386,4 +462,174 @@ func (db *DB) ListFactEdges(factID string) ([]FactEdge, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+type scoredFact struct {
+	Fact
+	Score int
+}
+
+func normalizedSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value != "" {
+			out[value] = struct{}{}
+		}
+	}
+	return out
+}
+
+func promptFactScore(f Fact, entities map[string]struct{}, queryTokens []string) int {
+	score := 0
+	entity := strings.ToLower(strings.TrimSpace(f.Entity))
+	if _, ok := entities[entity]; ok && entity != "" {
+		score += 100
+	}
+
+	haystackTokens := factTokens(strings.Join([]string{f.Entity, f.Content, f.Category.String, f.Tags.String}, " "))
+	haystack := make(map[string]struct{}, len(haystackTokens))
+	for _, token := range haystackTokens {
+		haystack[token] = struct{}{}
+	}
+	for _, token := range queryTokens {
+		if _, ok := haystack[token]; ok {
+			score += 8
+		}
+	}
+	if strings.Contains(strings.ToLower(f.Content), entity) && entity != "" {
+		score += 5
+	}
+	return score
+}
+
+func (db *DB) bumpFactsRetrieved(ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin prompt fact retrieval tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, id := range ids {
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		if _, err := tx.Exec(`UPDATE facts SET retrieval_count = retrieval_count + 1 WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("bump fact retrieval_count: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+func factContentConflicts(a, b string) bool {
+	aNorm := normalizeFactText(a)
+	bNorm := normalizeFactText(b)
+	if aNorm == "" || bNorm == "" || aNorm == bNorm {
+		return false
+	}
+
+	if hasNegation(aNorm) != hasNegation(bNorm) && tokenOverlap(factTokens(aNorm), factTokens(bNorm)) >= 3 {
+		return true
+	}
+
+	aValue, aOK := exclusiveValue(aNorm)
+	bValue, bOK := exclusiveValue(bNorm)
+	return aOK && bOK && aValue != bValue
+}
+
+func normalizeFactText(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '\'' {
+			return r
+		}
+		return ' '
+	}, s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+func hasNegation(s string) bool {
+	for _, marker := range []string{
+		" not ", " never ", " cannot ", " can't ", " wont ", " won't ",
+		" does not ", " do not ", " doesn't ", " don't ", " dislike ", " dislikes ",
+		" hate ", " hates ", " avoid ", " avoids ",
+	} {
+		if strings.Contains(" "+s+" ", marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func exclusiveValue(s string) (string, bool) {
+	for _, marker := range []string{" prefers ", " preferred ", " favorite ", " default "} {
+		if idx := strings.Index(" "+s+" ", marker); idx >= 0 {
+			value := strings.TrimSpace((" " + s + " ")[idx+len(marker):])
+			value = strings.TrimPrefix(value, "is ")
+			value = strings.TrimPrefix(value, "to ")
+			value = strings.TrimSpace(value)
+			return value, value != ""
+		}
+	}
+	return "", false
+}
+
+func tokenOverlap(a, b []string) int {
+	seen := make(map[string]struct{}, len(a))
+	for _, token := range a {
+		seen[token] = struct{}{}
+	}
+	count := 0
+	for _, token := range b {
+		if _, ok := seen[token]; ok {
+			count++
+		}
+	}
+	return count
+}
+
+func factTokens(s string) []string {
+	normalized := normalizeFactText(s)
+	if normalized == "" {
+		return nil
+	}
+	raw := strings.Fields(normalized)
+	out := make([]string, 0, len(raw))
+	for _, token := range raw {
+		token = normalizeFactToken(token)
+		if token == "" || factStopWords[token] {
+			continue
+		}
+		out = append(out, token)
+	}
+	return out
+}
+
+func normalizeFactToken(token string) string {
+	token = strings.Trim(token, "'")
+	switch token {
+	case "likes":
+		return "like"
+	case "dislikes":
+		return "like"
+	case "prefers", "preferred":
+		return "prefer"
+	case "hates":
+		return "hate"
+	case "avoids":
+		return "avoid"
+	default:
+		return token
+	}
+}
+
+var factStopWords = map[string]bool{
+	"a": true, "an": true, "and": true, "are": true, "as": true, "at": true,
+	"be": true, "but": true, "by": true, "do": true, "does": true, "for": true,
+	"he": true, "his": true, "i": true, "is": true, "it": true, "not": true,
+	"of": true, "on": true, "or": true, "she": true, "that": true, "the": true,
+	"to": true, "was": true, "with": true,
 }

@@ -3,8 +3,11 @@ package brain
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
+	"scaffold/agentprompt"
 	"scaffold/db"
 	googlecal "scaffold/google"
 )
@@ -15,6 +18,8 @@ type Config struct {
 	AssistantName    string
 	UserName         string
 	SystemPrompt     string
+	Identity         agentprompt.Identity
+	PromptFactLimit  int
 	RespondModel     string
 	RespondMaxTokens int
 	Tools            []ToolDefinition
@@ -28,6 +33,10 @@ type Brain struct {
 	toolRegistry     map[string]ToolHandler
 	bulletinProvider func() (string, bool)
 	systemPrompt     string
+	identity         agentprompt.Identity
+	identityPrompt   bool
+	promptFactLimit  int
+	userName         string
 	respondModel     string
 	respondMaxTokens int
 }
@@ -38,9 +47,25 @@ func New(apiKey string, database *db.DB, cfg Config) *Brain {
 }
 
 func NewWithDependencies(database *db.DB, cfg Config, responder ToolUseResponder) *Brain {
+	useIdentityPrompt := identityConfigured(cfg.Identity)
 	systemPrompt := strings.TrimSpace(cfg.SystemPrompt)
-	if systemPrompt == "" {
+	if systemPrompt == "" && !useIdentityPrompt {
 		systemPrompt = buildSystemPrompt(cfg)
+	}
+
+	identity := cfg.Identity
+	if useIdentityPrompt {
+		if strings.TrimSpace(identity.Name) == "" {
+			identity.Name = cfg.AssistantName
+		}
+		if strings.TrimSpace(identity.UserName) == "" {
+			identity.UserName = cfg.UserName
+		}
+	}
+
+	promptFactLimit := cfg.PromptFactLimit
+	if promptFactLimit <= 0 {
+		promptFactLimit = 10
 	}
 
 	respondModel := "claude-sonnet-4-6"
@@ -71,22 +96,26 @@ func NewWithDependencies(database *db.DB, cfg Config, responder ToolUseResponder
 		tools:            tools,
 		toolRegistry:     defaultToolRegistry(),
 		systemPrompt:     systemPrompt,
+		identity:         identity,
+		identityPrompt:   useIdentityPrompt,
+		promptFactLimit:  promptFactLimit,
+		userName:         strings.TrimSpace(cfg.UserName),
 		respondModel:     respondModel,
 		respondMaxTokens: respondMaxTokens,
 	}
 }
 
 func buildSystemPrompt(cfg Config) string {
-	return fmt.Sprintf(`You are %s — an AI assistant connected to %s via Signal.
+	return fmt.Sprintf(`You are %s, an AI assistant connected to %s via Signal.
 
-%s texts you thoughts, tasks, questions, ideas — whatever's on their mind.
+%s texts you thoughts, tasks, questions, ideas, whatever is on their mind.
 Your job right now is to respond conversationally and helpfully.
 
-Keep responses concise — this is Signal, not a doc. 2-4 sentences max unless asked for more.
+Keep responses concise. This is Signal, not a doc. 2-4 sentences max unless asked for more.
 Be direct, technical, no fluff. Match their energy.
 You cannot view images, open file attachments, or transcribe audio from Signal. Never pretend you did; ask for a text description/transcript.
 
-If they send a task or todo, acknowledge it and create it using create_task.
+Create tasks only when they ask you to create, add, save, or remind them about a task.
 If they ask a question, answer it.
 If they're just thinking out loud, reflect it back and engage.`, cfg.AssistantName, cfg.UserName, cfg.UserName)
 }
@@ -125,7 +154,7 @@ func (b *Brain) Respond(ctx context.Context, message string, history []Conversat
 	}
 
 	request := ToolUseRequest{
-		SystemPrompt: b.renderSystemPrompt(),
+		SystemPrompt: b.renderSystemPrompt(ctx, latestUserText(messages)),
 		Model:        b.respondModel,
 		MaxTokens:    b.respondMaxTokens,
 		Tools:        b.tools,
@@ -226,20 +255,20 @@ func (b *Brain) SetCalendarClient(c *googlecal.CalendarClient) {
 	b.calendarClient = c
 }
 
-func (b *Brain) renderSystemPrompt() string {
+func (b *Brain) renderSystemPrompt(ctx context.Context, message string) string {
+	if b.identityPrompt {
+		surface := agentprompt.DetectSurface(message, time.Now(), b.promptCalendarEvents(ctx), message)
+		return agentprompt.AssembleSystemPrompt(
+			b.identity,
+			b.currentBulletin(),
+			surface,
+			b.promptFacts(message),
+		)
+	}
+
 	const bulletinToken = "{{cortex_bulletin}}"
 
-	bulletinText := "No bulletin available yet."
-	if b.bulletinProvider != nil {
-		content, fresh := b.bulletinProvider()
-		content = strings.TrimSpace(content)
-		if content != "" {
-			bulletinText = content
-		}
-		if !fresh {
-			bulletinText = bulletinText + "\n\n[Context may be stale.]"
-		}
-	}
+	bulletinText := b.currentBulletin()
 
 	prompt := strings.TrimSpace(b.systemPrompt)
 	if strings.Contains(prompt, bulletinToken) {
@@ -255,4 +284,87 @@ func (b *Brain) renderSystemPrompt() string {
 	out.WriteString("\n\n## Current Context\n")
 	out.WriteString(bulletinText)
 	return out.String()
+}
+
+func (b *Brain) currentBulletin() string {
+	bulletinText := "No bulletin available yet."
+	if b.bulletinProvider != nil {
+		content, fresh := b.bulletinProvider()
+		content = strings.TrimSpace(content)
+		if content != "" {
+			bulletinText = content
+		}
+		if !fresh {
+			bulletinText = bulletinText + "\n\n[Context may be stale.]"
+		}
+	}
+	return bulletinText
+}
+
+func (b *Brain) promptFacts(message string) []agentprompt.Fact {
+	if b == nil || b.db == nil {
+		return nil
+	}
+	entities := []string{b.userName}
+	if !strings.EqualFold(strings.TrimSpace(b.userName), "Mike") {
+		entities = append(entities, "Mike")
+	}
+	facts, err := b.db.PromptFacts(entities, message, b.promptFactLimit)
+	if err != nil {
+		log.Printf("brain: prompt fact injection failed: %v", err)
+		return nil
+	}
+	out := make([]agentprompt.Fact, 0, len(facts))
+	for _, fact := range facts {
+		out = append(out, agentprompt.Fact{
+			Entity:   fact.Entity,
+			Content:  fact.Content,
+			Category: fact.Category.String,
+			Trust:    fact.Trust,
+		})
+	}
+	return out
+}
+
+func (b *Brain) promptCalendarEvents(ctx context.Context) []agentprompt.CalendarEvent {
+	if b == nil || b.calendarClient == nil {
+		return nil
+	}
+	calCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	events, err := b.calendarClient.UpcomingEvents(calCtx, b.calendarClient.CalendarID, 4)
+	if err != nil {
+		log.Printf("brain: prompt calendar context unavailable: %v", err)
+		return nil
+	}
+	out := make([]agentprompt.CalendarEvent, 0, len(events))
+	for _, event := range events {
+		out = append(out, agentprompt.CalendarEvent{
+			Title:       event.Title,
+			Description: event.Description,
+		})
+	}
+	return out
+}
+
+func latestUserText(messages []RespondMessage) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.EqualFold(messages[i].Role, "user") && len(messages[i].ToolResults) == 0 {
+			if text := strings.TrimSpace(messages[i].Text); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func identityConfigured(identity agentprompt.Identity) bool {
+	return strings.TrimSpace(identity.Name) != "" ||
+		strings.TrimSpace(identity.UserName) != "" ||
+		len(identity.Voice) > 0 ||
+		len(identity.Values) > 0 ||
+		len(identity.Posture) > 0 ||
+		len(identity.CannotDo) > 0 ||
+		len(identity.Rules) > 0
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"scaffold/agentprompt"
 	"scaffold/db"
 )
 
@@ -294,6 +295,92 @@ func TestFactTools(t *testing.T) {
 	}
 }
 
+func TestSaveFactSurfacesConflictsWithoutSaving(t *testing.T) {
+	database := openBrainTestDB(t)
+	if _, err := ExecuteTool(context.Background(), "save_fact", rawJSON(`{
+		"entity": "Mike",
+		"content": "Mike prefers tabs."
+	}`), database, nil, nil); err != nil {
+		t.Fatalf("initial save_fact: %v", err)
+	}
+
+	out, err := ExecuteTool(context.Background(), "save_fact", rawJSON(`{
+		"entity": "Mike",
+		"content": "Mike prefers spaces."
+	}`), database, nil, nil)
+	if err != nil {
+		t.Fatalf("conflicting save_fact: %v", err)
+	}
+	if !strings.Contains(out, "Potential fact conflict") || !strings.Contains(out, "not saved") {
+		t.Fatalf("conflict was not surfaced: %s", out)
+	}
+
+	facts, err := database.ListFacts(strPtr("Mike"), nil, nil, 10)
+	if err != nil {
+		t.Fatalf("ListFacts: %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("got %d facts, want only original fact: %+v", len(facts), facts)
+	}
+}
+
+type promptCaptureResponder struct {
+	prompt string
+}
+
+func (r *promptCaptureResponder) Respond(_ context.Context, req ToolUseRequest) (*ToolUseResponse, error) {
+	r.prompt = req.SystemPrompt
+	return &ToolUseResponse{Text: "ok"}, nil
+}
+
+func TestRespondAssemblesIdentityPromptWithBulletinSurfaceAndFacts(t *testing.T) {
+	database := openBrainTestDB(t)
+	fact := insertBrainFact(t, database, db.Fact{
+		Entity:  "Mike",
+		Content: "Mike prefers concise PRD closeouts.",
+		Trust:   0.8,
+	})
+	insertBrainFact(t, database, db.Fact{Entity: "Mike", Content: "low trust", Trust: 0.2})
+
+	responder := &promptCaptureResponder{}
+	b := NewWithDependencies(database, Config{
+		UserName:        "Mike",
+		PromptFactLimit: 1,
+		Identity: agentprompt.Identity{
+			Name:     "Scaffold",
+			UserName: "Mike",
+			Voice:    []string{"Direct, warm, concise."},
+			CannotDo: []string{"Access email.", "Run code."},
+		},
+	}, responder)
+	b.SetBulletinProvider(func() (string, bool) {
+		return "Fence project keeps slipping.", true
+	})
+
+	if _, err := b.Respond(context.Background(), "switch to life mode; what do you remember about PRD closeouts?", nil); err != nil {
+		t.Fatalf("Respond: %v", err)
+	}
+	for _, want := range []string{
+		"Direct, warm, concise.",
+		"LifeOS",
+		"Fence project keeps slipping.",
+		"Mike prefers concise PRD closeouts.",
+		"Access email.",
+	} {
+		if !strings.Contains(responder.prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, responder.prompt)
+		}
+	}
+	if strings.Contains(responder.prompt, "low trust") {
+		t.Fatalf("low-trust fact should not be injected:\n%s", responder.prompt)
+	}
+
+	got, _ := database.GetFact(fact.ID)
+	if got.RetrievalCount != 1 {
+		t.Fatalf("retrieval_count=%d, want prompt injection to bump once", got.RetrievalCount)
+	}
+}
+
 type loopingResponder struct {
 	calls  int
 	models []string
@@ -335,4 +422,15 @@ func TestRespondToolLoopCapAndDefaultModel(t *testing.T) {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+func insertBrainFact(t *testing.T, database *db.DB, fact db.Fact) db.Fact {
+	t.Helper()
+	if fact.ID == "" {
+		fact.ID = "fact-" + strings.ReplaceAll(fact.Content, " ", "-")
+	}
+	if err := database.InsertFact(fact, nil); err != nil {
+		t.Fatalf("InsertFact: %v", err)
+	}
+	return fact
 }

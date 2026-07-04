@@ -198,6 +198,40 @@ func TestListFacts_TagFilterEscapesWildcards(t *testing.T) {
 	}
 }
 
+func TestPromptFacts_RanksRelevanceAndBumpsRetrieval(t *testing.T) {
+	db := openTestDB(t)
+	insertFactT(t, db, Fact{Entity: "Unrelated", Content: "High trust but irrelevant", Trust: 0.95})
+	relevant := insertFactT(t, db, Fact{Entity: "Mike", Content: "Mike wants fence updates kept short.", Trust: 0.6})
+
+	facts, err := db.PromptFacts([]string{"Mike"}, "fence project", 1)
+	if err != nil {
+		t.Fatalf("PromptFacts: %v", err)
+	}
+	if len(facts) != 1 || facts[0].ID != relevant.ID {
+		t.Fatalf("got %+v, want relevant Mike fence fact first", facts)
+	}
+
+	got, _ := db.GetFact(relevant.ID)
+	if got.RetrievalCount != 1 {
+		t.Fatalf("retrieval_count=%d, want 1", got.RetrievalCount)
+	}
+}
+
+func TestPromptFacts_AppliesTrustFloorAndLimit(t *testing.T) {
+	db := openTestDB(t)
+	insertFactT(t, db, Fact{Entity: "Mike", Content: "low", Trust: 0.29})
+	insertFactT(t, db, Fact{Entity: "Mike", Content: "one", Trust: 0.7})
+	insertFactT(t, db, Fact{Entity: "Mike", Content: "two", Trust: 0.6})
+
+	facts, err := db.PromptFacts([]string{"Mike"}, "", 1)
+	if err != nil {
+		t.Fatalf("PromptFacts: %v", err)
+	}
+	if len(facts) != 1 || facts[0].Content != "one" {
+		t.Fatalf("got %+v, want highest trust fact only", facts)
+	}
+}
+
 // --- Trust scoring ---
 
 func TestTrustAdjustment_Helpful_Increases(t *testing.T) {
@@ -440,5 +474,37 @@ func TestContradictingFacts_SameEntity(t *testing.T) {
 	}
 	if len(facts) != 2 {
 		t.Fatalf("got %d facts, want 2", len(facts))
+	}
+}
+
+func TestConflictingFacts_NegationAndExclusiveValue(t *testing.T) {
+	db := openTestDB(t)
+	negation := insertFactT(t, db, Fact{Entity: "Mike", Content: "Mike likes late calls"})
+	preference := insertFactT(t, db, Fact{Entity: "Mike", Content: "Mike prefers tabs"})
+	insertFactT(t, db, Fact{Entity: "Mike", Content: "Mike likes coffee"})
+	insertFactT(t, db, Fact{Entity: "Mike", Content: "Mike dislikes stale claim", Trust: 0.2})
+
+	conflicts, err := db.ConflictingFacts("Mike", "Mike does not like late calls")
+	if err != nil {
+		t.Fatalf("ConflictingFacts negation: %v", err)
+	}
+	if len(conflicts) != 1 || conflicts[0].ID != negation.ID {
+		t.Fatalf("got %+v, want negation conflict only", conflicts)
+	}
+
+	conflicts, err = db.ConflictingFacts("Mike", "Mike prefers spaces")
+	if err != nil {
+		t.Fatalf("ConflictingFacts preference: %v", err)
+	}
+	if len(conflicts) != 1 || conflicts[0].ID != preference.ID {
+		t.Fatalf("got %+v, want exclusive preference conflict only", conflicts)
+	}
+
+	conflicts, err = db.ConflictingFacts("Mike", "Mike likes tea")
+	if err != nil {
+		t.Fatalf("ConflictingFacts adjacent: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Fatalf("adjacent positive preferences should not conflict: %+v", conflicts)
 	}
 }

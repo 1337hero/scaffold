@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"scaffold/agentprompt"
 	"scaffold/brain"
 	appconfig "scaffold/config"
 	"scaffold/db"
@@ -71,27 +72,32 @@ func TestEnsureCurrentUserMessage(t *testing.T) {
 	}
 }
 
-func TestBuildAgentSystemPromptIncludesRulesAndBulletinToken(t *testing.T) {
+func TestBuildAgentIdentityIncludesIdentityAndAgentRules(t *testing.T) {
 	cfg := &appconfig.Config{
 		Agent: appconfig.AgentConfig{
-			Personality: "Base prompt",
-			Rules:       []string{"Rule one", "Rule two"},
+			Rules: []string{"Agent rule"},
+		},
+		Identity: appconfig.AgentIdentityConfig{
+			Voice:    []string{"Direct voice"},
+			CannotDo: []string{"Access email."},
+			Rules:    []string{"Identity rule"},
 		},
 	}
 
-	prompt := buildAgentSystemPrompt(cfg)
+	identity := buildAgentIdentity(cfg, "Scaffold", "Mike")
+	prompt := agentprompt.AssembleSystemPrompt(identity, "Bulletin text", agentprompt.SurfaceBusiness, nil)
 
-	if !strings.Contains(prompt, "Base prompt") {
-		t.Fatalf("expected base personality in prompt, got %q", prompt)
+	if !strings.Contains(prompt, "Direct voice") {
+		t.Fatalf("expected identity voice in prompt, got %q", prompt)
 	}
-	if !strings.Contains(prompt, "Rules:") || !strings.Contains(prompt, "Rule one") {
-		t.Fatalf("expected rules section in prompt, got %q", prompt)
+	if !strings.Contains(prompt, "Identity rule") || !strings.Contains(prompt, "Agent rule") {
+		t.Fatalf("expected identity and agent rules in prompt, got %q", prompt)
 	}
-	if !strings.Contains(prompt, "## Current Context") {
-		t.Fatalf("expected context heading in prompt, got %q", prompt)
+	if !strings.Contains(prompt, "Access email.") {
+		t.Fatalf("expected cannot_do boundary in prompt, got %q", prompt)
 	}
-	if !strings.Contains(prompt, "{{cortex_bulletin}}") {
-		t.Fatalf("expected bulletin token in prompt, got %q", prompt)
+	if !strings.Contains(prompt, "BusinessOS") || !strings.Contains(prompt, "Bulletin text") {
+		t.Fatalf("expected surface and bulletin layers in prompt, got %q", prompt)
 	}
 }
 
