@@ -110,15 +110,29 @@ func main() {
 		Tools:            toolDefs,
 	}, respondResponder)
 
+	calendarClient, err := initGoogleCalendarClient(context.Background(), database, appCfg.Google)
+	if err != nil {
+		log.Printf("warn: google calendar unavailable: %v", err)
+	} else if calendarClient != nil {
+		b.SetCalendarClient(calendarClient)
+		log.Printf("google calendar connected: %s", calendarClient.CalendarID)
+	} else {
+		log.Printf("google calendar not configured; run scaffold-daemon auth google")
+	}
+
 	cortexRuntime := cortex.NewWithLLM(database, b, appCfg.Cortex, cortex.LLMRoutes{
 		Bulletin: cortex.LLMRoute{
 			Client: bulletinCompletion,
 			Model:  bulletinModel,
 		},
 	})
+	cortexRuntime.SetNotificationsConfig(appCfg.Notifications)
 	b.SetBulletinProvider(cortexRuntime.CurrentBulletin)
 
 	client := signalcli.NewClient(cfg.signalURL, cfg.agentNumber)
+	cortexRuntime.SetBriefSender(func(ctx context.Context, message string) error {
+		return client.Send(ctx, cfg.userNumber, message)
+	})
 
 	srv := api.New(database, b, cfg.apiToken, api.AuthConfig{
 		AppUsername:          cfg.appUsername,
@@ -277,6 +291,22 @@ func handleMessage(client *signalcli.Client, b *brain.Brain, database *db.DB, ms
 			log.Printf("conversation insert error (assistant): %v", err)
 		}
 	}
+}
+
+func initGoogleCalendarClient(ctx context.Context, database *db.DB, cfg appconfig.GoogleConfig) (*googleauth.CalendarClient, error) {
+	if strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" {
+		return nil, nil
+	}
+	store := &googleauth.DBTokenStore{DB: database, Provider: "google"}
+	token, err := store.Get()
+	if err != nil {
+		return nil, fmt.Errorf("load google token: %w", err)
+	}
+	if token == nil {
+		return nil, nil
+	}
+	oauthCfg := googleauth.NewOAuth2Config(cfg)
+	return googleauth.NewCalendarClient(ctx, oauthCfg.TokenSource(ctx, token), cfg.CalendarID)
 }
 
 type config struct {

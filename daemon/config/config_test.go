@@ -125,6 +125,23 @@ func TestCortexConfig(t *testing.T) {
 	}
 }
 
+func TestNotificationsConfig(t *testing.T) {
+	cfg, err := Load(configDir(t), "Mike")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if !cfg.Notifications.Briefing.Enabled {
+		t.Fatal("expected briefing enabled")
+	}
+	if cfg.Notifications.Briefing.MorningSchedule != "09:00" {
+		t.Fatalf("morning_schedule=%q, want 09:00", cfg.Notifications.Briefing.MorningSchedule)
+	}
+	if cfg.Notifications.Briefing.EveningSchedule != "18:00" {
+		t.Fatalf("evening_schedule=%q, want 18:00", cfg.Notifications.Briefing.EveningSchedule)
+	}
+}
+
 func TestTemplateSubstitution(t *testing.T) {
 	cfg, err := Load(configDir(t), "Mike")
 	if err != nil {
@@ -189,6 +206,12 @@ func TestDefaults(t *testing.T) {
 	}
 	if _, ok := cfg.LLM.Profiles["respond_default"]; !ok {
 		t.Error("expected default llm profile respond_default")
+	}
+	if cfg.Notifications.Briefing.MorningSchedule != "09:00" {
+		t.Errorf("expected default morning_schedule 09:00, got %q", cfg.Notifications.Briefing.MorningSchedule)
+	}
+	if cfg.Notifications.Briefing.EveningSchedule != "18:00" {
+		t.Errorf("expected default evening_schedule 18:00, got %q", cfg.Notifications.Briefing.EveningSchedule)
 	}
 }
 

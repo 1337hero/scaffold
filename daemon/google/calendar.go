@@ -80,7 +80,36 @@ func (c *CalendarClient) TodayEvents(ctx context.Context, calendarID string) ([]
 	}
 
 	now := time.Now().In(loc)
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	return c.EventsForDay(ctx, calendarID, now)
+}
+
+func (c *CalendarClient) TomorrowEvents(ctx context.Context, calendarID string) ([]Event, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return nil, err
+	}
+	calendarID = normalizeCalendarID(calendarID)
+
+	loc, err := c.calendarTimezone(ctx, calendarID)
+	if err != nil {
+		loc = time.Local
+	}
+
+	return c.EventsForDay(ctx, calendarID, time.Now().In(loc).AddDate(0, 0, 1))
+}
+
+func (c *CalendarClient) EventsForDay(ctx context.Context, calendarID string, day time.Time) ([]Event, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return nil, err
+	}
+	calendarID = normalizeCalendarID(calendarID)
+
+	loc, err := c.calendarTimezone(ctx, calendarID)
+	if err != nil {
+		loc = time.Local
+	}
+
+	day = day.In(loc)
+	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, loc)
 	endOfDay := startOfDay.AddDate(0, 0, 1)
 
 	resp, err := c.service.Events.List(calendarID).
@@ -91,7 +120,7 @@ func (c *CalendarClient) TodayEvents(ctx context.Context, calendarID string) ([]
 		Context(ctx).
 		Do()
 	if err != nil {
-		return nil, fmt.Errorf("list today events: %w", err)
+		return nil, fmt.Errorf("list day events: %w", err)
 	}
 
 	return convertEvents(resp.Items), nil

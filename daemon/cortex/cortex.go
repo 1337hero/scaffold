@@ -50,7 +50,6 @@ type BulletinCache struct {
 	maxStaleAfter time.Duration
 }
 
-
 func newBulletinCache(maxStaleAfter time.Duration) *BulletinCache {
 	cache := &BulletinCache{maxStaleAfter: maxStaleAfter}
 	cache.content.Store("")
@@ -113,8 +112,12 @@ type Cortex struct {
 	brain     *brain.Brain
 	llm       CompletionClient
 	cfg       appconfig.CortexConfig
+	notifyCfg appconfig.NotificationsConfig
 	bulletin  *BulletinCache
 	tasks     []*CortexTask
+	briefSend func(ctx context.Context, message string) error
+	briefMu   sync.Mutex
+	briefRuns map[string]struct{}
 	once      sync.Once
 }
 
@@ -154,11 +157,12 @@ func NewWithLLM(database *db.DB, b *brain.Brain, cfg appconfig.CortexConfig, rou
 	}
 
 	c := &Cortex{
-		db:       database,
-		brain:    b,
-		llm:      routes.Bulletin.Client,
-		cfg:      cfg,
-		bulletin: newBulletinCache(maxStale),
+		db:        database,
+		brain:     b,
+		llm:       routes.Bulletin.Client,
+		cfg:       cfg,
+		bulletin:  newBulletinCache(maxStale),
+		briefRuns: make(map[string]struct{}),
 	}
 
 	c.tasks = c.buildTasks()
@@ -195,6 +199,7 @@ func (c *Cortex) run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			now := time.Now()
+			c.maybeRunDailyBriefs(ctx, now)
 			for _, task := range c.tasks {
 				if task.ShouldRun(now) {
 					c.runTask(ctx, task)

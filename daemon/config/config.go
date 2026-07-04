@@ -74,9 +74,11 @@ type NotificationsConfig struct {
 }
 
 type BriefingConfig struct {
-	Enabled  bool     `yaml:"enabled"`
-	Schedule string   `yaml:"schedule"`
-	Days     []string `yaml:"days"`
+	Enabled         bool     `yaml:"enabled"`
+	Schedule        string   `yaml:"schedule"` // legacy single daily schedule
+	MorningSchedule string   `yaml:"morning_schedule"`
+	EveningSchedule string   `yaml:"evening_schedule"`
+	Days            []string `yaml:"days"`
 }
 
 type RemindersConfig struct {
@@ -180,6 +182,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Notifications.Briefing.Schedule == "" {
 		cfg.Notifications.Briefing.Schedule = "09:00"
+	}
+	if cfg.Notifications.Briefing.MorningSchedule == "" {
+		cfg.Notifications.Briefing.MorningSchedule = cfg.Notifications.Briefing.Schedule
+	}
+	if cfg.Notifications.Briefing.EveningSchedule == "" {
+		cfg.Notifications.Briefing.EveningSchedule = "18:00"
 	}
 	if len(cfg.Notifications.Briefing.Days) == 0 {
 		cfg.Notifications.Briefing.Days = []string{"mon", "tue", "wed", "thu", "fri"}
