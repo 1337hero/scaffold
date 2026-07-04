@@ -41,10 +41,10 @@ func toSlippingResponse(s *db.Slipping) slippingResponse {
 // is unreachable — the Today page must never 500 over a missing token.
 func (s *Server) todaysCalendar(r *http.Request) []calendarEventDTO {
 	out := make([]calendarEventDTO, 0)
-	if s.brain == nil {
+	if s.calendar == nil {
 		return out
 	}
-	events, err := s.brain.CalendarToday(r.Context())
+	events, err := s.calendar.TodayEvents(r.Context(), s.calendar.CalendarID)
 	if err != nil {
 		log.Printf("warn: today calendar unavailable: %v", err)
 		return out
