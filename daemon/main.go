@@ -17,20 +17,11 @@ import (
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 
-	"scaffold/agentprompt"
 	"scaffold/api"
-	"scaffold/brain"
 	appconfig "scaffold/config"
-	"scaffold/cortex"
 	"scaffold/db"
 	googleauth "scaffold/google"
-	"scaffold/llm"
-	signalcli "scaffold/signal"
 )
-
-const maxInFlightMessages = 4
-const conversationHistoryLimit = 12
-const signalNonTextSupportMessage = "I got your Signal message, but I currently can't view images, open attachments, or transcribe audio. Please send text, or paste a transcript/description."
 
 func main() {
 	if len(os.Args) >= 2 && os.Args[1] == "auth" {
@@ -59,84 +50,24 @@ func main() {
 	}
 	log.Println("database open")
 
-	appCfg, err := appconfig.Load(cfg.configDir, cfg.userName)
+	appCfg, err := appconfig.Load(cfg.configDir, "")
 	if err != nil {
 		log.Fatalf("failed to load config from %s: %v", cfg.configDir, err)
 	}
-	log.Printf("config loaded: agent=%s, %d tools, cortex bulletin every %dm",
-		appCfg.Agent.Name, len(appCfg.Tools.Tools), appCfg.Cortex.Bulletin.IntervalMinutes)
+	log.Printf("config loaded from %s", cfg.configDir)
 
-	assistantName := cfg.assistantName
-	if strings.TrimSpace(appCfg.Agent.Name) != "" {
-		assistantName = appCfg.Agent.Name
-	}
-
-	toolDefs := make([]brain.ToolDefinition, 0, len(appCfg.Tools.Tools))
-	for _, tool := range appCfg.Tools.Tools {
-		toolDefs = append(toolDefs, brain.ToolDefinition{
-			Name:        tool.Name,
-			Description: tool.Description,
-			InputSchema: tool.InputSchema,
-		})
-	}
-
-	llmFactories := map[string]llm.ProviderFactory{
-		"anthropic": func(apiKey string) (llm.ToolUseResponder, llm.CompletionClient) {
-			return brain.NewAnthropicResponder(apiKey), brain.NewAnthropicCompletionClient(apiKey)
-		},
-	}
-	llmRuntime, err := llm.NewRuntime(appCfg.LLM, llmFactories)
-	if err != nil {
-		log.Fatalf("failed to initialize llm runtime: %v", err)
-	}
-	if err := llmRuntime.VerifyStartup(context.Background()); err != nil {
-		log.Fatalf("llm startup verification failed: %v", err)
-	}
-
-	respondResponder, respondModel, err := llmRuntime.BindResponder(appconfig.LLMRouteBrainRespond)
-	if err != nil {
-		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteBrainRespond, err)
-	}
-	bulletinCompletion, bulletinModel, err := llmRuntime.BindCompletion(appconfig.LLMRouteCortexBulletin)
-	if err != nil {
-		log.Fatalf("bind llm route %s: %v", appconfig.LLMRouteCortexBulletin, err)
-	}
-
-	b := brain.NewWithDependencies(database, brain.Config{
-		AssistantName:    assistantName,
-		UserName:         cfg.userName,
-		Identity:         buildAgentIdentity(appCfg, assistantName, cfg.userName),
-		PromptFactLimit:  appCfg.Identity.Facts.MaxPromptFacts,
-		RespondModel:     respondModel,
-		RespondMaxTokens: appCfg.Agent.MaxResponseTokens,
-		Tools:            toolDefs,
-	}, respondResponder)
-
-	calendarClient, err := initGoogleCalendarClient(context.Background(), database, appCfg.Google)
+	var calendarClient *googleauth.CalendarClient
+	calendarClient, err = initGoogleCalendarClient(context.Background(), database, appCfg.Google)
 	if err != nil {
 		log.Printf("warn: google calendar unavailable: %v", err)
+		calendarClient = nil
 	} else if calendarClient != nil {
-		b.SetCalendarClient(calendarClient)
 		log.Printf("google calendar connected: %s", calendarClient.CalendarID)
 	} else {
 		log.Printf("google calendar not configured; run scaffold-daemon auth google")
 	}
 
-	cortexRuntime := cortex.NewWithLLM(database, b, appCfg.Cortex, cortex.LLMRoutes{
-		Bulletin: cortex.LLMRoute{
-			Client: bulletinCompletion,
-			Model:  bulletinModel,
-		},
-	})
-	cortexRuntime.SetNotificationsConfig(appCfg.Notifications)
-	b.SetBulletinProvider(cortexRuntime.CurrentBulletin)
-
-	client := signalcli.NewClient(cfg.signalURL, cfg.agentNumber)
-	cortexRuntime.SetSignalSender(func(ctx context.Context, message string) error {
-		return client.Send(ctx, cfg.userNumber, message)
-	})
-
-	srv := api.New(database, b, cfg.apiToken, api.AuthConfig{
+	srv := api.New(database, calendarClient, cfg.apiToken, api.AuthConfig{
 		AppUsername:          cfg.appUsername,
 		AppPasswordHash:      cfg.appPasswordHash,
 		SessionTTL:           time.Duration(cfg.sessionTTLHours) * time.Hour,
@@ -162,21 +93,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cortexRuntime.Start(ctx)
-
-	signalOK := true
-	if err := waitForSignal(client); err != nil {
-		log.Printf("WARNING: signal-cli not ready (continuing without Signal): %v", err)
-		signalOK = false
-	}
-
-	if signalOK {
-		log.Println("signal-cli connected")
-		startupMsg := fmt.Sprintf("%s online. Brain active.", assistantName)
-		if err := client.Send(context.Background(), cfg.userNumber, startupMsg); err != nil {
-			log.Printf("warn: startup message failed: %v", err)
-		}
-	}
+	startMaintenance(ctx, database)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -192,107 +109,58 @@ func main() {
 		}
 	}()
 
-	if !signalOK {
-		log.Printf("API server running on :%s (no Signal)", cfg.apiPort)
-		<-ctx.Done()
-		log.Println("daemon stopped")
-		return
-	}
-
-	log.Printf("listening for messages on %s", cfg.agentNumber)
-	slots := make(chan struct{}, maxInFlightMessages)
-	for {
-		err := client.StreamEvents(ctx, func(event signalcli.SSEEvent) {
-			msg := signalcli.ParseInbound(event)
-			if msg == nil {
-				return
-			}
-			if msg.Sender != cfg.userNumber {
-				log.Printf("ignoring message from %s", msg.Sender)
-				return
-			}
-			log.Printf("<- %s (len=%d)", msg.Sender, len(msg.Message))
-			slots <- struct{}{}
-			go func(msg *signalcli.InboundMessage) {
-				defer func() { <-slots }()
-				handleMessage(client, b, database, msg)
-			}(msg)
-		})
-		if ctx.Err() != nil {
-			break
-		}
-		if err != nil {
-			log.Printf("SSE stream error: %v -- reconnecting in 3s", err)
-			time.Sleep(3 * time.Second)
-		}
-	}
-
+	<-ctx.Done()
 	log.Println("daemon stopped")
 }
 
-func handleMessage(client *signalcli.Client, b *brain.Brain, database *db.DB, msg *signalcli.InboundMessage) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+// startMaintenance launches background goroutines that decay and prune memories
+// on fixed intervals. These are pure SQL operations against the db package.
+func startMaintenance(ctx context.Context, database *db.DB) {
+	const decayInterval = 24 * time.Hour
+	const pruneInterval = 24 * time.Hour
 
-	userText := strings.TrimSpace(msg.Message)
-	nonTextSummary := msg.NonTextContentSummary()
-
-	if userText == "" && nonTextSummary != "" {
-		userEntry := fmt.Sprintf("[Signal non-text content: %s]", nonTextSummary)
-		if _, err := database.InsertConversationEntry(msg.Sender, "user", userEntry); err != nil {
-			log.Printf("conversation insert error (user non-text): %v", err)
+	runOnce := func() {
+		if _, err := database.DecayMemories(0.95, nil, 0.1, 30); err != nil {
+			log.Printf("warn: decay memories failed: %v", err)
 		}
+		if _, err := database.PruneSuppressedMemories(30); err != nil {
+			log.Printf("warn: prune suppressed memories failed: %v", err)
+		}
+	}
 
-		response := signalNonTextSupportMessage
-		if err := client.Send(ctx, msg.Sender, response); err != nil {
-			log.Printf("failed to send non-text capability response: %v", err)
-		} else {
-			log.Printf("-> %s (len=%d)", msg.Sender, len(response))
-			if _, err := database.InsertConversationEntry(msg.Sender, "assistant", response); err != nil {
-				log.Printf("conversation insert error (assistant non-text): %v", err)
+	// Run once at startup, then on a ticker.
+	go runOnce()
+
+	decayTicker := time.NewTicker(decayInterval)
+	pruneTicker := time.NewTicker(pruneInterval)
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				decayTicker.Stop()
+				return
+			case <-decayTicker.C:
+				if _, err := database.DecayMemories(0.95, nil, 0.1, 30); err != nil {
+					log.Printf("warn: decay memories failed: %v", err)
+				}
 			}
 		}
-		return
-	}
+	}()
 
-	if userText == "" {
-		log.Printf("ignoring empty inbound message from %s", msg.Sender)
-		return
-	}
-
-	if _, err := database.InsertConversationEntry(msg.Sender, "user", userText); err != nil {
-		log.Printf("conversation insert error (user): %v", err)
-	}
-
-	history, err := database.ListRecentConversation(msg.Sender, conversationHistoryLimit)
-	if err != nil {
-		log.Printf("history query error: %v", err)
-	}
-
-	brainMessage := annotateUserMessageWithSignalMetadata(userText, nonTextSummary)
-	thread := historyToThread(history)
-	if len(thread) > 0 {
-		last := thread[len(thread)-1]
-		if last.Role == "user" && strings.TrimSpace(last.Content) == userText {
-			thread[len(thread)-1].Content = brainMessage
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				pruneTicker.Stop()
+				return
+			case <-pruneTicker.C:
+				if _, err := database.PruneSuppressedMemories(30); err != nil {
+					log.Printf("warn: prune suppressed memories failed: %v", err)
+				}
+			}
 		}
-	}
-	thread = ensureCurrentUserMessage(thread, brainMessage)
-
-	response, err := b.Respond(ctx, brainMessage, thread)
-	if err != nil {
-		log.Printf("brain error: %v", err)
-		response = "Something went wrong on my end. Try again?"
-	}
-
-	if err := client.Send(ctx, msg.Sender, response); err != nil {
-		log.Printf("failed to send response: %v", err)
-	} else {
-		log.Printf("-> %s (len=%d)", msg.Sender, len(response))
-		if _, err := database.InsertConversationEntry(msg.Sender, "assistant", response); err != nil {
-			log.Printf("conversation insert error (assistant): %v", err)
-		}
-	}
+	}()
 }
 
 func initGoogleCalendarClient(ctx context.Context, database *db.DB, cfg appconfig.GoogleConfig) (*googleauth.CalendarClient, error) {
@@ -314,13 +182,6 @@ func initGoogleCalendarClient(ctx context.Context, database *db.DB, cfg appconfi
 type config struct {
 	configDir                string
 	frontendDistDir          string
-	ingestDir                string
-	ingestPollSecs           int
-	signalURL                string
-	agentNumber              string
-	userNumber               string
-	assistantName            string
-	userName                 string
 	dbPath                   string
 	apiHost                  string
 	apiPort                  string
@@ -342,18 +203,18 @@ func loadConfig() config {
 		}
 		return v
 	}
+	withDefault := func(key, def string) string {
+		if v := sanitizeEnvValue(os.Getenv(key)); v != "" {
+			return v
+		}
+		return def
+	}
 	required := func(key string) string {
 		v := sanitizeEnvValue(os.Getenv(key))
 		if v == "" {
 			log.Fatalf("%s is required", key)
 		}
 		return v
-	}
-	withDefault := func(key, def string) string {
-		if v := sanitizeEnvValue(os.Getenv(key)); v != "" {
-			return v
-		}
-		return def
 	}
 	parsePositiveInt := func(key, raw string, min int) int {
 		n, err := strconv.Atoi(strings.TrimSpace(raw))
@@ -387,11 +248,6 @@ func loadConfig() config {
 	return config{
 		configDir:                configDir,
 		frontendDistDir:          withDefault("FRONTEND_DIST_DIR", "../app/dist"),
-		agentNumber:              required("AGENT_NUMBER"),
-		userNumber:               required("USER_NUMBER"),
-		signalURL:                required("SIGNAL_URL"),
-		assistantName:            withDefault("ASSISTANT_NAME", "Scaffold"),
-		userName:                 withDefault("USER_NAME", "User"),
 		dbPath:                   withDefault("DB_PATH", "./scaffold.db"),
 		apiHost:                  withDefault("API_HOST", "127.0.0.1"),
 		apiPort:                  apiPort,
@@ -404,24 +260,6 @@ func loadConfig() config {
 		loginRateLimitWindowSecs: loginRateLimitWindowSecs,
 		loginRateLimitMax:        loginRateLimitMax,
 	}
-}
-
-func waitForSignal(client *signalcli.Client) error {
-	var lastErr error
-	for i := 0; i < 10; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		err := client.Check(ctx)
-		cancel()
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if i < 9 {
-			log.Printf("waiting for signal-cli... (%v)", err)
-			time.Sleep(2 * time.Second)
-		}
-	}
-	return lastErr
 }
 
 func secureFileIfExists(path string) error {
@@ -439,84 +277,6 @@ func secureFileIfExists(path string) error {
 		return nil
 	}
 	return os.Chmod(path, 0o600)
-}
-
-func historyToThread(history []db.ConversationEntry) []brain.ConversationTurn {
-	if len(history) == 0 {
-		return nil
-	}
-
-	// conversation_log query already returns chronological order.
-	out := make([]brain.ConversationTurn, 0, len(history))
-	for i := 0; i < len(history); i++ {
-		text := strings.TrimSpace(history[i].Content)
-		if text == "" {
-			continue
-		}
-
-		role := "user"
-		if strings.EqualFold(strings.TrimSpace(history[i].Role), "assistant") {
-			role = "assistant"
-		}
-
-		out = append(out, brain.ConversationTurn{
-			Role:    role,
-			Content: text,
-		})
-	}
-	return out
-}
-
-func ensureCurrentUserMessage(thread []brain.ConversationTurn, message string) []brain.ConversationTurn {
-	text := strings.TrimSpace(message)
-	if text == "" {
-		return thread
-	}
-	if len(thread) > 0 {
-		last := thread[len(thread)-1]
-		if last.Role == "user" && strings.TrimSpace(last.Content) == text {
-			return thread
-		}
-	}
-	return append(thread, brain.ConversationTurn{Role: "user", Content: text})
-}
-
-func annotateUserMessageWithSignalMetadata(message, nonTextSummary string) string {
-	text := strings.TrimSpace(message)
-	if text == "" || strings.TrimSpace(nonTextSummary) == "" {
-		return text
-	}
-
-	return fmt.Sprintf("%s\n\n[Signal metadata: user also sent %s. You cannot access images, attachments, or audio. Ask for text description or transcript if needed.]", text, nonTextSummary)
-}
-
-func buildAgentIdentity(cfg *appconfig.Config, assistantName, userName string) agentprompt.Identity {
-	if cfg == nil {
-		return agentprompt.Identity{Name: assistantName, UserName: userName}
-	}
-
-	rules := make([]string, 0, len(cfg.Identity.Rules)+len(cfg.Agent.Rules))
-	rules = appendNonBlank(rules, cfg.Identity.Rules...)
-	rules = appendNonBlank(rules, cfg.Agent.Rules...)
-
-	return agentprompt.Identity{
-		Name:     assistantName,
-		UserName: userName,
-		Voice:    cfg.Identity.Voice,
-		Values:   cfg.Identity.Values,
-		Posture:  cfg.Identity.Posture,
-		CannotDo: cfg.Identity.CannotDo,
-		Rules:    rules,
-	}
-}
-
-func appendNonBlank(out []string, values ...string) []string {
-	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
-			out = append(out, value)
-		}
-	}
-	return out
 }
 
 func handleAuthSubcommand(args []string) {

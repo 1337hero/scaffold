@@ -4,19 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Agent         AgentConfig
-	Identity      AgentIdentityConfig
-	Tools         ToolsConfig
-	Cortex        CortexConfig
-	Google        GoogleConfig
-	LLM           LLMConfig
-	Notifications NotificationsConfig
+	Google GoogleConfig
 }
 
 type GoogleConfig struct {
@@ -26,110 +19,14 @@ type GoogleConfig struct {
 	Scopes       []string `yaml:"scopes"`
 }
 
-type AgentConfig struct {
-	Name              string   `yaml:"name"`
-	Personality       string   `yaml:"personality"`
-	Rules             []string `yaml:"rules"`
-	MaxResponseTokens int      `yaml:"max_response_tokens"`
-	Model             string   `yaml:"model"`
-}
-
-type AgentIdentityConfig struct {
-	Voice    []string            `yaml:"voice"`
-	Values   []string            `yaml:"values"`
-	Posture  []string            `yaml:"posture"`
-	CannotDo []string            `yaml:"cannot_do"`
-	Rules    []string            `yaml:"rules"`
-	Facts    FactInjectionConfig `yaml:"facts"`
-}
-
-type FactInjectionConfig struct {
-	MaxPromptFacts int `yaml:"max_prompt_facts"`
-}
-
-type ToolsConfig struct {
-	Tools []ToolDef `yaml:"tools"`
-}
-
-type ToolDef struct {
-	Name        string                 `yaml:"name"`
-	Description string                 `yaml:"description"`
-	InputSchema map[string]interface{} `yaml:"input_schema"`
-}
-
-type CortexConfig struct {
-	Bulletin BulletinConfig        `yaml:"bulletin"`
-	Tasks    map[string]TaskConfig `yaml:"tasks"`
-}
-
-type BulletinConfig struct {
-	IntervalMinutes    int    `yaml:"interval_minutes"`
-	MaxWords           int    `yaml:"max_words"`
-	MaxStaleMultiplier int    `yaml:"max_stale_multiplier"`
-	Model              string `yaml:"model"`
-}
-
-type TaskConfig struct {
-	IntervalHours   int      `yaml:"interval_hours"`
-	IntervalMinutes int      `yaml:"interval_minutes"`
-	TimeoutSeconds  int      `yaml:"timeout_seconds"`
-	MaxPerRun       int      `yaml:"max_per_run,omitempty"`
-	Factor          float64  `yaml:"factor,omitempty"`
-	ExemptTypes     []string `yaml:"exempt_types,omitempty"`
-	SuppressedDays  int      `yaml:"suppressed_days,omitempty"`
-	ImportanceFloor float64  `yaml:"importance_floor,omitempty"`
-}
-
-type NotificationsConfig struct {
-	Enabled              bool            `yaml:"enabled"`
-	Briefing             BriefingConfig  `yaml:"briefing"`
-	Reminders            RemindersConfig `yaml:"reminders"`
-	OverdueCooldownHours int             `yaml:"overdue_cooldown_hours"`
-}
-
-type BriefingConfig struct {
-	Enabled         bool     `yaml:"enabled"`
-	Schedule        string   `yaml:"schedule"` // legacy single daily schedule
-	MorningSchedule string   `yaml:"morning_schedule"`
-	EveningSchedule string   `yaml:"evening_schedule"`
-	Days            []string `yaml:"days"`
-}
-
-type RemindersConfig struct {
-	MorningWindow string `yaml:"morning_window"`
-	CheckinWindow string `yaml:"checkin_window"`
-}
-
-func Load(configDir string, userName string) (*Config, error) {
+func Load(configDir string, _ string) (*Config, error) {
 	cfg := &Config{}
 
-	if err := loadFile(filepath.Join(configDir, "agent.yaml"), &cfg.Agent); err != nil {
-		return nil, fmt.Errorf("load agent.yaml: %w", err)
-	}
-	if err := loadFileOptional(filepath.Join(configDir, "agent-identity.yaml"), &cfg.Identity); err != nil {
-		return nil, fmt.Errorf("load agent-identity.yaml: %w", err)
-	}
-	if err := loadFile(filepath.Join(configDir, "tools.yaml"), &cfg.Tools); err != nil {
-		return nil, fmt.Errorf("load tools.yaml: %w", err)
-	}
-	if err := loadFile(filepath.Join(configDir, "cortex.yaml"), &cfg.Cortex); err != nil {
-		return nil, fmt.Errorf("load cortex.yaml: %w", err)
-	}
 	if err := loadFileOptional(filepath.Join(configDir, "google.yaml"), &cfg.Google); err != nil {
 		return nil, fmt.Errorf("load google.yaml: %w", err)
 	}
-	if err := loadFileOptional(filepath.Join(configDir, "llm.yaml"), &cfg.LLM); err != nil {
-		return nil, fmt.Errorf("load llm.yaml: %w", err)
-	}
-	if err := loadFileOptional(filepath.Join(configDir, "notifications.yaml"), &cfg.Notifications); err != nil {
-		return nil, fmt.Errorf("load notifications.yaml: %w", err)
-	}
 
 	applyDefaults(cfg)
-	substituteVars(cfg, userName)
-	if err := validate(cfg); err != nil {
-		return nil, err
-	}
 
 	return cfg, nil
 }
@@ -154,34 +51,6 @@ func loadFileOptional(path string, target interface{}) error {
 }
 
 func applyDefaults(cfg *Config) {
-	if cfg.Agent.Name == "" {
-		cfg.Agent.Name = "Scaffold"
-	}
-	if cfg.Agent.MaxResponseTokens == 0 {
-		cfg.Agent.MaxResponseTokens = 1024
-	}
-	if cfg.Agent.Model == "" {
-		cfg.Agent.Model = "claude-sonnet-4-6"
-	}
-	if cfg.Identity.Facts.MaxPromptFacts == 0 {
-		cfg.Identity.Facts.MaxPromptFacts = 10
-	}
-	if cfg.Cortex.Bulletin.IntervalMinutes == 0 {
-		cfg.Cortex.Bulletin.IntervalMinutes = 60
-	}
-	if cfg.Cortex.Bulletin.MaxWords == 0 {
-		cfg.Cortex.Bulletin.MaxWords = 500
-	}
-	if cfg.Cortex.Bulletin.MaxStaleMultiplier == 0 {
-		cfg.Cortex.Bulletin.MaxStaleMultiplier = 3
-	}
-	if cfg.Cortex.Bulletin.Model == "" {
-		cfg.Cortex.Bulletin.Model = "claude-haiku-4-5"
-	}
-	if cfg.Cortex.Tasks == nil {
-		cfg.Cortex.Tasks = make(map[string]TaskConfig)
-	}
-
 	if cfg.Google.CalendarID == "" {
 		cfg.Google.CalendarID = "primary"
 	}
@@ -190,118 +59,4 @@ func applyDefaults(cfg *Config) {
 			"https://www.googleapis.com/auth/calendar.events",
 		}
 	}
-
-	if cfg.Notifications.OverdueCooldownHours == 0 {
-		cfg.Notifications.OverdueCooldownHours = 48
-	}
-	if cfg.Notifications.Reminders.MorningWindow == "" {
-		cfg.Notifications.Reminders.MorningWindow = "08:30"
-	}
-	if cfg.Notifications.Reminders.CheckinWindow == "" {
-		cfg.Notifications.Reminders.CheckinWindow = "13:00"
-	}
-	if cfg.Notifications.Briefing.Schedule == "" {
-		cfg.Notifications.Briefing.Schedule = "09:00"
-	}
-	if cfg.Notifications.Briefing.MorningSchedule == "" {
-		cfg.Notifications.Briefing.MorningSchedule = cfg.Notifications.Briefing.Schedule
-	}
-	if cfg.Notifications.Briefing.EveningSchedule == "" {
-		cfg.Notifications.Briefing.EveningSchedule = "18:00"
-	}
-	if len(cfg.Notifications.Briefing.Days) == 0 {
-		cfg.Notifications.Briefing.Days = []string{"mon", "tue", "wed", "thu", "fri"}
-	}
-
-	applyLLMDefaults(cfg)
-}
-
-func substituteVars(cfg *Config, userName string) {
-	r := strings.NewReplacer(
-		"{name}", cfg.Agent.Name,
-		"{user_name}", userName,
-	)
-	cfg.Agent.Personality = r.Replace(cfg.Agent.Personality)
-	cfg.Identity.Voice = replaceStrings(cfg.Identity.Voice, r)
-	cfg.Identity.Values = replaceStrings(cfg.Identity.Values, r)
-	cfg.Identity.Posture = replaceStrings(cfg.Identity.Posture, r)
-	cfg.Identity.CannotDo = replaceStrings(cfg.Identity.CannotDo, r)
-	cfg.Identity.Rules = replaceStrings(cfg.Identity.Rules, r)
-}
-
-func validate(cfg *Config) error {
-	if strings.TrimSpace(cfg.Agent.Name) == "" {
-		return fmt.Errorf("agent.name must not be empty")
-	}
-	if cfg.Agent.MaxResponseTokens <= 0 {
-		return fmt.Errorf("agent.max_response_tokens must be > 0")
-	}
-	if strings.TrimSpace(cfg.Agent.Model) == "" {
-		return fmt.Errorf("agent.model must not be empty")
-	}
-	if cfg.Identity.Facts.MaxPromptFacts <= 0 {
-		return fmt.Errorf("agent_identity.facts.max_prompt_facts must be > 0")
-	}
-	if cfg.Cortex.Bulletin.IntervalMinutes <= 0 {
-		return fmt.Errorf("cortex.bulletin.interval_minutes must be > 0")
-	}
-	if cfg.Cortex.Bulletin.MaxWords <= 0 {
-		return fmt.Errorf("cortex.bulletin.max_words must be > 0")
-	}
-	if cfg.Cortex.Bulletin.MaxStaleMultiplier <= 0 {
-		return fmt.Errorf("cortex.bulletin.max_stale_multiplier must be > 0")
-	}
-	if strings.TrimSpace(cfg.Cortex.Bulletin.Model) == "" {
-		return fmt.Errorf("cortex.bulletin.model must not be empty")
-	}
-
-	seenTools := make(map[string]struct{}, len(cfg.Tools.Tools))
-	for i, tool := range cfg.Tools.Tools {
-		name := strings.TrimSpace(tool.Name)
-		if name == "" {
-			return fmt.Errorf("tools[%d].name must not be empty", i)
-		}
-		if _, exists := seenTools[name]; exists {
-			return fmt.Errorf("duplicate tool name %q", name)
-		}
-		seenTools[name] = struct{}{}
-	}
-
-	for name, task := range cfg.Cortex.Tasks {
-		if strings.TrimSpace(name) == "" {
-			return fmt.Errorf("cortex task name must not be empty")
-		}
-		if task.IntervalHours <= 0 && task.IntervalMinutes <= 0 {
-			return fmt.Errorf("cortex task %q must have interval_hours or interval_minutes > 0", name)
-		}
-		if task.TimeoutSeconds <= 0 {
-			return fmt.Errorf("cortex task %q timeout_seconds must be > 0", name)
-		}
-		if task.Factor != 0 && (task.Factor <= 0 || task.Factor >= 1) {
-			return fmt.Errorf("cortex task %q factor must be between 0 and 1 (exclusive)", name)
-		}
-		if task.ImportanceFloor != 0 && (task.ImportanceFloor < 0 || task.ImportanceFloor > 1) {
-			return fmt.Errorf("cortex task %q importance_floor must be between 0 and 1", name)
-		}
-		if task.SuppressedDays < 0 {
-			return fmt.Errorf("cortex task %q suppressed_days must be >= 0", name)
-		}
-	}
-
-	if err := validateLLM(cfg); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func replaceStrings(values []string, r *strings.Replacer) []string {
-	if len(values) == 0 {
-		return values
-	}
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		out = append(out, r.Replace(value))
-	}
-	return out
 }

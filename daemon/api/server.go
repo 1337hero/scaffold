@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"scaffold/brain"
+	googleauth "scaffold/google"
 	"scaffold/db"
 )
 
@@ -31,7 +31,7 @@ type AuthConfig struct {
 
 type Server struct {
 	db              *db.DB
-	brain           *brain.Brain
+	calendar        *googleauth.CalendarClient
 	mux             *http.ServeMux
 	frontendDistDir string
 	apiToken        string
@@ -43,7 +43,7 @@ type Server struct {
 	loginLimiter    *rateLimiter
 }
 
-func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *Server {
+func New(database *db.DB, cal *googleauth.CalendarClient, apiToken string, authCfg AuthConfig) *Server {
 	if authCfg.SessionTTL == 0 {
 		authCfg.SessionTTL = 7 * 24 * time.Hour
 	}
@@ -56,7 +56,7 @@ func New(database *db.DB, b *brain.Brain, apiToken string, authCfg AuthConfig) *
 
 	s := &Server{
 		db:              database,
-		brain:           b,
+		calendar:        cal,
 		mux:             http.NewServeMux(),
 		apiToken:        apiToken,
 		appUsername:     authCfg.AppUsername,

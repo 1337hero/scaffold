@@ -16,16 +16,19 @@ type calendarEventDTO struct {
 }
 
 func (s *Server) handleCalendarEvents(w http.ResponseWriter, r *http.Request) {
-	if s.brain == nil {
+	if s.calendar == nil {
 		writeJSON(w, http.StatusOK, []calendarEventDTO{})
 		return
 	}
 
-	events, err := s.brain.CalendarUpcoming(r.Context(), 3)
+	events, err := s.calendar.UpcomingEvents(r.Context(), s.calendar.CalendarID, 8)
 	if err != nil {
 		log.Printf("warn: calendar upcoming unavailable: %v", err)
 		writeJSON(w, http.StatusOK, []calendarEventDTO{})
 		return
+	}
+	if len(events) > 3 {
+		events = events[:3]
 	}
 	if events == nil {
 		writeJSON(w, http.StatusOK, []calendarEventDTO{})
