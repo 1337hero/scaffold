@@ -22,6 +22,7 @@ const (
 	bulletinMaxInputItems  = 12
 	bulletinMaxTokensFloor = 256
 	bulletinMaxTokensCeil  = 2048
+	pushCheckInterval      = 5 * time.Minute
 )
 
 type CortexTask struct {
@@ -108,17 +109,17 @@ func (s bulletinSections) Empty() bool {
 }
 
 type Cortex struct {
-	db        *db.DB
-	brain     *brain.Brain
-	llm       CompletionClient
-	cfg       appconfig.CortexConfig
-	notifyCfg appconfig.NotificationsConfig
-	bulletin  *BulletinCache
-	tasks     []*CortexTask
-	briefSend func(ctx context.Context, message string) error
-	briefMu   sync.Mutex
-	briefRuns map[string]struct{}
-	once      sync.Once
+	db         *db.DB
+	brain      *brain.Brain
+	llm        CompletionClient
+	cfg        appconfig.CortexConfig
+	notifyCfg  appconfig.NotificationsConfig
+	bulletin   *BulletinCache
+	tasks      []*CortexTask
+	sendSignal func(ctx context.Context, message string) error
+	briefMu    sync.Mutex
+	briefRuns  map[string]struct{}
+	once       sync.Once
 }
 
 type LLMRoute struct {
@@ -200,6 +201,7 @@ func (c *Cortex) run(ctx context.Context) {
 		case <-ticker.C:
 			now := time.Now()
 			c.maybeRunDailyBriefs(ctx, now)
+			c.maybeRunBirthdayCheck(ctx, now)
 			for _, task := range c.tasks {
 				if task.ShouldRun(now) {
 					c.runTask(ctx, task)
@@ -246,12 +248,18 @@ func (c *Cortex) runTask(ctx context.Context, task *CortexTask) {
 }
 
 func (c *Cortex) buildTasks() []*CortexTask {
-	tasks := make([]*CortexTask, 0, 1+len(c.cfg.Tasks))
+	tasks := make([]*CortexTask, 0, 2+len(c.cfg.Tasks))
 	tasks = append(tasks, &CortexTask{
 		Name:     "bulletin",
 		Interval: time.Duration(c.cfg.Bulletin.IntervalMinutes) * time.Minute,
 		Timeout:  30 * time.Second,
 		Fn:       c.generateBulletin,
+	})
+	tasks = append(tasks, &CortexTask{
+		Name:     "push_check",
+		Interval: pushCheckInterval,
+		Timeout:  30 * time.Second,
+		Fn:       c.runPushCheck,
 	})
 
 	if len(c.cfg.Tasks) > 0 {

@@ -256,16 +256,27 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 	_, err = db.conn.Exec(`
 		CREATE TABLE IF NOT EXISTS notification_log (
-		  id       TEXT PRIMARY KEY,
-		  ref_type TEXT NOT NULL,
-		  ref_id   TEXT NOT NULL,
-		  sent_at  TEXT NOT NULL,
-		  message  TEXT
+		  id           TEXT PRIMARY KEY,
+		  ref_type     TEXT NOT NULL,
+		  ref_id       TEXT NOT NULL,
+		  trigger_date TEXT,
+		  sent_at      TEXT NOT NULL,
+		  message      TEXT,
+		  suppressed_at TEXT
 		);
 		CREATE INDEX IF NOT EXISTS idx_notification_log_ref ON notification_log(ref_type, ref_id, sent_at DESC);
 	`)
 	if err != nil {
 		return fmt.Errorf("apply notification_log schema: %w", err)
+	}
+	if err := db.migrateAddColumn("notification_log", "trigger_date", "TEXT"); err != nil {
+		return err
+	}
+	if err := db.migrateAddColumn("notification_log", "suppressed_at", "TEXT"); err != nil {
+		return err
+	}
+	if _, err := db.conn.Exec(`CREATE INDEX IF NOT EXISTS idx_notification_log_dedup ON notification_log(ref_type, ref_id, trigger_date)`); err != nil {
+		return fmt.Errorf("apply notification_log dedup index: %w", err)
 	}
 
 	// v2 schema: new tables

@@ -130,7 +130,7 @@ func main() {
 	b.SetBulletinProvider(cortexRuntime.CurrentBulletin)
 
 	client := signalcli.NewClient(cfg.signalURL, cfg.agentNumber)
-	cortexRuntime.SetBriefSender(func(ctx context.Context, message string) error {
+	cortexRuntime.SetSignalSender(func(ctx context.Context, message string) error {
 		return client.Send(ctx, cfg.userNumber, message)
 	})
 

@@ -383,6 +383,16 @@ func TestSchemaV2NotificationsPreserved(t *testing.T) {
 	if exists == 0 {
 		t.Fatal("notification_log table missing")
 	}
+
+	for _, col := range []string{"trigger_date", "suppressed_at"} {
+		ct, _, _, err := pragmaColumnInfo(db.conn, "notification_log", col)
+		if err != nil {
+			t.Fatalf("get column info for notification_log.%s: %v", col, err)
+		}
+		if ct == "" {
+			t.Fatalf("notification_log.%s column missing", col)
+		}
+	}
 }
 
 func pragmaColumnInfo(conn *sql.DB, table, column string) (colType string, notNull int, defaultVal string, err error) {
