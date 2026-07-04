@@ -150,7 +150,7 @@ func (db *DB) SearchAll(query string, domainID *int, entityType string, status s
 
 	if entityType == "" || entityType == "note" {
 		q := `SELECT id, 'note' AS type, title, COALESCE(content, '') AS snippet, domain_id, '' AS status
-		      FROM notes WHERE (title LIKE ? OR content LIKE ?)`
+		      FROM notes WHERE suppressed_at IS NULL AND (title LIKE ? OR content LIKE ?)`
 		a := []any{like, like}
 		if domainID != nil {
 			q += ` AND domain_id = ?`

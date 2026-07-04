@@ -340,6 +340,7 @@ function normalizeNote(n) {
     taskId: nullableField(n.TaskID),
     reviewAt: nullableField(n.ReviewAt),
     flagForReview: Boolean(n.FlagForReview),
+    projectId: nullableField(n.ProjectID),
     createdAt: n.CreatedAt || "",
     updatedAt: nullableField(n.UpdatedAt),
   }
@@ -604,3 +605,22 @@ export function patchPerson(id, data) {
 }
 export function deletePerson(id) { return apiFetch(`/api/people/${id}`, { method: "DELETE" }) }
 export function logInteraction(personId, data) { return postJSON(`/api/people/${personId}/interactions`, data) }
+
+// Library page
+
+export const libraryNotesQuery = (filters) => ({
+  queryKey: ["library-notes", filters],
+  queryFn: async () => {
+    const params = new URLSearchParams()
+    if (filters?.kind) params.set("kind", filters.kind)
+    if (filters?.surface) params.set("surface", filters.surface)
+    if (filters?.tags) params.set("tags", filters.tags)
+    if (filters?.source) params.set("source", filters.source)
+    if (filters?.flagForReview != null && filters.flagForReview !== "") {
+      params.set("flag_for_review", filters.flagForReview)
+    }
+    if (filters?.q) params.set("q", filters.q)
+    const data = await apiFetch(`/api/notes?${params}`)
+    return ensureArray(data).map(normalizeNote).filter(Boolean)
+  },
+})

@@ -222,7 +222,9 @@ func (db *DB) TodayNotifications(surface *string) ([]TodayNotification, error) {
 
 	// Notes due for review.
 	noteRows, err := db.conn.Query(
-		`SELECT id, title, review_at FROM notes WHERE review_at IS NOT NULL AND review_at <= ? ORDER BY review_at`,
+		`SELECT id, title, review_at FROM notes
+		  WHERE suppressed_at IS NULL AND review_at IS NOT NULL AND review_at <= ?
+		  ORDER BY review_at`,
 		today(),
 	)
 	if err != nil {

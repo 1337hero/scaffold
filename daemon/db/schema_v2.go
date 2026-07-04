@@ -134,6 +134,8 @@ var v2NoteColumns = []struct {
 	{"flag_for_review", "INTEGER NOT NULL DEFAULT 0"},
 	{"review_at", "TEXT"},
 	{"person_id", "TEXT REFERENCES people(id)"},
+	{"project_id", "TEXT REFERENCES projects(id)"},
+	{"suppressed_at", "TEXT"},
 }
 
 // v2PeopleColumns backfills the people table for databases that were created by

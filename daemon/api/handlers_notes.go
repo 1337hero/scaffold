@@ -24,6 +24,7 @@ type noteCreateRequest struct {
 	FlagForReview *bool   `json:"flag_for_review"`
 	ReviewAt      *string `json:"review_at"`
 	PersonID      *string `json:"person_id"`
+	ProjectID     *string `json:"project_id"`
 }
 
 func (s *Server) handleNotesList(w http.ResponseWriter, r *http.Request) {
@@ -57,9 +58,17 @@ func (s *Server) handleNotesList(w http.ResponseWriter, r *http.Request) {
 	if raw := strings.TrimSpace(q.Get("person_id")); raw != "" {
 		personID = &raw
 	}
+	var projectID *string
+	if raw := strings.TrimSpace(q.Get("project_id")); raw != "" {
+		projectID = &raw
+	}
 	var source *string
 	if raw := strings.TrimSpace(q.Get("source")); raw != "" {
 		source = &raw
+	}
+	var surface *string
+	if raw := strings.TrimSpace(q.Get("surface")); raw != "" {
+		surface = &raw
 	}
 	var flagForReview *bool
 	if raw := strings.TrimSpace(q.Get("flag_for_review")); raw != "" {
@@ -78,8 +87,11 @@ func (s *Server) handleNotesList(w http.ResponseWriter, r *http.Request) {
 		Tags:          tags,
 		Kind:          kind,
 		PersonID:      personID,
+		ProjectID:     projectID,
 		Source:        source,
 		FlagForReview: flagForReview,
+		Surface:       surface,
+		Query:         strings.TrimSpace(q.Get("q")),
 	})
 	if err != nil {
 		writeInternalError(w, err)
@@ -154,6 +166,9 @@ func (s *Server) handleNoteCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.PersonID != nil {
 		n.PersonID = sql.NullString{String: *req.PersonID, Valid: true}
+	}
+	if req.ProjectID != nil {
+		n.ProjectID = sql.NullString{String: *req.ProjectID, Valid: true}
 	}
 
 	if err := s.db.InsertNote(n); err != nil {
