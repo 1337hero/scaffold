@@ -17,6 +17,7 @@ import (
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 
+	"scaffold/agentprompt"
 	"scaffold/api"
 	"scaffold/brain"
 	appconfig "scaffold/config"
@@ -104,7 +105,8 @@ func main() {
 	b := brain.NewWithDependencies(database, brain.Config{
 		AssistantName:    assistantName,
 		UserName:         cfg.userName,
-		SystemPrompt:     buildAgentSystemPrompt(appCfg),
+		Identity:         buildAgentIdentity(appCfg, assistantName, cfg.userName),
+		PromptFactLimit:  appCfg.Identity.Facts.MaxPromptFacts,
 		RespondModel:     respondModel,
 		RespondMaxTokens: appCfg.Agent.MaxResponseTokens,
 		Tools:            toolDefs,
@@ -488,38 +490,33 @@ func annotateUserMessageWithSignalMetadata(message, nonTextSummary string) strin
 	return fmt.Sprintf("%s\n\n[Signal metadata: user also sent %s. You cannot access images, attachments, or audio. Ask for text description or transcript if needed.]", text, nonTextSummary)
 }
 
-func buildAgentSystemPrompt(cfg *appconfig.Config) string {
+func buildAgentIdentity(cfg *appconfig.Config, assistantName, userName string) agentprompt.Identity {
 	if cfg == nil {
-		return ""
+		return agentprompt.Identity{Name: assistantName, UserName: userName}
 	}
 
-	base := strings.TrimSpace(cfg.Agent.Personality)
-	rules := make([]string, 0, len(cfg.Agent.Rules))
-	for _, rule := range cfg.Agent.Rules {
-		rule = strings.TrimSpace(rule)
-		if rule != "" {
-			rules = append(rules, rule)
-		}
-	}
-	var b strings.Builder
-	if base != "" {
-		b.WriteString(base)
-	}
-	if len(rules) > 0 {
-		if b.Len() > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString("Rules:")
-		for _, rule := range rules {
-			b.WriteString("\n- ")
-			b.WriteString(rule)
-		}
-	}
+	rules := make([]string, 0, len(cfg.Identity.Rules)+len(cfg.Agent.Rules))
+	rules = appendNonBlank(rules, cfg.Identity.Rules...)
+	rules = appendNonBlank(rules, cfg.Agent.Rules...)
 
-	b.WriteString("\n\n## Current Context")
-	b.WriteString("\n{{cortex_bulletin}}")
+	return agentprompt.Identity{
+		Name:     assistantName,
+		UserName: userName,
+		Voice:    cfg.Identity.Voice,
+		Values:   cfg.Identity.Values,
+		Posture:  cfg.Identity.Posture,
+		CannotDo: cfg.Identity.CannotDo,
+		Rules:    rules,
+	}
+}
 
-	return b.String()
+func appendNonBlank(out []string, values ...string) []string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func handleAuthSubcommand(args []string) {

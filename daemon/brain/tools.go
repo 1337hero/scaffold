@@ -809,6 +809,14 @@ func handleSaveFact(ctx context.Context, database *db.DB, b *Brain, params json.
 		return "", fmt.Errorf("save_fact: content required")
 	}
 
+	conflicts, err := database.ConflictingFacts(entity, content)
+	if err != nil {
+		return "", fmt.Errorf("save_fact conflict check: %w", err)
+	}
+	if len(conflicts) > 0 {
+		return formatFactConflicts(entity, content, conflicts), nil
+	}
+
 	fact := db.Fact{
 		ID:      uuid.New().String(),
 		Entity:  entity,
@@ -824,6 +832,19 @@ func handleSaveFact(ctx context.Context, database *db.DB, b *Brain, params json.
 		return "", fmt.Errorf("save_fact: %w", err)
 	}
 	return fmt.Sprintf("Fact saved for %q (id=%s)", entity, fact.ID), nil
+}
+
+func formatFactConflicts(entity, content string, conflicts []db.Fact) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Potential fact conflict for %q. The new fact was not saved.\n", entity))
+	sb.WriteString("New fact: ")
+	sb.WriteString(content)
+	sb.WriteString("\nExisting facts:\n")
+	for i, fact := range conflicts {
+		sb.WriteString(fmt.Sprintf("%d. %s (id=%s, trust=%.2f)\n", i+1, fact.Content, fact.ID, fact.Trust))
+	}
+	sb.WriteString("Ask Mike which fact to keep, or whether both are true with clearer wording.")
+	return sb.String()
 }
 
 func formatFacts(entity string, facts []db.Fact) string {

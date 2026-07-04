@@ -238,7 +238,7 @@ tools:
       required: [entity]
 
   - name: save_fact
-    description: Store a relational fact with optional category, tags, and related entity edges.
+    description: Store a relational fact with optional category, tags, and related entity edges. If it conflicts with an existing same-entity fact, the tool reports the conflict and does not save until Mike decides.
     input_schema:
       type: object
       properties:

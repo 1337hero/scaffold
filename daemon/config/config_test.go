@@ -60,6 +60,31 @@ func TestAgentConfig(t *testing.T) {
 	}
 }
 
+func TestAgentIdentityConfig(t *testing.T) {
+	cfg, err := Load(configDir(t), "Mike")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(cfg.Identity.Voice) == 0 {
+		t.Fatal("expected identity voice entries")
+	}
+	if len(cfg.Identity.CannotDo) == 0 {
+		t.Fatal("expected identity cannot_do entries")
+	}
+	if cfg.Identity.Facts.MaxPromptFacts != 10 {
+		t.Fatalf("max_prompt_facts=%d, want 10", cfg.Identity.Facts.MaxPromptFacts)
+	}
+
+	joined := strings.Join(append(append([]string{}, cfg.Identity.Values...), cfg.Identity.CannotDo...), "\n")
+	if strings.Contains(joined, "{user_name}") {
+		t.Fatal("identity config still contains {user_name} placeholder")
+	}
+	if !strings.Contains(joined, "Mike") {
+		t.Fatal("identity config should contain substituted user name")
+	}
+}
+
 func TestToolsConfig(t *testing.T) {
 	cfg, err := Load(configDir(t), "Mike")
 	if err != nil {
@@ -191,6 +216,9 @@ func TestDefaults(t *testing.T) {
 	}
 	if cfg.Agent.Model != "claude-sonnet-4-6" {
 		t.Errorf("expected default model claude-sonnet-4-6, got %q", cfg.Agent.Model)
+	}
+	if cfg.Identity.Facts.MaxPromptFacts != 10 {
+		t.Errorf("expected default max prompt facts 10, got %d", cfg.Identity.Facts.MaxPromptFacts)
 	}
 	if cfg.Cortex.Bulletin.IntervalMinutes != 60 {
 		t.Errorf("expected default bulletin interval 60, got %d", cfg.Cortex.Bulletin.IntervalMinutes)
