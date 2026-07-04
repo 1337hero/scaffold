@@ -14,6 +14,13 @@ func (b *Brain) CalendarToday(ctx context.Context) ([]googlecal.Event, error) {
 	return b.calendarClient.TodayEvents(ctx, b.calendarClient.CalendarID)
 }
 
+func (b *Brain) CalendarTomorrow(ctx context.Context) ([]googlecal.Event, error) {
+	if b == nil || b.calendarClient == nil {
+		return nil, nil
+	}
+	return b.calendarClient.TomorrowEvents(ctx, b.calendarClient.CalendarID)
+}
+
 func (b *Brain) CalendarUpcoming(ctx context.Context, count int) ([]googlecal.Event, error) {
 	if b == nil || b.calendarClient == nil {
 		return nil, nil
