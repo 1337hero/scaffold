@@ -38,8 +38,8 @@ func TestAgentConfig(t *testing.T) {
 	if cfg.Agent.MaxResponseTokens != 1024 {
 		t.Errorf("expected max_response_tokens 1024, got %d", cfg.Agent.MaxResponseTokens)
 	}
-	if cfg.Agent.Model != "claude-haiku-4-5" {
-		t.Errorf("expected model claude-haiku-4-5, got %q", cfg.Agent.Model)
+	if cfg.Agent.Model != "claude-sonnet-4-6" {
+		t.Errorf("expected model claude-sonnet-4-6, got %q", cfg.Agent.Model)
 	}
 	if len(cfg.Agent.Rules) == 0 {
 		t.Fatal("expected at least one agent rule")
@@ -66,8 +66,8 @@ func TestToolsConfig(t *testing.T) {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if len(cfg.Tools.Tools) != 8 {
-		t.Errorf("expected 8 tools, got %d", len(cfg.Tools.Tools))
+	if len(cfg.Tools.Tools) != 10 {
+		t.Errorf("expected 10 tools, got %d", len(cfg.Tools.Tools))
 	}
 
 	names := make(map[string]bool)
@@ -75,14 +75,16 @@ func TestToolsConfig(t *testing.T) {
 		names[tool.Name] = true
 	}
 	expected := []string{
+		"save_memory",
 		"search_memories",
-		"get_calendar_events",
-		"create_calendar_event",
-		"update_calendar_event",
 		"create_task",
-		"create_note",
 		"update_task",
 		"list_tasks",
+		"create_note",
+		"get_calendar_events",
+		"query_people",
+		"query_facts",
+		"save_fact",
 	}
 	for _, name := range expected {
 		if !names[name] {
@@ -170,8 +172,8 @@ func TestDefaults(t *testing.T) {
 	if cfg.Agent.MaxResponseTokens != 1024 {
 		t.Errorf("expected default max_response_tokens 1024, got %d", cfg.Agent.MaxResponseTokens)
 	}
-	if cfg.Agent.Model != "claude-haiku-4-5" {
-		t.Errorf("expected default model claude-haiku-4-5, got %q", cfg.Agent.Model)
+	if cfg.Agent.Model != "claude-sonnet-4-6" {
+		t.Errorf("expected default model claude-sonnet-4-6, got %q", cfg.Agent.Model)
 	}
 	if cfg.Cortex.Bulletin.IntervalMinutes != 60 {
 		t.Errorf("expected default bulletin interval 60, got %d", cfg.Cortex.Bulletin.IntervalMinutes)
@@ -362,4 +364,3 @@ tools:
 		t.Fatal("expected duplicate tool names to fail")
 	}
 }
-

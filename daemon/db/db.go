@@ -133,6 +133,13 @@ func (db *DB) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_memories_suppressed ON memories(suppressed_at);
 		CREATE INDEX IF NOT EXISTS idx_conversation_log_created ON conversation_log(created_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_conversation_log_sender ON conversation_log(sender);
+
+		CREATE TABLE IF NOT EXISTS embedding_jobs (
+		  memory_id   TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+		  reason      TEXT NOT NULL,
+		  enqueued_at TEXT NOT NULL,
+		  attempts    INTEGER NOT NULL DEFAULT 0
+		);
 	`)
 	if err != nil {
 		return fmt.Errorf("apply extended schema: %w", err)
