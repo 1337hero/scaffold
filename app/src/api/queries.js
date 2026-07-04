@@ -345,6 +345,64 @@ function normalizeNote(n) {
   }
 }
 
+function normalizeKids(raw) {
+  if (Array.isArray(raw)) return raw
+  const value = nullableField(raw) ?? raw
+  if (!value || typeof value !== "string") return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function normalizePerson(p) {
+  if (!p || typeof p !== "object") return null
+  return {
+    id: p.ID || p.id || "",
+    name: p.Name || p.name || "",
+    surface: p.Surface || p.surface || "life",
+    domainId: nullableField(p.DomainID ?? p.domain_id),
+    relationship: nullableField(p.Relationship ?? p.relationship),
+    birthday: nullableField(p.Birthday ?? p.birthday),
+    anniversary: nullableField(p.Anniversary ?? p.anniversary),
+    spouse: nullableField(p.Spouse ?? p.spouse),
+    kids: normalizeKids(p.Kids ?? p.kids),
+    notes: nullableField(p.Notes ?? p.notes) || "",
+    lastInteractionAt: nullableField(p.LastInteractionAt ?? p.last_interaction_at),
+    contactCadenceDays: nullableField(p.ContactCadenceDays ?? p.contact_cadence_days) ?? 90,
+    createdAt: p.CreatedAt || p.created_at || "",
+    updatedAt: p.UpdatedAt || p.updated_at || "",
+  }
+}
+
+function normalizeInteraction(i) {
+  if (!i || typeof i !== "object") return null
+  return {
+    id: i.ID || i.id || "",
+    personId: i.PersonID || i.person_id || "",
+    date: i.Date || i.date || "",
+    summary: i.Summary || i.summary || "",
+    followUp: nullableField(i.FollowUp ?? i.follow_up),
+    followUpDate: nullableField(i.FollowUpDate ?? i.follow_up_date),
+    createdAt: i.CreatedAt || i.created_at || "",
+  }
+}
+
+function normalizeBirthdayHit(hit) {
+  if (!hit || typeof hit !== "object") return null
+  return {
+    personId: hit.person_id || hit.PersonID || "",
+    name: hit.name || hit.Name || "",
+    kind: hit.kind || hit.Kind || "self",
+    date: hit.date || hit.Date || "",
+    daysUntil: hit.days_until ?? hit.DaysUntil ?? 0,
+    urgency: hit.urgency || hit.Urgency || "upcoming",
+    relationship: hit.relationship || hit.Relationship || "",
+  }
+}
+
 export const tasksListQuery = (surface, status) => ({
   queryKey: ["tasks-list", surface, status],
   queryFn: async () => {
@@ -495,3 +553,54 @@ export function cloneChecklist(projectId, templateId) {
 export function createChecklistTemplate(data) { return postJSON("/api/checklists/templates", data) }
 
 export function logActivity(projectId, data) { return postJSON(`/api/projects/${projectId}/activity`, data) }
+
+// People page
+
+export const peopleListQuery = (surface) => ({
+  queryKey: ["people-list", surface],
+  queryFn: async () => {
+    const params = surface ? `?surface=${surface}` : ""
+    const data = await apiFetch(`/api/people${params}`)
+    return ensureArray(data).map(normalizePerson).filter(Boolean)
+  },
+})
+
+export const personDetailQuery = (id) => ({
+  queryKey: ["person-detail", id],
+  queryFn: async () => normalizePerson(await apiFetch(`/api/people/${id}`)),
+})
+
+export const personInteractionsQuery = (id) => ({
+  queryKey: ["person-interactions", id],
+  queryFn: async () => {
+    const data = await apiFetch(`/api/people/${id}/interactions`)
+    return ensureArray(data).map(normalizeInteraction).filter(Boolean)
+  },
+})
+
+export const personNotesQuery = (personId) => ({
+  queryKey: ["person-notes", personId],
+  queryFn: async () => {
+    const data = await apiFetch(`/api/notes?person_id=${personId}`)
+    return ensureArray(data).map(normalizeNote).filter(Boolean)
+  },
+})
+
+export const birthdaysQuery = (days = 7) => ({
+  queryKey: ["birthdays", days],
+  queryFn: async () => {
+    const data = await apiFetch(`/api/people/birthdays?days=${days}`)
+    return ensureArray(data).map(normalizeBirthdayHit).filter(Boolean)
+  },
+})
+
+export function createPerson(data) { return postJSON("/api/people", data) }
+export function patchPerson(id, data) {
+  return apiFetch(`/api/people/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+}
+export function deletePerson(id) { return apiFetch(`/api/people/${id}`, { method: "DELETE" }) }
+export function logInteraction(personId, data) { return postJSON(`/api/people/${personId}/interactions`, data) }
